@@ -139,24 +139,17 @@ Networking is deny-by-default. Only the domains you declare in `permissions.netw
 
 ---
 
-## Built-in Helpers
+## Persistent State
 
-The SDK gives you filesystem, environment, and state management for free:
+The SDK gives you key-value state that survives across sessions:
 
 ```python
-# Read and write files
-content = self.read_file("/home/agent/workspace/data.json")
-self.write_file("/home/agent/workspace/output.txt", result)
-matches = self.glob("/home/agent/workspace", "**/*.py")
-
-# Access environment variables (API keys are injected automatically)
-api_key = self.get_env("ANTHROPIC_API_KEY")
-
-# Persistent state — survives across sessions
 self.save_state("memory", {"conversations": 42})
 data = self.load_state("memory", default={})
 self.delete_state("old_key")
 ```
+
+For everything else — reading files, writing files, environment variables, HTTP requests — just use Python.
 
 ---
 

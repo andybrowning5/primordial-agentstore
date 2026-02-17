@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import glob as glob_module
 import json as json_module
 import os
 from abc import ABC, abstractmethod
@@ -19,21 +18,7 @@ from agentstore_sdk.io import (
 
 
 class _AgentBase(ABC):
-    """Shared filesystem helpers for all agent types."""
-
-    def read_file(self, path: str | Path) -> str:
-        return Path(path).read_text()
-
-    def write_file(self, path: str | Path, content: str) -> None:
-        p = Path(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content)
-
-    def glob(self, directory: str | Path, pattern: str) -> list[str]:
-        return sorted(glob_module.glob(str(Path(directory) / pattern), recursive=True))
-
-    def get_env(self, key: str) -> Optional[str]:
-        return os.environ.get(key)
+    """State management helpers."""
 
     @property
     def state_dir(self) -> Path:
