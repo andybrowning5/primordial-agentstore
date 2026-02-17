@@ -11,18 +11,7 @@ from agentstore.models import AgentManifest
 
 
 def load_manifest(path: Path) -> AgentManifest:
-    """Load and validate an agent manifest from a YAML file.
-
-    Args:
-        path: Path to agent.yaml or directory containing agent.yaml
-
-    Returns:
-        Validated AgentManifest
-
-    Raises:
-        FileNotFoundError: If manifest file doesn't exist
-        ValueError: If manifest is invalid
-    """
+    """Load and validate an agent manifest from a YAML file."""
     if path.is_dir():
         path = path / "agent.yaml"
 
@@ -52,15 +41,24 @@ def _validate_manifest(manifest: AgentManifest, agent_dir: Path) -> None:
             "lowercase letters, numbers, and hyphens only"
         )
 
-    if ":" not in manifest.runtime.entry_point:
+    # Must have either entry_point (Python SDK) or run_command (generic)
+    if not manifest.runtime.entry_point and not manifest.runtime.run_command:
+        raise ValueError(
+            "Runtime must specify either 'entry_point' (for Python SDK agents) "
+            "or 'run_command' (for generic agents)"
+        )
+
+    if manifest.runtime.entry_point and ":" not in manifest.runtime.entry_point:
         raise ValueError(
             f"Invalid entry_point '{manifest.runtime.entry_point}': "
             "must be in format 'module.path:function_name'"
         )
 
-    deps_path = agent_dir / manifest.runtime.dependencies
-    if not deps_path.exists():
-        raise ValueError(f"Dependencies file not found: {deps_path}")
+    # If dependencies file is specified, it must exist
+    if manifest.runtime.dependencies:
+        deps_path = agent_dir / manifest.runtime.dependencies
+        if not deps_path.exists():
+            raise ValueError(f"Dependencies file not found: {deps_path}")
 
 
 def _is_valid_name(name: str) -> bool:

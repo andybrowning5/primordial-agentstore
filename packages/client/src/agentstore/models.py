@@ -30,9 +30,11 @@ class ResourceLimits(BaseModel):
 
 class RuntimeConfig(BaseModel):
     language: str = "python"
-    python_version: str = ">=3.11"
-    entry_point: str
-    dependencies: str = "requirements.txt"
+    entry_point: Optional[str] = None
+    dependencies: Optional[str] = None
+    setup_command: Optional[str] = None
+    run_command: Optional[str] = None
+    sandbox_template: str = "claude"
     default_model: ModelConfig = Field(default_factory=ModelConfig)
     resources: ResourceLimits = Field(default_factory=ResourceLimits)
 
