@@ -10,7 +10,7 @@ def tool(description: str = "", name: str | None = None) -> Callable:
     """Decorator to register a method as an agent tool.
 
     Example:
-        class MyAgent(BaseAgent):
+        class MyAgent(Agent):
             @tool(description="Analyze a Python file")
             def analyze_file(self, path: str) -> dict:
                 content = self.read_file(path)

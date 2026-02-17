@@ -1,24 +1,29 @@
 # Developing Agents for AgentStore
 
-This guide covers everything you need to build, test, and publish agents on AgentStore.
+## The Idea
+
+AgentStore is an open marketplace for AI agents. You build an agent, publish it, and anyone can run it — safely.
+
+The core concept is simple: **we give your agent a sandbox, you give us a conversation loop.** Your agent starts up inside an isolated MicroVM, receives messages from the user over stdin, and sends responses back over stdout. That's it. What happens in between — which LLM you call, what tools you use, how you manage state — is entirely up to you.
+
+There's no opinionated framework to learn. No required LLM provider. No mandatory tool schema. You write a Python class with a `handle_message` method, declare what permissions you need in a manifest, and you're done. AgentStore handles the sandbox, the networking, the dependency installation, and the user approval flow.
+
+Think of it like Docker Hub for AI agents: you package your agent, users pull it and run it, and the platform ensures it can't do anything the user didn't agree to.
 
 ---
 
 ## Quick Start
 
 ```bash
-# Scaffold a new agent
-agentstore init my-agent --mode single-shot
-
-# Run it locally
-agentstore run ./my-agent --task "Hello, world"
+agentstore init my-agent
+agentstore run ./my-agent
 ```
 
-This creates:
+This scaffolds a working agent you can start editing immediately:
 
 ```
 my-agent/
-├── agent.yaml          # Manifest — declares capabilities and permissions
+├── agent.yaml          # Manifest — what your agent is and what it needs
 ├── requirements.txt    # Python dependencies
 ├── src/
 │   └── agent.py        # Your agent code
@@ -29,303 +34,160 @@ my-agent/
 
 ---
 
-## Agent Modes
+## How It Works
 
-AgentStore supports two execution models.
+Every agent is a long-running process that speaks a simple protocol: newline-delimited JSON (NDJSON) over stdin/stdout.
 
-### Single-Shot
+1. Your agent starts up and signals it's ready
+2. The platform sends user messages in
+3. Your agent processes them and sends responses back
+4. When the session ends, your agent cleans up
 
-Receives a task, does work, returns a result. Best for automation, code generation, analysis.
-
-```python
-def run(task: str, workspace: str) -> dict:
-    # Do work...
-    return {"summary": "Done", "files_created": 3}
-```
-
-The entry point is a plain function. It receives the user's task string and a workspace directory path, and returns a dict with results.
-
-### Interactive
-
-A conversational agent with back-and-forth messaging. Best for assistants, chat-based tools, multi-turn workflows.
+The SDK handles the protocol plumbing. You just subclass `Agent` and implement `handle_message`:
 
 ```python
-from agentstore_sdk import InteractiveAgent
+from agentstore_sdk import Agent
 
-class MyAgent(InteractiveAgent):
+
+class MyAgent(Agent):
     def setup(self):
-        self.history = []
+        # Called once at session start. Initialize your LLM client,
+        # load state, set up whatever you need.
+        pass
 
     def handle_message(self, content: str, message_id: str):
-        self.history.append(content)
-        response = process(content, self.history)
-        self.send_response(response, message_id)
+        # Called for each user message. Do your thing,
+        # then send back a response.
+        self.send_response(f"You said: {content}", message_id)
 
     def teardown(self):
+        # Called at session end. Clean up resources.
         pass
+
 
 def create_agent():
     return MyAgent()
 ```
 
-Interactive agents extend `InteractiveAgent` and must implement `handle_message`. The platform calls `setup()` once at session start and `teardown()` at session end.
+You can call any LLM, use any framework (LangChain, LangGraph, CrewAI, raw API calls), run any tools, read/write files in the workspace — whatever your agent needs to do. The platform doesn't care about your internals, only the message protocol.
 
-**Communication methods** available inside `handle_message`:
+### Communicating with the User
+
+Inside `handle_message`, you have three methods:
 
 | Method | Purpose |
 |---|---|
 | `self.send_response(content, message_id)` | Send a reply to the user |
-| `self.send_activity(tool, description, message_id)` | Report tool usage (shown as status) |
+| `self.send_activity(tool, description, message_id)` | Show what your agent is doing (status updates) |
 | `self.send_error(error, message_id)` | Report an error |
 
 ---
 
-## The Manifest (`agent.yaml`)
+## The Manifest
 
-The manifest declares what your agent is, what it needs, and what it can do. Here's a fully annotated example:
+Every agent has an `agent.yaml` that declares what it is and what it needs. This is what users see before they approve running your agent.
 
 ```yaml
-name: my-agent                        # Lowercase, alphanumeric + hyphens, 3-40 chars
+name: my-agent
 display_name: My Agent
 version: 0.1.0
-description: A short description of what this agent does
-category: general
+description: What this agent does, in one sentence
 
 author:
   name: Your Name
-  github: your-github-handle           # Optional
+  github: your-github-handle
 
 runtime:
-  language: python
-  python_version: ">=3.11"
-  entry_point: src/agent:run           # module.path:function_name
+  entry_point: src/agent:create_agent   # module:function that returns your Agent
   dependencies: requirements.txt
-  mode: single-shot                    # or "interactive"
-
   default_model:
     provider: anthropic
     model: claude-sonnet-4-5-20250929
-
   resources:
     max_memory: 2GB
     max_cpu: 2
-    max_duration: 300                  # Seconds per task
-    max_output_size: 10MB
-    max_session_duration: 3600         # Interactive only — max session length
+    max_duration: 300                   # Max seconds per message
+    max_session_duration: 3600          # Max session length
 
-system_prompt: prompts/system.md       # Path to system prompt file
+system_prompt: prompts/system.md
 
 permissions:
   network:
     - domain: api.anthropic.com
       reason: LLM inference
   filesystem:
-    workspace: readwrite               # none | readonly | readwrite
-  delegation:
-    enabled: false
-    allowed_agents: []
-
-tags:
-  - automation
-  - code
-```
-
-### Entry Point Format
-
-The `entry_point` field uses `module.path:function_name` syntax:
-
-- **Single-shot**: Points to a function with signature `run(task: str, workspace: str) -> dict`
-- **Interactive**: Points to a factory function that returns an `InteractiveAgent` instance
-
-Examples:
-```yaml
-entry_point: src/agent:run              # src/agent.py → run()
-entry_point: src/agent:create_agent     # src/agent.py → create_agent()
-entry_point: mypackage.core:main        # mypackage/core.py → main()
-```
-
-### Permissions
-
-Agents run inside isolated sandboxes with deny-by-default networking. You must declare every domain your agent needs:
-
-```yaml
-permissions:
-  network:
-    - domain: api.anthropic.com
-      reason: LLM inference via Claude API
-    - domain: api.github.com
-      reason: Fetching repository data
-  filesystem:
     workspace: readwrite
 ```
 
-Users see these permissions and must approve them before the agent runs.
+The key fields:
+
+- **`entry_point`** — A `module:function` path to a factory function that returns your `Agent` instance. The platform calls this to start your agent.
+- **`permissions.network`** — Every domain your agent needs to reach. The sandbox blocks everything else. Users see this list and must approve it.
+- **`permissions.filesystem.workspace`** — Whether your agent can read/write the user's workspace directory (`none`, `readonly`, or `readwrite`).
 
 ---
 
-## SDK Reference
+## The Sandbox
 
-Install: agents running on AgentStore get the SDK automatically. For local development:
+Your agent runs inside an isolated MicroVM. Here's what's available:
 
-```bash
-pip install agentstore-sdk
-```
+| Path | What it is |
+|---|---|
+| `/home/agent/workspace` | The user's project directory (mounted) |
+| `/home/agent/agent` | Your agent code (copied in) |
+| `/home/agent/state` | Persistent state directory (survives across sessions) |
 
-### Imports
+The sandbox comes with Python 3.11+ and `uv` pre-installed. Your `requirements.txt` dependencies are installed automatically before your agent starts.
 
-```python
-from agentstore_sdk import (
-    BaseAgent,           # Base class for single-shot agents
-    InteractiveAgent,    # Base class for interactive agents
-    tool,                # Decorator to mark methods as tools
-)
-```
+Networking is deny-by-default. Only the domains you declare in `permissions.network` are reachable (plus PyPI, so your deps can install). Resource limits from your manifest are enforced — if your agent exceeds `max_duration` on a single message, it's terminated.
 
-### Filesystem Helpers
+---
 
-All agents inherit these methods:
+## Built-in Helpers
+
+The SDK gives you filesystem, environment, and state management for free:
 
 ```python
-# Read a file
+# Read and write files
 content = self.read_file("/home/agent/workspace/data.json")
+self.write_file("/home/agent/workspace/output.txt", result)
+matches = self.glob("/home/agent/workspace", "**/*.py")
 
-# Write a file (creates parent directories)
-self.write_file("/home/agent/workspace/output.txt", "results here")
-
-# Find files by pattern
-py_files = self.glob("/home/agent/workspace", "**/*.py")
-```
-
-### Environment Variables
-
-API keys configured by the user are injected as environment variables:
-
-```python
+# Access environment variables (API keys are injected automatically)
 api_key = self.get_env("ANTHROPIC_API_KEY")
-```
 
-### Persistent State
-
-State survives across runs of the same agent. Use it for caches, user preferences, learned context:
-
-```python
-# Save structured data
-self.save_state("user_prefs", {"theme": "dark", "lang": "en"})
-
-# Load it back (with optional default)
-prefs = self.load_state("user_prefs", default={})
-
-# Manage keys
-keys = self.list_state_keys()
+# Persistent state — survives across sessions
+self.save_state("memory", {"conversations": 42})
+data = self.load_state("memory", default={})
 self.delete_state("old_key")
 ```
 
-### The `@tool` Decorator
-
-Mark methods as agent capabilities:
-
-```python
-from agentstore_sdk import tool
-
-class MyAgent(InteractiveAgent):
-    @tool(description="Search the web for information")
-    def web_search(self, query: str) -> str:
-        # ...
-        return results
-```
-
 ---
 
-## Example: Single-Shot Agent
+## Example: A Real Agent
 
-A minimal agent that summarizes workspace contents:
+Here's a complete agent that wraps Claude as a coding assistant:
 
-**`agent.yaml`**
-```yaml
-name: file-counter
-display_name: File Counter
-version: 0.1.0
-description: Counts and categorizes files in the workspace
-author:
-  name: Dev
-runtime:
-  entry_point: src/agent:run
-  mode: single-shot
-  resources:
-    max_duration: 60
-system_prompt: prompts/system.md
-permissions:
-  filesystem:
-    workspace: readonly
-```
-
-**`src/agent.py`**
-```python
-import os
-
-def run(task: str, workspace: str) -> dict:
-    files = []
-    for root, _, filenames in os.walk(workspace):
-        for f in filenames:
-            if not f.startswith("."):
-                files.append(os.path.relpath(os.path.join(root, f), workspace))
-
-    by_ext = {}
-    for f in files:
-        ext = os.path.splitext(f)[1] or "(none)"
-        by_ext.setdefault(ext, []).append(f)
-
-    return {
-        "total_files": len(files),
-        "by_extension": {k: len(v) for k, v in by_ext.items()},
-        "files": files,
-    }
-```
-
-## Example: Interactive Agent
-
-A conversational agent powered by Claude:
-
-**`agent.yaml`**
-```yaml
-name: chat-assistant
-display_name: Chat Assistant
-version: 0.1.0
-description: A conversational assistant
-author:
-  name: Dev
-runtime:
-  entry_point: src/agent:create_agent
-  mode: interactive
-  resources:
-    max_duration: 300
-    max_session_duration: 3600
-system_prompt: prompts/system.md
-permissions:
-  network:
-    - domain: api.anthropic.com
-      reason: LLM inference
-  filesystem:
-    workspace: readwrite
-```
-
-**`src/agent.py`**
 ```python
 import anthropic
-from agentstore_sdk import InteractiveAgent
+from agentstore_sdk import Agent
 
-class ChatAssistant(InteractiveAgent):
+
+class CodingAssistant(Agent):
     def setup(self):
         self.client = anthropic.Anthropic()
         self.messages = []
+        self.system = self.read_file("/home/agent/agent/prompts/system.md")
 
     def handle_message(self, content: str, message_id: str):
         self.messages.append({"role": "user", "content": content})
 
+        self.send_activity("claude", "Thinking...", message_id)
+
         response = self.client.messages.create(
             model="claude-sonnet-4-5-20250929",
             max_tokens=4096,
-            system=self.read_file("/home/agent/agent/prompts/system.md"),
+            system=self.system,
             messages=self.messages,
         )
 
@@ -336,59 +198,38 @@ class ChatAssistant(InteractiveAgent):
     def teardown(self):
         pass
 
+
 def create_agent():
-    return ChatAssistant()
+    return CodingAssistant()
 ```
+
+You could just as easily use OpenAI, LangGraph, or anything else. The platform doesn't know or care which LLM is behind the curtain.
 
 ---
 
-## Testing Locally
+## Running and Testing
 
 ```bash
-# Single-shot
-agentstore run ./my-agent --task "Analyze this project"
-
-# Single-shot with custom workspace
-agentstore run ./my-agent --task "Count files" --workspace ~/projects/myapp
-
-# Interactive (chat UI)
+# Start a chat session with your agent
 agentstore run ./my-agent
 
-# Interactive (JSON pipe mode for programmatic use)
+# Mount a specific workspace
+agentstore run ./my-agent --workspace ~/projects/myapp
+
+# JSON pipe mode (for programmatic / agent-to-agent use)
 agentstore run ./my-agent --json-io
 
-# Skip approval prompt
-agentstore run ./my-agent --task "test" --yes
+# Skip the approval prompt
+agentstore run ./my-agent --yes
 ```
 
 ---
 
-## Sandbox Environment
+## Installing from GitHub
 
-Your agent runs inside an isolated MicroVM with:
+Users can run agents directly from a GitHub URL:
 
-- **Python 3.11+** with `uv` for fast package installation
-- **Deny-by-default networking** — only domains you declare in `permissions.network` are reachable (plus PyPI for dependency installation)
-- **Workspace mount** at `/home/agent/workspace` — this is the user's project directory
-- **Agent code** at `/home/agent/agent`
-- **State directory** at `/home/agent/state` — persistent across runs
-
-Resource limits from your manifest are enforced. If your agent exceeds `max_duration`, it is terminated.
-
----
-
-## Project Structure Conventions
-
+```bash
+agentstore run https://github.com/user/my-agent
+agentstore run https://github.com/user/my-agent --ref v1.0.0
 ```
-my-agent/
-├── agent.yaml              # Required — the manifest
-├── requirements.txt        # Required — Python dependencies
-├── src/
-│   └── agent.py            # Required — entry point module
-├── prompts/
-│   └── system.md           # Required — system prompt
-├── tests/                  # Optional — your tests
-└── .gitignore
-```
-
-You can organize `src/` however you like — subdirectories, multiple modules, etc. Just make sure `entry_point` in the manifest points to the right `module:function`.

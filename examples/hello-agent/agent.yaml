@@ -12,7 +12,7 @@ author:
 runtime:
   language: "python"
   python_version: ">=3.11"
-  entry_point: "src/agent:run"
+  entry_point: "src/agent:create_agent"
   dependencies: "requirements.txt"
   default_model:
     provider: "anthropic"
@@ -21,6 +21,7 @@ runtime:
     max_memory: "1GB"
     max_cpu: 1
     max_duration: 60
+    max_session_duration: 600
 
 system_prompt: "prompts/system.md"
 
@@ -30,17 +31,3 @@ permissions:
       reason: "LLM API access"
   filesystem:
     workspace: "readwrite"
-  delegation:
-    enabled: false
-
-interface:
-  input:
-    format: "text"
-    schema:
-      type: "object"
-      properties:
-        task:
-          type: "string"
-      required: ["task"]
-  output:
-    format: "json"
