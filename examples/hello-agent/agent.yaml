@@ -23,8 +23,6 @@ runtime:
     max_duration: 60
     max_session_duration: 600
 
-system_prompt: "prompts/system.md"
-
 permissions:
   network:
     - domain: "api.anthropic.com"

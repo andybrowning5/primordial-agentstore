@@ -68,5 +68,4 @@ class AgentManifest(BaseModel):
     tags: list[str] = Field(default_factory=list)
     author: AuthorInfo
     runtime: RuntimeConfig
-    system_prompt: str
     permissions: Permissions = Field(default_factory=Permissions)

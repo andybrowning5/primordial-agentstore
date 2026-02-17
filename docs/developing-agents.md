@@ -27,8 +27,6 @@ my-agent/
 ├── requirements.txt    # Python dependencies
 ├── src/
 │   └── agent.py        # Your agent code
-├── prompts/
-│   └── system.md       # System prompt
 └── .gitignore
 ```
 
@@ -109,8 +107,6 @@ runtime:
     max_duration: 300                   # Max seconds per message
     max_session_duration: 3600          # Max session length
 
-system_prompt: prompts/system.md
-
 permissions:
   network:
     - domain: api.anthropic.com
@@ -177,7 +173,7 @@ class CodingAssistant(Agent):
     def setup(self):
         self.client = anthropic.Anthropic()
         self.messages = []
-        self.system = self.read_file("/home/agent/agent/prompts/system.md")
+        self.messages = []
 
     def handle_message(self, content: str, message_id: str):
         self.messages.append({"role": "user", "content": content})
@@ -187,7 +183,6 @@ class CodingAssistant(Agent):
         response = self.client.messages.create(
             model="claude-sonnet-4-5-20250929",
             max_tokens=4096,
-            system=self.system,
             messages=self.messages,
         )
 

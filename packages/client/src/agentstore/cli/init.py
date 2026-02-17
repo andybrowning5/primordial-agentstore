@@ -40,7 +40,6 @@ def init(name: str, description: str | None):
     # Create directory structure
     agent_dir.mkdir(parents=True)
     (agent_dir / "src").mkdir()
-    (agent_dir / "prompts").mkdir()
 
     # Write agent.yaml
     manifest = dedent(f"""\
@@ -64,8 +63,6 @@ def init(name: str, description: str | None):
             max_duration: 300
             max_session_duration: 3600
 
-        system_prompt: "prompts/system.md"
-
         permissions:
           network:
             - domain: "api.anthropic.com"
@@ -74,12 +71,6 @@ def init(name: str, description: str | None):
             workspace: "readwrite"
     """)
     (agent_dir / "agent.yaml").write_text(manifest)
-
-    # Write system prompt
-    (agent_dir / "prompts" / "system.md").write_text(
-        f"You are {display_name}, a specialized AI agent.\n\n"
-        f"{description}\n"
-    )
 
     # Write agent entry point
     agent_code = dedent("""\
@@ -132,7 +123,6 @@ def init(name: str, description: str | None):
     console.print(f"\n[green bold]Created agent project:[/green bold] {name}/\n")
     console.print(f"  agent.yaml         Agent manifest")
     console.print(f"  src/agent.py       Entry point")
-    console.print(f"  prompts/system.md  System prompt")
     console.print(f"  requirements.txt   Dependencies")
     console.print()
     console.print("[bold]Next steps:[/bold]")

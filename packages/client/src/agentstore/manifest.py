@@ -52,10 +52,6 @@ def _validate_manifest(manifest: AgentManifest, agent_dir: Path) -> None:
             "lowercase letters, numbers, and hyphens only"
         )
 
-    prompt_path = agent_dir / manifest.system_prompt
-    if not prompt_path.exists():
-        raise ValueError(f"System prompt file not found: {prompt_path}")
-
     if ":" not in manifest.runtime.entry_point:
         raise ValueError(
             f"Invalid entry_point '{manifest.runtime.entry_point}': "
