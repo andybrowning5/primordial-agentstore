@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentstore-monorepo"
+version = "0.1.0"
+description = "Agent Store - Marketplace for specialized TUI AI agents"
+requires-python = ">=3.11"
+
+[tool.hatch.envs.default]
+dependencies = []
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["packages/client/tests", "packages/server/tests", "sdk/tests"]
+asyncio_mode = "auto"

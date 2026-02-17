@@ -1,0 +1,76 @@
+"""CLI commands for API key management."""
+
+import click
+from rich.console import Console
+from rich.table import Table
+
+from agentstore.config import get_config
+from agentstore.security.key_vault import KeyVault
+
+console = Console()
+
+KNOWN_PROVIDERS = ["anthropic", "openai", "groq", "google", "mistral", "deepseek"]
+
+
+@click.group()
+def keys():
+    """Manage API keys for LLM providers."""
+    pass
+
+
+@keys.command()
+@click.argument("provider", type=click.Choice(KNOWN_PROVIDERS + ["other"]))
+@click.argument("api_key")
+@click.option("--key-id", default=None, help="Friendly identifier for this key")
+def add(provider: str, api_key: str, key_id: str | None):
+    """Add or update an API key for a provider."""
+    if provider == "other":
+        provider = click.prompt("Enter provider name")
+
+    config = get_config()
+    vault = KeyVault(config.keys_file)
+    stored_id = vault.add_key(provider, api_key, key_id)
+    console.print(f"[green]Key stored:[/green] {provider} (id: {stored_id})")
+
+
+@keys.command(name="list")
+def list_keys():
+    """List all stored API keys."""
+    config = get_config()
+    vault = KeyVault(config.keys_file)
+    entries = vault.list_keys()
+
+    if not entries:
+        console.print("[dim]No API keys stored. Use 'agentstore keys add' to add one.[/dim]")
+        return
+
+    table = Table(title="Stored API Keys")
+    table.add_column("Provider", style="cyan")
+    table.add_column("Key ID", style="green")
+    table.add_column("Created", style="dim")
+    table.add_column("Last Used", style="dim")
+
+    for entry in entries:
+        table.add_row(
+            entry["provider"],
+            entry["key_id"],
+            entry["created_at"][:10] if entry["created_at"] else "-",
+            entry["last_used"][:10] if entry["last_used"] else "Never",
+        )
+    console.print(table)
+
+
+@keys.command()
+@click.argument("provider")
+@click.option("--key-id", default=None, help="Specific key ID to remove")
+@click.confirmation_option(prompt="Are you sure you want to remove this key?")
+def remove(provider: str, key_id: str | None):
+    """Remove a stored API key."""
+    config = get_config()
+    vault = KeyVault(config.keys_file)
+    if vault.remove_key(provider, key_id):
+        console.print(f"[green]Key removed:[/green] {provider}")
+    else:
+        console.print(
+            f"[red]Key not found:[/red] {provider}" + (f" (id: {key_id})" if key_id else "")
+        )

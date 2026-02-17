@@ -1,0 +1,46 @@
+name: "hello-agent"
+display_name: "Hello Agent"
+version: "0.1.0"
+description: "A simple demo agent that greets users and summarizes workspace contents."
+category: "demo"
+tags: ["demo", "hello", "starter"]
+
+author:
+  name: "Agent Store Team"
+  github: "agentstore"
+
+runtime:
+  language: "python"
+  python_version: ">=3.11"
+  entry_point: "src/agent:run"
+  dependencies: "requirements.txt"
+  default_model:
+    provider: "anthropic"
+    model: "claude-sonnet-4-5-20250929"
+  resources:
+    max_memory: "1GB"
+    max_cpu: 1
+    max_duration: 60
+
+system_prompt: "prompts/system.md"
+
+permissions:
+  network:
+    - domain: "api.anthropic.com"
+      reason: "LLM API access"
+  filesystem:
+    workspace: "readwrite"
+  delegation:
+    enabled: false
+
+interface:
+  input:
+    format: "text"
+    schema:
+      type: "object"
+      properties:
+        task:
+          type: "string"
+      required: ["task"]
+  output:
+    format: "json"

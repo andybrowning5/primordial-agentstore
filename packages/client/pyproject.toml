@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentstore"
+version = "0.1.0"
+description = "Agent Store CLI & TUI client"
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.1",
+    "textual>=0.80",
+    "rich>=13.0",
+    "httpx>=0.27",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "pyyaml>=6.0",
+    "cryptography>=42.0",
+    "platformdirs>=4.0",
+    "tomli>=2.0; python_version < '3.12'",
+    "tomli-w>=1.0",
+]
+
+[project.scripts]
+agentstore = "agentstore.cli.main:cli"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentstore"]
