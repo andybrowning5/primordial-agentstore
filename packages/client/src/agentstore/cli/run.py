@@ -8,6 +8,8 @@ import uuid
 from pathlib import Path
 
 import click
+from prompt_toolkit import prompt as pt_prompt
+from prompt_toolkit.formatted_text import HTML
 from rich.console import Console
 from rich.live import Live
 from rich.text import Text
@@ -110,7 +112,7 @@ def run(
     refresh: bool,
     yes: bool,
 ):
-    """Run an agent from a local path, installed name, or GitHub URL.
+    """Run an agent in a Primordial sandbox.
 
     AGENT_PATH can be:
       - A local directory (./my-agent)
@@ -161,19 +163,57 @@ def run(
         console.print("[dim]Aborted.[/dim]")
         raise SystemExit(0)
 
-    # Get API keys
+    # Validate required API keys from manifest and prompt for missing ones
     vault = KeyVault(config.keys_file)
-    provider = manifest.runtime.default_model.provider
-    if model:
-        provider = model.split(":")[0] if ":" in model else provider
 
-    api_key = vault.get_key(provider)
-    if not api_key:
-        console.print(f"[red]No API key found for provider '{provider}'.[/red]")
-        console.print(f"Add one with: agentstore keys add {provider} <your-key>")
-        raise SystemExit(1)
+    if manifest.keys:
+        missing_required = []
+        missing_optional = []
+        for key_req in manifest.keys:
+            if not vault.get_key(key_req.provider):
+                if key_req.required:
+                    missing_required.append(key_req)
+                else:
+                    missing_optional.append(key_req)
 
-    env_vars = vault.get_env_vars([provider])
+        if missing_required:
+            console.print("[yellow]This agent requires API keys that are not yet stored:[/yellow]")
+            for kr in missing_required:
+                console.print(f"  [red]✗[/red] {kr.provider} ({kr.resolved_env_var()}) — required")
+            for kr in missing_optional:
+                console.print(f"  [dim]○[/dim] {kr.provider} ({kr.resolved_env_var()}) — optional, missing")
+            console.print()
+
+            for kr in missing_required:
+                key = click.prompt(
+                    f"  Enter {kr.provider.upper()} API key ({kr.resolved_env_var()})",
+                    hide_input=True,
+                )
+                if key.strip():
+                    vault.add_key(kr.provider, key.strip())
+                    console.print(f"  [green]Stored {kr.provider}.[/green]")
+                else:
+                    console.print(f"[red]Cannot proceed without required key: {kr.provider}[/red]")
+                    raise SystemExit(1)
+            console.print()
+
+        if missing_optional:
+            for kr in missing_optional:
+                console.print(f"  [dim]Optional key missing: {kr.provider} ({kr.resolved_env_var()})[/dim]")
+    else:
+        # Fallback: check the model provider key exists
+        provider = manifest.runtime.default_model.provider
+        if model:
+            provider = model.split(":")[0] if ":" in model else provider
+
+        api_key = vault.get_key(provider)
+        if not api_key:
+            console.print(f"[red]No API key found for provider '{provider}'.[/red]")
+            console.print(f"Add one with: [cyan]agentstore keys add {provider} <your-key>[/cyan]")
+            console.print(f"Or run: [cyan]agentstore setup[/cyan]")
+            raise SystemExit(1)
+
+    env_vars = vault.get_env_vars()  # inject all stored keys
     manager = SandboxManager()
 
     if json_io:
@@ -219,6 +259,10 @@ def _run_chat(
         if not session.wait_ready(timeout=120):
             timer.stop()
             console.print("[red]Agent failed to start (no ready signal)[/red]")
+            stderr = session.stderr.strip()
+            if stderr:
+                console.print(f"[red]Agent stderr:[/red]\n{stderr}")
+            session.shutdown()
             raise SystemExit(1)
 
         timer.stop()
@@ -232,6 +276,21 @@ def _run_chat(
                 console.print("\n[dim]Ending session...[/dim]")
                 break
 
+            # Buffer pasted multi-line input: if more lines arrive
+            # within a short window they're part of the same paste.
+            import select, sys as _sys, time as _time
+
+            _paste_lines = [user_input]
+            while True:
+                ready, _, _ = select.select([_sys.stdin], [], [], 0.05)
+                if not ready:
+                    break
+                extra = _sys.stdin.readline()
+                if not extra:
+                    break
+                _paste_lines.append(extra.rstrip("\n"))
+            user_input = "\n".join(_paste_lines)
+
             if user_input.strip().lower() in ("exit", "quit", "/exit", "/quit"):
                 console.print("[dim]Ending session...[/dim]")
                 break
@@ -239,9 +298,23 @@ def _run_chat(
             if not user_input.strip():
                 continue
 
+            if not session.is_alive:
+                console.print("[red]Agent process exited unexpectedly.[/red]")
+                stderr = session.stderr.strip()
+                if stderr:
+                    console.print(f"[red]Agent stderr:[/red]\n{stderr}")
+                break
+
             msg_counter += 1
             message_id = f"msg_{msg_counter:04d}"
-            session.send_message(user_input, message_id)
+            try:
+                session.send_message(user_input, message_id)
+            except Exception as e:
+                console.print(f"[red]Failed to send message:[/red] {e}")
+                stderr = session.stderr.strip()
+                if stderr:
+                    console.print(f"[red]Agent stderr:[/red]\n{stderr}")
+                break
 
             # Read responses until we get a done=true response
             while True:
@@ -267,6 +340,9 @@ def _run_chat(
 
             if not session.is_alive:
                 console.print("[red]Agent process exited unexpectedly.[/red]")
+                stderr = session.stderr.strip()
+                if stderr:
+                    console.print(f"[red]Agent stderr:[/red]\n{stderr}")
                 break
 
     finally:

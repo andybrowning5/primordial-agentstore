@@ -1,35 +1,30 @@
-"""Docker AI Sandbox manager for running agents in isolated MicroVMs."""
+"""E2B sandbox manager for running agents in isolated Firecracker microVMs."""
 
 from __future__ import annotations
 
+import io
 import json
+import os
 import queue
-import subprocess
+import tarfile
 import threading
-import uuid
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Optional
 
+from e2b import Sandbox
+
 from agentstore.models import AgentManifest
 
-AGENT_DIR_IN_SANDBOX = "/home/agent/agent"
-VENV_DIR = "/home/agent/venv"
-VENV_PYTHON = "/home/agent/venv/bin/python"
-STATE_DIR_IN_SANDBOX = "/home/agent/state"
-AGENT_HOME_IN_SANDBOX = "/home/agent"
+AGENT_HOME_IN_SANDBOX = "/home/user"
+AGENT_DIR_IN_SANDBOX = "/home/user/agent"
+SDK_DIR_IN_SANDBOX = "/home/user/agentstore-sdk"
+SKILL_FILE = Path(__file__).parent / "skill.md"
+SKILL_DEST = "/home/user/skill.md"
+# SDK source — relative to this file: sandbox/manager.py -> up to agentstore -> up to src -> up to client -> up to packages -> up to root -> sdk
+SDK_SOURCE_DIR = Path(__file__).resolve().parents[5] / "sdk"
 _STATE_EXCLUDE_DIRS = [
     "agent", "venv", "workspace", "agentstore-sdk",
     ".cache", ".local", ".npm", ".docker",
-]
-
-LLM_API_DOMAINS = [
-    "api.anthropic.com",
-    "api.openai.com",
-    "api.groq.com",
-    "generativelanguage.googleapis.com",
-    "api.mistral.ai",
-    "api.deepseek.com",
 ]
 
 
@@ -38,313 +33,59 @@ class SandboxError(Exception):
 
 
 class SandboxManager:
-    """Manages Docker AI Sandboxes for agent execution."""
+    """Manages E2B sandboxes for agent execution."""
 
-    @staticmethod
-    def _exec_cmd(
-        sandbox_name: str,
-        command: list[str],
-        env_vars: Optional[dict[str, str]] = None,
-        interactive: bool = False,
-    ) -> list[str]:
-        """Build a 'docker sandbox exec' command."""
-        cmd = ["docker", "sandbox", "exec"]
-        if interactive:
-            cmd.append("-i")
-        if env_vars:
-            for key, value in env_vars.items():
-                cmd.extend(["-e", f"{key}={value}"])
-        cmd.append(sandbox_name)
-        cmd.extend(command)
-        return cmd
+    def _ensure_e2b_api_key(self, env_vars: dict[str, str]) -> None:
+        """Ensure E2B_API_KEY is available, checking env_vars and os.environ."""
+        if os.environ.get("E2B_API_KEY"):
+            return
+        if "E2B_API_KEY" in env_vars:
+            os.environ["E2B_API_KEY"] = env_vars["E2B_API_KEY"]
+            return
+        raise SandboxError(
+            "E2B API key not found. Add one with:\n"
+            "  agentstore keys add e2b <your-key>\n"
+            "  or: agentstore setup\n"
+            "  or: export E2B_API_KEY=<your-key>\n"
+            "Get your key at https://e2b.dev/dashboard"
+        )
 
-    def _check_docker_sandbox(self) -> bool:
-        try:
-            result = subprocess.run(
-                ["docker", "sandbox", "ls"],
-                capture_output=True, text=True, timeout=10,
-            )
-            return result.returncode == 0
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            return False
+    def _upload_directory(self, sandbox: Sandbox, local_dir: Path, remote_dir: str) -> None:
+        """Upload a local directory to the sandbox via tar."""
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            tar.add(str(local_dir), arcname=".")
+        buf.seek(0)
+        sandbox.files.write(f"/tmp/_upload.tar.gz", buf)
+        sandbox.commands.run(f"mkdir -p {remote_dir} && tar xzf /tmp/_upload.tar.gz -C {remote_dir} && rm /tmp/_upload.tar.gz")
 
-    def _get_allowed_domains(self, manifest: AgentManifest) -> list[str]:
-        domains = set(LLM_API_DOMAINS)
-        for net_perm in manifest.permissions.network:
-            domains.add(net_perm.domain)
-        domains.add("pypi.org")
-        domains.add("files.pythonhosted.org")
-        domains.add("registry.npmjs.org")
-        return sorted(domains)
+    def _upload_skill(self, sandbox: Sandbox) -> None:
+        """Upload the built-in skill.md into the sandbox."""
+        if not SKILL_FILE.exists():
+            return
+        sandbox.files.write(SKILL_DEST, SKILL_FILE.read_text())
 
-    def create_sandbox(self, name: str, workspace: Path, template: str = "claude") -> str:
-        """Create a Docker AI Sandbox."""
-        workspace.mkdir(parents=True, exist_ok=True)
-        cmd = [
-            "docker", "sandbox", "create",
-            "--name", name,
-            template,
-            str(workspace),
-        ]
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-            if result.returncode != 0:
-                raise SandboxError(f"Failed to create sandbox: {result.stderr.strip()}")
-        except subprocess.TimeoutExpired:
-            raise SandboxError("Timeout creating sandbox")
-        return name
-
-    def _apply_network_policy(self, name: str, manifest: AgentManifest) -> None:
-        """Apply deny-by-default network policy after deps are installed."""
-        proxy_cmd = [
-            "docker", "sandbox", "network", "proxy", name,
-            "--policy", "deny",
-        ]
-        for domain in self._get_allowed_domains(manifest):
-            proxy_cmd.extend(["--allow-host", domain])
-        try:
-            subprocess.run(proxy_cmd, capture_output=True, text=True, timeout=30)
-        except subprocess.TimeoutExpired:
-            pass
-
-    def _copy_state_to_sandbox(self, sandbox_name: str, state_dir: Path) -> None:
+    def _restore_state(self, sandbox: Sandbox, state_dir: Path) -> None:
         """Restore agent's home directory state from a previous run."""
         if not state_dir.exists() or not any(state_dir.iterdir()):
             return
-        tar_proc = subprocess.Popen(
-            ["tar", "cf", "-", "-C", str(state_dir), "."],
-            stdout=subprocess.PIPE,
-        )
-        extract_cmd = self._exec_cmd(
-            sandbox_name,
-            ["bash", "-c", f"tar xf - -C {AGENT_HOME_IN_SANDBOX}"],
-            interactive=True,
-        )
-        extract_proc = subprocess.Popen(
-            extract_cmd, stdin=tar_proc.stdout,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-        )
-        tar_proc.stdout.close()
-        _, stderr = extract_proc.communicate(timeout=60)
-        if extract_proc.returncode != 0:
-            raise SandboxError(f"Failed to restore state to sandbox: {stderr.strip()}")
+        self._upload_directory(sandbox, state_dir, AGENT_HOME_IN_SANDBOX)
 
-    def _copy_state_from_sandbox(self, sandbox_name: str, state_dir: Path) -> None:
+    def _save_state(self, sandbox: Sandbox, state_dir: Path) -> None:
         """Snapshot the agent's home directory back to host."""
         state_dir.mkdir(parents=True, exist_ok=True)
         exclude_args = " ".join(f"--exclude='./{d}'" for d in _STATE_EXCLUDE_DIRS)
-        tar_cmd = self._exec_cmd(
-            sandbox_name,
-            ["bash", "-c", f"tar cf - {exclude_args} -C {AGENT_HOME_IN_SANDBOX} . 2>/dev/null || true"],
-            interactive=True,
+        tmp_path = "/tmp/_state_snapshot.tar.gz"
+        result = sandbox.commands.run(
+            f"tar czf {tmp_path} {exclude_args} -C {AGENT_HOME_IN_SANDBOX} . 2>/dev/null; true"
         )
-        tar_proc = subprocess.Popen(tar_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        extract_proc = subprocess.Popen(
-            ["tar", "xf", "-", "-C", str(state_dir)],
-            stdin=tar_proc.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-        )
-        tar_proc.stdout.close()
-        extract_proc.communicate(timeout=60)
-
-    def _copy_agent_to_sandbox(self, sandbox_name: str, agent_dir: Path) -> None:
-        """Copy agent code into the sandbox via tar pipe."""
-        tar_proc = subprocess.Popen(
-            ["tar", "cf", "-", "-C", str(agent_dir), "."],
-            stdout=subprocess.PIPE,
-        )
-        extract_cmd = self._exec_cmd(
-            sandbox_name,
-            ["bash", "-c", f"mkdir -p {AGENT_DIR_IN_SANDBOX} && tar xf - -C {AGENT_DIR_IN_SANDBOX}"],
-            interactive=True,
-        )
-        extract_proc = subprocess.Popen(
-            extract_cmd, stdin=tar_proc.stdout,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-        )
-        tar_proc.stdout.close()
-        _, stderr = extract_proc.communicate(timeout=60)
-        if extract_proc.returncode != 0:
-            raise SandboxError(f"Failed to copy agent code to sandbox: {stderr.strip()}")
-
-    def _create_venv(self, sandbox_name: str) -> None:
-        """Create a Python virtual environment inside the sandbox using uv."""
-        exec_cmd = self._exec_cmd(sandbox_name, ["uv", "venv", VENV_DIR])
-        result = subprocess.run(exec_cmd, capture_output=True, text=True, timeout=30)
-        if result.returncode != 0:
-            error_detail = result.stderr.strip() or result.stdout.strip()
-            raise SandboxError(f"Failed to create venv: {error_detail[:300]}")
-
-    def _uv_install(self, sandbox_name: str, install_args: list[str]) -> None:
-        """Run 'uv pip install' targeting the sandbox venv."""
-        cmd = ["uv", "pip", "install", "--python", VENV_PYTHON] + install_args
-        exec_cmd = self._exec_cmd(sandbox_name, cmd)
-        result = subprocess.run(exec_cmd, capture_output=True, text=True, timeout=300)
-        if result.returncode != 0:
-            error_detail = result.stderr.strip() or result.stdout.strip()
-            raise SandboxError(f"Failed to install packages: {error_detail[:500]}")
-
-    def _install_python_deps(self, sandbox_name: str, manifest: AgentManifest) -> None:
-        """Install Python dependencies inside the sandbox using uv."""
-        deps_name = manifest.runtime.dependencies
-        if deps_name.endswith("pyproject.toml"):
-            self._uv_install(sandbox_name, [f"{AGENT_DIR_IN_SANDBOX}/"])
-        else:
-            self._uv_install(sandbox_name, ["-r", f"{AGENT_DIR_IN_SANDBOX}/{deps_name}"])
-
-    def _copy_sdk_to_sandbox(self, sandbox_name: str) -> bool:
-        """Copy the agentstore-sdk source into the sandbox. Returns True if copied."""
-        sdk_dir = Path(__file__).resolve().parents[5] / "sdk"
-        if not (sdk_dir / "pyproject.toml").exists():
-            return False
-        tar_proc = subprocess.Popen(
-            ["tar", "cf", "-", "-C", str(sdk_dir), "."],
-            stdout=subprocess.PIPE,
-        )
-        extract_cmd = self._exec_cmd(
-            sandbox_name,
-            ["bash", "-c", "mkdir -p /home/agent/agentstore-sdk && tar xf - -C /home/agent/agentstore-sdk"],
-            interactive=True,
-        )
-        extract_proc = subprocess.Popen(
-            extract_cmd, stdin=tar_proc.stdout,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-        )
-        tar_proc.stdout.close()
-        extract_proc.communicate(timeout=60)
-        return True
-
-    def _run_setup_command(self, sandbox_name: str, command: str, env_vars: dict[str, str]) -> None:
-        """Run an arbitrary setup command inside the sandbox."""
-        exec_cmd = self._exec_cmd(
-            sandbox_name,
-            ["bash", "-c", f"cd {AGENT_DIR_IN_SANDBOX} && {command}"],
-            env_vars=env_vars,
-        )
-        result = subprocess.run(exec_cmd, capture_output=True, text=True, timeout=600)
-        if result.returncode != 0:
-            error_detail = result.stderr.strip() or result.stdout.strip()
-            raise SandboxError(f"Setup command failed: {error_detail[:500]}")
-
-    def _setup_python_agent(
-        self,
-        sandbox_name: str,
-        agent_dir: Path,
-        manifest: AgentManifest,
-        env_vars: dict[str, str],
-        on_status: callable,
-    ) -> None:
-        """Python-specific setup: venv, SDK, pip install."""
-        on_status("Setting up Python environment...")
-        self._create_venv(sandbox_name)
-
-        on_status("Installing Agent Store SDK...")
-        sdk_copied = self._copy_sdk_to_sandbox(sandbox_name)
-        if sdk_copied:
-            self._uv_install(sandbox_name, ["/home/agent/agentstore-sdk/"])
-
-        if manifest.runtime.dependencies:
-            deps_file = agent_dir / manifest.runtime.dependencies
-            if deps_file.exists():
-                on_status("Installing dependencies...")
-                self._install_python_deps(sandbox_name, manifest)
-
-    def _setup_generic_agent(
-        self,
-        sandbox_name: str,
-        manifest: AgentManifest,
-        env_vars: dict[str, str],
-        on_status: callable,
-    ) -> None:
-        """Generic setup: run the setup_command if provided."""
-        if manifest.runtime.setup_command:
-            on_status("Running setup command...")
-            self._run_setup_command(sandbox_name, manifest.runtime.setup_command, env_vars)
-
-    def _setup_sandbox(
-        self,
-        sandbox_name: str,
-        agent_dir: Path,
-        manifest: AgentManifest,
-        workspace: Path,
-        env_vars: dict[str, str],
-        state_dir: Optional[Path] = None,
-        on_status: Optional[callable] = None,
-    ) -> None:
-        """Full sandbox setup: create, copy code, install deps, lock network."""
-        def _status(msg: str) -> None:
-            if on_status:
-                on_status(msg)
-
-        template = manifest.runtime.sandbox_template
-        _status("Creating sandbox...")
-        self.create_sandbox(sandbox_name, workspace, template=template)
-
-        # Copy agent code + restore state in parallel
-        _status("Copying agent code...")
-        errors: list[str] = []
-
-        def _do_copy():
-            try:
-                self._copy_agent_to_sandbox(sandbox_name, agent_dir)
-            except SandboxError as e:
-                errors.append(str(e))
-
-        def _do_state():
-            try:
-                if state_dir:
-                    self._copy_state_to_sandbox(sandbox_name, state_dir)
-            except SandboxError as e:
-                errors.append(str(e))
-
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            pool.submit(_do_copy)
-            pool.submit(_do_state)
-
-        if errors:
-            raise SandboxError(errors[0])
-
-        # Language-specific setup
-        uses_python_sdk = manifest.runtime.entry_point is not None
-        if uses_python_sdk:
-            self._setup_python_agent(sandbox_name, agent_dir, manifest, env_vars, _status)
-        else:
-            self._setup_generic_agent(sandbox_name, manifest, env_vars, _status)
-
-        _status("Applying network policy...")
-        self._apply_network_policy(sandbox_name, manifest)
-
-    def _build_exec_command(
-        self,
-        sandbox_name: str,
-        manifest: AgentManifest,
-        env_vars: dict[str, str],
-    ) -> list[str]:
-        """Build the command to start the agent process."""
-        if manifest.runtime.run_command:
-            # Generic agent: run the specified command
-            return self._exec_cmd(
-                sandbox_name,
-                ["bash", "-c", f"cd {AGENT_DIR_IN_SANDBOX} && {manifest.runtime.run_command}"],
-                env_vars=env_vars,
-                interactive=True,
-            )
-        else:
-            # Python SDK agent: bootstrap via entry_point
-            module_path, func_name = manifest.runtime.entry_point.rsplit(":", 1)
-            bootstrap_script = f"""
-import sys
-sys.path.insert(0, '{AGENT_DIR_IN_SANDBOX}/src')
-sys.path.insert(0, '{AGENT_DIR_IN_SANDBOX}')
-from {module_path.replace('/', '.')} import {func_name}
-agent = {func_name}()
-agent.run_loop()
-"""
-            return self._exec_cmd(
-                sandbox_name,
-                [VENV_PYTHON, "-u", "-c", bootstrap_script],
-                env_vars=env_vars,
-                interactive=True,
-            )
+        try:
+            tar_bytes = sandbox.files.read(tmp_path)
+            tar_stream = tarfile.open(fileobj=io.BytesIO(tar_bytes))
+            tar_stream.extractall(path=str(state_dir))
+            tar_stream.close()
+        except Exception:
+            pass
 
     def run_agent(
         self,
@@ -355,118 +96,149 @@ agent.run_loop()
         state_dir: Optional[Path] = None,
         on_status: Optional[callable] = None,
     ) -> AgentSession:
-        """Start an agent session.
+        """Start an agent session in an E2B sandbox."""
+        self._ensure_e2b_api_key(env_vars)
 
-        Returns an AgentSession that the caller uses to send/receive
-        NDJSON messages. The caller is responsible for calling session.shutdown()
-        when done.
-        """
-        if not self._check_docker_sandbox():
-            raise SandboxError(
-                "Docker AI Sandbox support not available. "
-                "Install Docker Desktop 4.40+ with sandbox support enabled. "
-                "See: https://docs.docker.com/ai/sandboxes/"
-            )
+        def _status(msg: str) -> None:
+            if on_status:
+                on_status(msg)
 
-        sandbox_name = f"as-{manifest.name}-{uuid.uuid4().hex[:8]}"
-        self._setup_sandbox(
-            sandbox_name, agent_dir, manifest, workspace, env_vars,
-            state_dir=state_dir, on_status=on_status,
+        _status("Creating sandbox...")
+        timeout = manifest.runtime.resources.max_session_duration
+        sandbox = Sandbox.create(
+            template=manifest.runtime.e2b_template,
+            envs=env_vars,
+            timeout=timeout,
         )
 
-        exec_cmd = self._build_exec_command(sandbox_name, manifest, env_vars)
-
-        proc = subprocess.Popen(
-            exec_cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-
-        return AgentSession(
-            process=proc,
-            sandbox_name=sandbox_name,
-            manager=self,
-            state_dir=state_dir,
-        )
-
-    def _destroy_sandbox(self, name: str) -> None:
-        """Stop and remove a sandbox."""
         try:
-            subprocess.run(
-                ["docker", "sandbox", "stop", name],
-                capture_output=True, text=True, timeout=15,
+            _status("Uploading agent code...")
+            self._upload_directory(sandbox, agent_dir, AGENT_DIR_IN_SANDBOX)
+
+            self._upload_skill(sandbox)
+
+            if state_dir:
+                _status("Restoring state...")
+                self._restore_state(sandbox, state_dir)
+
+            # Install agentstore-sdk if available locally (not yet on PyPI)
+            if SDK_SOURCE_DIR.exists() and (SDK_SOURCE_DIR / "pyproject.toml").exists():
+                _status("Installing Agent Store SDK...")
+                self._upload_directory(sandbox, SDK_SOURCE_DIR, SDK_DIR_IN_SANDBOX)
+                sdk_result = sandbox.commands.run(
+                    f"pip install {SDK_DIR_IN_SANDBOX}/",
+                    timeout=120,
+                )
+                if sdk_result.exit_code != 0:
+                    error_detail = (sdk_result.stderr or sdk_result.stdout or "")[:500]
+                    raise SandboxError(f"SDK installation failed: {error_detail}")
+
+            if manifest.runtime.setup_command:
+                _status("Running setup command...")
+                result = sandbox.commands.run(
+                    f"cd {AGENT_DIR_IN_SANDBOX} && {manifest.runtime.setup_command}",
+                    timeout=600,
+                )
+                if result.exit_code != 0:
+                    error_detail = (result.stderr or result.stdout or "")[:500]
+                    raise SandboxError(f"Setup command failed: {error_detail}")
+
+            _status("Starting agent...")
+            messages: queue.Queue[dict[str, Any]] = queue.Queue()
+            stderr_lines: list[str] = []
+
+            cmd_handle = sandbox.commands.run(
+                f"cd {AGENT_DIR_IN_SANDBOX} && {manifest.runtime.run_command}",
+                background=True,
+                stdin=True,
+                timeout=0,  # No connection timeout — agent sessions are long-lived
+            )
+
+            def _on_stdout(data: str) -> None:
+                for line in data.split("\n"):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        msg = json.loads(line)
+                        messages.put(msg)
+                    except json.JSONDecodeError:
+                        continue
+
+            def _on_stderr(data: str) -> None:
+                stderr_lines.append(data)
+
+            return AgentSession(
+                sandbox=sandbox,
+                cmd_handle=cmd_handle,
+                messages=messages,
+                stderr_lines=stderr_lines,
+                on_stdout=_on_stdout,
+                on_stderr=_on_stderr,
+                manager=self,
+                state_dir=state_dir,
             )
         except Exception:
-            pass
-        try:
-            subprocess.run(
-                ["docker", "sandbox", "rm", name],
-                capture_output=True, text=True, timeout=30,
-            )
-        except Exception:
-            pass
-
-    def list_sandboxes(self) -> list[dict]:
-        try:
-            result = subprocess.run(
-                ["docker", "sandbox", "ls", "--format", "json"],
-                capture_output=True, text=True, timeout=10,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                sandboxes = json.loads(result.stdout)
-                return [s for s in sandboxes if s.get("Name", "").startswith("as-")]
-            return []
-        except Exception:
-            return []
+            try:
+                sandbox.kill()
+            except Exception:
+                pass
+            raise
 
 
 class AgentSession:
-    """Wraps a running agent process with NDJSON communication."""
+    """Wraps a running agent process in an E2B sandbox with NDJSON communication."""
 
     def __init__(
         self,
-        process: subprocess.Popen,
-        sandbox_name: str,
+        sandbox: Sandbox,
+        cmd_handle: Any,
+        messages: queue.Queue[dict[str, Any]],
         manager: SandboxManager,
         state_dir: Optional[Path] = None,
+        stderr_lines: Optional[list[str]] = None,
+        on_stdout: Optional[Any] = None,
+        on_stderr: Optional[Any] = None,
     ):
-        self._proc = process
-        self._sandbox_name = sandbox_name
+        self._sandbox = sandbox
+        self._cmd_handle = cmd_handle
+        self._messages = messages
         self._manager = manager
         self._state_dir = state_dir
-        self._messages: queue.Queue[dict[str, Any]] = queue.Queue()
+        self._stderr_lines = stderr_lines or []
+        self._on_stdout = on_stdout
+        self._on_stderr = on_stderr
         self._alive = True
-        self._reader = threading.Thread(target=self._read_stdout, daemon=True)
-        self._reader.start()
 
-    def _read_stdout(self) -> None:
+        # Drive the event loop in a background thread — this is what
+        # delivers stdout/stderr data from the E2B command handle.
+        self._reader_thread = threading.Thread(target=self._drive_events, daemon=True)
+        self._reader_thread.start()
+
+    def _drive_events(self) -> None:
         try:
-            for line in self._proc.stdout:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    msg = json.loads(line)
-                    self._messages.put(msg)
-                except json.JSONDecodeError:
-                    continue
-        except (ValueError, OSError):
+            self._cmd_handle.wait(
+                on_stdout=self._on_stdout,
+                on_stderr=self._on_stderr,
+            )
+        except Exception:
             pass
         finally:
             self._alive = False
 
     @property
     def is_alive(self) -> bool:
-        return self._alive and self._proc.poll() is None
+        return self._alive
+
+    @property
+    def stderr(self) -> str:
+        return "".join(self._stderr_lines)
 
     def send_message(self, content: str, message_id: str) -> None:
         msg = json.dumps({
             "type": "message", "content": content, "message_id": message_id,
         })
-        self._proc.stdin.write(msg + "\n")
-        self._proc.stdin.flush()
+        self._sandbox.commands.send_stdin(self._cmd_handle.pid, msg + "\n")
 
     def receive(self, timeout: float = 60.0) -> Optional[dict[str, Any]]:
         try:
@@ -484,19 +256,17 @@ class AgentSession:
         try:
             if self.is_alive:
                 shutdown_msg = json.dumps({"type": "shutdown"})
-                self._proc.stdin.write(shutdown_msg + "\n")
-                self._proc.stdin.flush()
-                self._proc.wait(timeout=10)
+                self._sandbox.commands.send_stdin(self._cmd_handle.pid, shutdown_msg + "\n")
+                self._reader_thread.join(timeout=10)
         except Exception:
             pass
         finally:
-            if self._proc.poll() is None:
-                self._proc.kill()
             if self._state_dir:
                 try:
-                    self._manager._copy_state_from_sandbox(
-                        self._sandbox_name, self._state_dir,
-                    )
+                    self._manager._save_state(self._sandbox, self._state_dir)
                 except Exception:
                     pass
-            self._manager._destroy_sandbox(self._sandbox_name)
+            try:
+                self._sandbox.kill()
+            except Exception:
+                pass
