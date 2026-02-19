@@ -80,7 +80,7 @@ class SandboxManager:
             f"tar czf {tmp_path} {exclude_args} -C {AGENT_HOME_IN_SANDBOX} . 2>/dev/null; true"
         )
         try:
-            tar_bytes = sandbox.files.read(tmp_path)
+            tar_bytes = sandbox.files.read(tmp_path, format="bytes")
             tar_stream = tarfile.open(fileobj=io.BytesIO(tar_bytes))
             tar_stream.extractall(path=str(state_dir))
             tar_stream.close()
