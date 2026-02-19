@@ -8,7 +8,7 @@ import re
 import shutil
 import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -136,8 +136,7 @@ def _inject_known_agent(repo_id: str, cache_path: Path) -> bool:
     """
     wrappers_dir = Path(__file__).parent / "wrappers"
     # Map repo identifiers to wrapper directories
-    wrapper_map = {
-        "openclaw/openclaw": "openclaw",
+    wrapper_map: dict[str, str] = {
     }
     wrapper_name = wrapper_map.get(repo_id)
     if not wrapper_name:

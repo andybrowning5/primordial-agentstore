@@ -1,6 +1,7 @@
 """CLI command for running agents."""
 
 import json
+import select
 import sys
 import threading
 import time
@@ -8,8 +9,6 @@ import uuid
 from pathlib import Path
 
 import click
-from prompt_toolkit import prompt as pt_prompt
-from prompt_toolkit.formatted_text import HTML
 from rich.console import Console
 from rich.live import Live
 from rich.text import Text
@@ -278,18 +277,16 @@ def _run_chat(
 
             # Buffer pasted multi-line input: if more lines arrive
             # within a short window they're part of the same paste.
-            import select, sys as _sys, time as _time
-
-            _paste_lines = [user_input]
+            paste_lines = [user_input]
             while True:
-                ready, _, _ = select.select([_sys.stdin], [], [], 0.05)
+                ready, _, _ = select.select([sys.stdin], [], [], 0.05)
                 if not ready:
                     break
-                extra = _sys.stdin.readline()
+                extra = sys.stdin.readline()
                 if not extra:
                     break
-                _paste_lines.append(extra.rstrip("\n"))
-            user_input = "\n".join(_paste_lines)
+                paste_lines.append(extra.rstrip("\n"))
+            user_input = "\n".join(paste_lines)
 
             if user_input.strip().lower() in ("exit", "quit", "/exit", "/quit"):
                 console.print("[dim]Ending session...[/dim]")

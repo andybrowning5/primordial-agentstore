@@ -94,7 +94,7 @@ class SandboxManager:
         workspace: Path,
         env_vars: dict[str, str],
         state_dir: Optional[Path] = None,
-        on_status: Optional[callable] = None,
+        on_status: Optional[Any] = None,
     ) -> AgentSession:
         """Start an agent session in an E2B sandbox."""
         self._ensure_e2b_api_key(env_vars)
