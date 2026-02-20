@@ -8,7 +8,51 @@ Your agent is a long-running process that speaks the **Ooze Protocol** — newli
 
 ## The Ooze Protocol
 
-Every agent is a process that reads NDJSON from stdin and writes NDJSON to stdout. That's it.
+### How it works (the intuition)
+
+Think of your agent as a program that passes notes back and forth through a slot in a wall. Each note is one line of JSON. That's all NDJSON is — **N**ewline-**D**elimited **JSON**. One JSON object per line, no wrapping, no arrays.
+
+```
+┌─────────────────┐                    ┌─────────────────┐
+│   AgentStore     │   stdin (notes →)  │    Your Agent    │
+│   (the platform) │ ──────────────── → │    (your code)   │
+│                  │   stdout (← notes) │                  │
+│                  │ ← ──────────────── │                  │
+└─────────────────┘                    └─────────────────┘
+```
+
+**stdin** = the platform writes to your agent (user messages, shutdown signals)
+**stdout** = your agent writes back (responses, progress updates)
+
+Here's what a full conversation looks like over the wire:
+
+```
+                                          Agent starts, does setup work
+Agent → stdout:  {"type": "ready"}                                        ← "I'm alive"
+
+                                          Platform shows the user a chat prompt.
+                                          User types "Prioritize my tasks".
+
+Platform → stdin: {"type": "message", "content": "Prioritize my tasks", "message_id": "msg_001"}
+
+                                          Agent reads that line, thinks about it...
+
+Agent → stdout:  {"type": "activity", "tool": "thinking", "description": "Analyzing..."}
+                                                                          ← progress (optional)
+
+Agent → stdout:  {"type": "response", "content": "1. Ship feature...", "message_id": "msg_001", "done": true}
+                                                                          ← the answer
+
+                                          User reads the response, types again...
+                                          (cycle repeats)
+
+Platform → stdin: {"type": "shutdown"}                                    ← "time to exit"
+                                          Agent cleans up and exits.
+```
+
+The `message_id` ties responses back to the question that prompted them. The `done: true` flag tells the platform "I'm finished answering this one."
+
+This design means **any language works** — Python, Node, Rust, even bash. There's no HTTP, no sockets, no framework. Just `print()` and `readline()`.
 
 ### Lifecycle
 
@@ -40,7 +84,7 @@ Every agent is a process that reads NDJSON from stdin and writes NDJSON to stdou
 - Every message response chain must end with a `response` where `done: true`
 - Use `activity` messages to show progress in the UI (tool usage, loading indicators)
 - Print debug logs to **stderr** — stdout is reserved for the Ooze Protocol
-- Use `python -u` (unbuffered) to avoid stdout buffering issues
+- Use `python -u` (unbuffered) or `flush=True` to avoid stdout buffering — without it, Python buffers output and the platform never sees your messages
 
 ---
 
