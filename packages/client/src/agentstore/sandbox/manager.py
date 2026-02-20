@@ -158,11 +158,7 @@ class SandboxManager:
             _status("Uploading agent code...")
             self._upload_directory(sandbox, agent_dir, AGENT_DIR_IN_SANDBOX)
 
-            if workspace.is_dir():
-                _status("Uploading workspace...")
-                self._upload_directory(sandbox, workspace, WORKSPACE_DIR_IN_SANDBOX)
-            else:
-                sandbox.commands.run(f"mkdir -p {WORKSPACE_DIR_IN_SANDBOX}")
+            sandbox.commands.run(f"mkdir -p {WORKSPACE_DIR_IN_SANDBOX}")
 
             self._upload_skill(sandbox)
 
