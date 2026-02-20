@@ -9,7 +9,7 @@
 ## Install
 
 ```bash
-pip install primordial
+pip install primordial-agentstore
 ```
 
 ## Run Your First Agent

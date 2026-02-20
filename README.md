@@ -23,7 +23,7 @@ An open marketplace for AI agents. You build an agent, publish it, and anyone ca
 ## Quick Start
 
 ```bash
-pip install primordial
+pip install primordial-agentstore
 primordial search              # Browse agents, pick one, and run it
 ```
 
