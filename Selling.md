@@ -49,9 +49,11 @@ Every agent runs in its own Firecracker microVM. Your API keys never touch the a
 
 **The use case I'm most excited about: agent delegation.**
 
-Think about something like [OpenClaw](https://openclaw.ai/) — the open-source AI agent that's been blowing up lately (175k+ GitHub stars). It can already spin up a terminal and orchestrate a team of Claude Code or Codex agents. Now imagine if agents like OpenClaw could also spawn specialist sub-agents from a shared marketplace mid-task. Need web research? Delegate to a research agent. Need task prioritization? Spin up a specialist. Each sub-agent runs in its own sandbox with its own permissions — fully isolated.
+Think about something like [OpenClaw](https://openclaw.ai/) — the open-source AI agent that's been blowing up lately (175k+ GitHub stars). It can already spin up instances of Claude Code to delegate work — coding tasks, file edits, research. That delegation pattern is incredibly powerful.
 
-That's what Primordial enables. Agents that compose other agents. Not one monolith trying to do everything — a network of specialists, each doing one thing well, each sandboxed independently.
+Primordial is a natural extension of that workflow. Instead of only delegating to general-purpose coding agents, imagine OpenClaw pulling in purpose-built specialists from a shared marketplace. Need real-time web research? Delegate to a research agent. Need task prioritization? Spin up a specialist. Need data analysis? There's an agent for that. Each one runs in its own sandbox with its own permissions — fully isolated, fully auditable.
+
+The agents already exist as GitHub repos. OpenClaw (or any orchestrator) just needs to call `primordial run <repo> --agent-read` and it gets a sandboxed specialist communicating over stdin/stdout. Same delegation pattern it already uses, but with access to an entire ecosystem of purpose-built tools.
 
 I'm early and the marketplace is small, but the infrastructure is solid and the developer experience is something I'm really proud of. If you're building agents and want a dead-simple way to share them — or if you have an existing agent you want to make available to others — check it out.
 
