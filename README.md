@@ -54,7 +54,13 @@ primordial keys add anthropic sk-ant-...  # Add a specific key
 ```
 
 ---
+## Demo Video: 
 
+
+https://github.com/user-attachments/assets/ba5a0700-fdfe-4fc4-b1c3-de9bdb8120bb
+
+
+---
 ## Documentation
 
 See **[docs/](docs/)** for all guides:
