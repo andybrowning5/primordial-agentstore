@@ -24,6 +24,41 @@ from primordial.cli.helix import HelixSpinner
 console = Console()
 
 
+def _input_with_placeholder(prompt: str, placeholder: str) -> str:
+    """Show a prompt with dim placeholder text that vanishes on first keystroke."""
+    import readline  # noqa: F401 — ensures line editing works for input()
+    import termios
+    import tty
+
+    # Print prompt + dim placeholder, cursor after prompt
+    prompt_ansi = f"\033[1m{prompt}\033[0m"
+    placeholder_ansi = f"\033[2m{placeholder}\033[0m"
+    sys.stdout.write(f"{prompt_ansi}{placeholder_ansi}")
+    # Move cursor back to right after the prompt
+    sys.stdout.write(f"\r{prompt_ansi}")
+    sys.stdout.flush()
+
+    # Read one character in raw mode to detect first keystroke
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        first = sys.stdin.read(1)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+    if first in ("\x03", "\x04"):  # Ctrl+C / Ctrl+D
+        raise KeyboardInterrupt if first == "\x03" else EOFError
+
+    # Clear the line and rewrite prompt + first char, then read the rest
+    sys.stdout.write(f"\r\033[2K{prompt_ansi}{first}")
+    sys.stdout.flush()
+
+    # Use normal input() for the rest (with readline support)
+    rest = input()
+    return first + rest
+
+
 def _detect_host_tz() -> str | None:
     """Detect the host machine's IANA timezone (e.g. 'America/New_York')."""
     if tz := os.environ.get("TZ"):
@@ -131,6 +166,21 @@ def run(
 
     # Validate required API keys from manifest and prompt for missing ones
     vault = KeyVault(config.keys_file)
+
+    # E2B key is always required for sandbox runtime
+    if not vault.get_key("e2b"):
+        console.print(
+            "\n[bold yellow]E2B API key required[/bold yellow]\n"
+            "[dim]Primordial runs agents in E2B sandboxes. "
+            "Get a key at https://e2b.dev/dashboard[/dim]\n"
+        )
+        e2b_key = click.prompt("  Paste E2B_API_KEY", hide_input=True)
+        if e2b_key.strip():
+            vault.add_key("e2b", e2b_key.strip())
+            console.print("  [green]Stored e2b.[/green]\n")
+        else:
+            console.print("[red]E2B key is required to run agents.[/red]")
+            raise SystemExit(1)
 
     # Show permissions and ask for approval
     stored_providers = {e["provider"] for e in vault.list_keys()}
@@ -253,10 +303,15 @@ def _run_chat(
     try:
         console.print(f"[dim]{manifest.display_name} ready[/dim]\n")
         msg_counter = 0
+        first_prompt = True
 
         while True:
             try:
-                user_input = console.input("[bold]> [/bold]")
+                if first_prompt:
+                    user_input = _input_with_placeholder("> ", "Say something...")
+                    first_prompt = False
+                else:
+                    user_input = console.input("[bold]> [/bold]")
             except (EOFError, KeyboardInterrupt):
                 console.print("\n[dim]Ending session...[/dim]")
                 break
@@ -301,7 +356,7 @@ def _run_chat(
 
             # Read responses until we get a done=true response
             accumulated_content = ""
-            thinking = console.status("[dim]Thinking...[/dim]", spinner="dots")
+            thinking = console.status("[dim]Thinking...[/dim]", spinner="flip")
             thinking.start()
 
             while True:
@@ -331,7 +386,7 @@ def _run_chat(
                     tool = msg.get("tool", "?")
                     desc = msg.get("description", "")
                     console.print(f"  [dim]› {tool}: {desc}[/dim]")
-                    thinking = console.status("[dim]Thinking...[/dim]", spinner="dots")
+                    thinking = console.status("[dim]Thinking...[/dim]", spinner="flip")
                     thinking.start()
                 elif msg_type == "error":
                     thinking.stop()

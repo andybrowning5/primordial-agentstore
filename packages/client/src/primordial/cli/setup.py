@@ -1,48 +1,39 @@
 """Interactive first-run setup for Primordial AgentStore."""
 
+import time
+
 import click
-from rich.console import Console
-from rich.text import Text
+from rich.console import Console, Group
+from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 
 from primordial.config import get_config
 from primordial.security.key_vault import KeyVault
 from primordial.cli.providers import pick_provider
+from primordial.cli.helix import _helix_frame, _build_banner
 
 console = Console()
 
-_BANNER = r"""          ___           ___                       ___           ___
-         /\  \         /\  \          ___          /\__\         /\  \
-        /::\  \       /::\  \        /\  \        /::|  |       /::\  \
-       /:/\:\  \     /:/\:\  \       \:\  \      /:|:|  |      /:/\:\  \
-      /::\~\:\  \   /::\~\:\  \     /::\__\    /:/|:|__|__   /:/  \:\  \
-     /:/\:\ \:\__\ /:/\:\ \:\__\ __/:/\/__/   /:/ |::::\__\ /:/__/ \:\__\
-     \/__\:\/:/  / \/_|::\/:/  //\/:/  /      \/__/~~/:/  / \:\  \ /:/  /
-          \::/  /     |:|::/  / \::/__/             /:/  /   \:\  /:/  /
-           \/__/      |:|\/__/   \:\__\            /:/  /     \:\/:/  /
-                      |:|  |     \/__/            /:/  /       \::/  /
-                       \|__|                      \/__/         \/__/"""
-
-_DIVIDER = "    ─────────────────────────── AGENTSTORE ───────────────────────────"
-_SLOGAN = '          "Where lightning meets the digital soup."'
-_TAGLINE = "    Spawn agents from the broth. Let them compete, persist, evolve."
-
 
 def _print_banner() -> None:
-    console.print()
-    art = Text(_BANNER)
-    art.stylize("bold bright_green")
-    console.print(art)
-    div = Text(_DIVIDER)
-    div.stylize("bold bright_cyan")
-    console.print(div)
-    slogan = Text(_SLOGAN)
-    slogan.stylize("dim italic")
-    console.print(slogan)
-    tagline = Text(_TAGLINE)
-    tagline.stylize("dim")
-    console.print(tagline)
+    """Show the animated helix banner, morphing into a cell at the end."""
+    morph_start = 15   # 1s helix, then morph
+    morph_end = 30
+    hold_end = 45      # 1s hold
+    with Live(console=console, refresh_per_second=15) as live:
+        for frame in range(hold_end):
+            if frame < morph_start:
+                morph = 0.0
+            elif frame < morph_end:
+                morph = (frame - morph_start) / (morph_end - morph_start)
+            else:
+                morph = 1.0
+            helix = _helix_frame(frame * 0.18, morph=morph)
+            banner = _build_banner(helix)
+            live.update(Group(Text(""), banner))
+            time.sleep(1 / 15)
     console.print()
 
 

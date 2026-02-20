@@ -3,10 +3,24 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "primordial"
+name = "primordial-agentstore"
 version = "0.1.0"
-description = "Primordial AgentStore CLI"
+description = "Primordial AgentStore CLI — discover, install, and run AI agents"
+license = "MIT"
+authors = [{ name = "Andy Browning" }]
+readme = "README.md"
 requires-python = ">=3.11"
+keywords = ["ai", "agents", "cli", "llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+]
 dependencies = [
     "click>=8.1",
     "rich>=13.0",
@@ -17,6 +31,10 @@ dependencies = [
     "platformdirs>=4.0",
     "e2b>=1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/andybrowning/primordial"
+Repository = "https://github.com/andybrowning/primordial"
 
 [project.scripts]
 primordial = "primordial.cli.main:cli"

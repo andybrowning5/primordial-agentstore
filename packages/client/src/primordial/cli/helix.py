@@ -33,13 +33,37 @@ def _strand_char(dx: float, z: float) -> str:
     return "/" if z > -0.2 else "."
 
 
-def _helix_frame(phase: float) -> list[Text]:
+def _cell_chars(r: int, total: int) -> tuple[str, str]:
+    """Pick left/right characters for an organic cell membrane."""
+    if r == 1:
+        return ("(", ")")
+    if r == total - 2:
+        return ("(", ")")
+    return ("(", ")")
+
+
+def _helix_frame(phase: float, morph: float = 0.0) -> list[Text]:
+    """Render one frame of the helix. morph (0-1) blends toward a circle."""
+    morph = max(0.0, min(1.0, morph))
     lines = []
     for r in range(ROWS):
         t = r * 0.55 + phase
-        x1 = int(round(CENTER + math.sin(t) * HALF))
-        x2 = int(round(CENTER + math.sin(t + math.pi) * HALF))
-        z1 = math.cos(t)
+        # Helix positions
+        hx1 = CENTER + math.sin(t) * HALF
+        hx2 = CENTER + math.sin(t + math.pi) * HALF
+        hz1 = math.cos(t)
+
+        # Circle (ellipse) target: rows trace an oval outline
+        angle = r * math.pi / max(ROWS - 1, 1)
+        cx1 = CENTER + math.sin(angle) * HALF
+        cx2 = CENTER - math.sin(angle) * HALF
+
+        # Lerp toward circle
+        x1 = int(round(hx1 + (cx1 - hx1) * morph))
+        x2 = int(round(hx2 + (cx2 - hx2) * morph))
+        # Depth flattens to front-facing as we morph
+        z1 = hz1 * (1.0 - morph) + 0.5 * morph
+
         dx1, dx2 = z1 * 0.55, -z1 * 0.55
         width = CENTER * 2 + 2
         ch = [" "] * width
@@ -47,8 +71,11 @@ def _helix_frame(phase: float) -> list[Text]:
         if abs(x1 - x2) <= 1:
             cx = min(x1, x2)
             if 0 <= cx < width:
-                front_dx = dx1 if z1 > 0 else dx2
-                ch[cx] = _strand_char(front_dx, 0.5)
+                if morph > 0.9:
+                    ch[cx] = "~"
+                else:
+                    front_dx = dx1 if z1 > 0 else dx2
+                    ch[cx] = _strand_char(front_dx, 0.5)
             ln = Text("".join(ch))
             if 0 <= cx < width:
                 ln.stylize("bright_green", cx, cx + 1)
@@ -61,21 +88,56 @@ def _helix_frame(phase: float) -> list[Text]:
         ldx = dx1 if x1 < x2 else dx2
         rdx = dx2 if x1 < x2 else dx1
 
-        if 0 <= lx < width:
-            ch[lx] = _strand_char(ldx, lz)
-        if 0 <= rx < width:
-            ch[rx] = _strand_char(rdx, rz)
+        if morph > 0.9:
+            lc, rc = _cell_chars(r, ROWS)
+            if 0 <= lx < width:
+                ch[lx] = lc
+            if 0 <= rx < width:
+                ch[rx] = rc
+            # Face interior
+            mid = (lx + rx) // 2
+            if r == 2:
+                # Eyes
+                le = lx + (rx - lx) // 3
+                re = rx - (rx - lx) // 3
+                if 0 <= le < width:
+                    ch[le] = "o"
+                if 0 <= re < width:
+                    ch[re] = "o"
+            elif r == 3:
+                # Mouth
+                if 0 <= mid < width:
+                    ch[mid] = "‿"
+        else:
+            if 0 <= lx < width:
+                ch[lx] = _strand_char(ldx, lz)
+            if 0 <= rx < width:
+                ch[rx] = _strand_char(rdx, rz)
 
         ln = Text("".join(ch))
 
-        for pos, z, color in [(lx, lz, "green"), (rx, rz, "cyan")]:
+        if morph > 0.9:
+            if r == 2:
+                le = lx + (rx - lx) // 3
+                re = rx - (rx - lx) // 3
+                for ep in (le, re):
+                    if 0 <= ep < width:
+                        ln.stylize("bold bright_cyan", ep, ep + 1)
+            elif r == 3:
+                mid = (lx + rx) // 2
+                if 0 <= mid < width:
+                    ln.stylize("bold bright_cyan", mid, mid + 1)
+
+        for pos, z, c in [(lx, lz, "green"), (rx, rz, "cyan")]:
             if 0 <= pos < width:
-                if z > 0.2:
-                    ln.stylize(f"bold bright_{color}", pos, pos + 1)
+                if morph > 0.9:
+                    ln.stylize("bold bright_green", pos, pos + 1)
+                elif z > 0.2:
+                    ln.stylize(f"bold bright_{c}", pos, pos + 1)
                 elif z > -0.2:
-                    ln.stylize(color, pos, pos + 1)
+                    ln.stylize(c, pos, pos + 1)
                 else:
-                    ln.stylize(f"dim {color}", pos, pos + 1)
+                    ln.stylize(f"dim {c}", pos, pos + 1)
 
         lines.append(ln)
     return lines
@@ -105,6 +167,7 @@ class HelixSpinner:
         self._total_start = 0.0
         self._completed: list[Text] = []
         self._lock = threading.Lock()
+        self._frame_count = 0
 
     def set_phase(self, phase: str) -> None:
         with self._lock:
@@ -139,12 +202,25 @@ class HelixSpinner:
                 line.append(f" ({elapsed:.1f}s)", style="dim")
                 self._completed.append(line)
                 self._phase = ""
-        self._live.update(Text(""))
-        self._live.stop()
-        for line in self._completed:
-            self._console.print(line)
+            completed = list(self._completed)
         total = time.monotonic() - self._total_start
-        self._console.print(f"  [dim]Setup complete in {total:.1f}s[/dim]\n")
+
+        # Play morph-to-cell animation (1s morph + 1s hold)
+        morph_frames = 15
+        hold_frames = 15
+        phase = self._frame_count * 0.18
+        for f in range(morph_frames + hold_frames):
+            morph = min(1.0, f / morph_frames)
+            helix = _helix_frame(phase + f * 0.18, morph=morph)
+            banner = _build_banner(helix)
+            parts: list = [banner, Text("")]
+            parts.extend(completed)
+            parts.append(Text.from_markup(f"  [dim]Setup complete in {total:.1f}s[/dim]"))
+            self._live.update(Group(*parts))
+            time.sleep(1 / 15)
+
+        # Stop Live — the last rendered frame stays on screen
+        self._live.stop()
 
     def _loop(self):
         frame = 0
@@ -169,3 +245,4 @@ class HelixSpinner:
                     parts.append(cur)
             self._live.update(Group(*parts))
             frame += 1
+        self._frame_count = frame
