@@ -9,6 +9,7 @@ from pathlib import Path
 
 import click
 from rich.console import Console
+from rich.markdown import Markdown
 
 from agentstore.config import get_config
 from agentstore.github import GitHubResolver, GitHubResolverError, is_github_url, parse_github_url
@@ -19,6 +20,23 @@ from agentstore.sandbox.manager import SandboxManager
 from agentstore.cli.helix import HelixSpinner
 
 console = Console()
+
+
+def _detect_host_tz() -> str | None:
+    """Detect the host machine's IANA timezone (e.g. 'America/New_York')."""
+    import os, subprocess
+    if tz := os.environ.get("TZ"):
+        return tz
+    try:
+        out = subprocess.run(
+            ["readlink", "/etc/localtime"],
+            capture_output=True, text=True, timeout=3,
+        ).stdout.strip()
+        if "/zoneinfo/" in out:
+            return out.split("/zoneinfo/")[1]
+    except Exception:
+        pass
+    return None
 
 
 def _new_session_name() -> str:
@@ -35,10 +53,10 @@ def _pick_session(config, agent_name: str) -> Path:
     if not sessions:
         return config.session_state_dir(agent_name, _new_session_name())
 
-    console.print("\n[bold]Sessions:[/bold]")
-    console.print(f"  [cyan]0)[/cyan] New session")
+    console.print("\n[bold]Sessions[/bold]")
+    console.print(f"  [dim]0)[/dim] New session")
     for i, name in enumerate(sessions, 1):
-        console.print(f"  [cyan]{i})[/cyan] {name}")
+        console.print(f"  [dim]{i})[/dim] {name}")
     console.print()
 
     choice = click.prompt("Select session", type=int, default=0)
@@ -111,10 +129,10 @@ def run(
         state_dir = _pick_session(config, manifest.name)
 
     # Show permissions and ask for approval
-    console.print(f"\n[bold]Agent: {manifest.display_name}[/bold] v{manifest.version}")
+    console.print(f"\n[bold]{manifest.display_name}[/bold] [dim]v{manifest.version}[/dim]")
     console.print(f"[dim]{manifest.description}[/dim]")
     console.print(f"[dim]Session: {state_dir.name}[/dim]\n")
-    console.print("[yellow]This agent requests the following permissions:[/yellow]\n")
+    console.print("[bold]Permissions[/bold]\n")
     for line in format_permissions_for_display(manifest):
         console.print(f"  {line}")
     console.print()
@@ -136,11 +154,11 @@ def run(
                     missing_optional.append(key_req)
 
         if missing_required:
-            console.print("[yellow]This agent requires API keys that are not yet stored:[/yellow]")
+            console.print("[bold]Missing API keys[/bold]")
             for kr in missing_required:
-                console.print(f"  [red]✗[/red] {kr.provider} ({kr.resolved_env_var()}) — required")
+                console.print(f"  [red]✗[/red] {kr.provider} [dim]({kr.resolved_env_var()})[/dim]")
             for kr in missing_optional:
-                console.print(f"  [dim]○[/dim] {kr.provider} ({kr.resolved_env_var()}) — optional, missing")
+                console.print(f"  [dim]○ {kr.provider} ({kr.resolved_env_var()}) — optional[/dim]")
             console.print()
 
             for kr in missing_required:
@@ -150,9 +168,9 @@ def run(
                 )
                 if key.strip():
                     vault.add_key(kr.provider, key.strip())
-                    console.print(f"  [green]Stored {kr.provider}.[/green]")
+                    console.print(f"  [dim]Stored {kr.provider}.[/dim]")
                 else:
-                    console.print(f"[red]Cannot proceed without required key: {kr.provider}[/red]")
+                    console.print(f"[red]Cannot proceed without {kr.provider} key.[/red]")
                     raise SystemExit(1)
             console.print()
 
@@ -166,11 +184,20 @@ def run(
         api_key = vault.get_key(provider)
         if not api_key:
             console.print(f"[red]No API key found for provider '{provider}'.[/red]")
-            console.print(f"Add one with: [cyan]agentstore keys add {provider} <your-key>[/cyan]")
-            console.print(f"Or run: [cyan]agentstore setup[/cyan]")
+            console.print(f"[dim]Add one with:[/dim] agentstore keys add {provider} <your-key>")
+            console.print(f"[dim]Or run:[/dim] agentstore setup")
             raise SystemExit(1)
 
     env_vars = vault.get_env_vars()  # inject all stored keys
+
+    # Inject host timezone so agents see the user's local time
+    if "TZ" not in env_vars:
+        try:
+            tz = _detect_host_tz()
+            if tz:
+                env_vars["TZ"] = tz
+        except Exception:
+            pass
     workspace = "."
     manager = SandboxManager()
 
@@ -215,12 +242,12 @@ def _run_chat(
             raise SystemExit(1)
 
     try:
-        console.print("[green]Agent ready.[/green]\n")
+        console.print(f"[dim]{manifest.display_name} ready[/dim]\n")
         msg_counter = 0
 
         while True:
             try:
-                user_input = console.input("[bold cyan]You:[/bold cyan] ")
+                user_input = console.input("[bold]> [/bold]")
             except (EOFError, KeyboardInterrupt):
                 console.print("\n[dim]Ending session...[/dim]")
                 break
@@ -249,7 +276,7 @@ def _run_chat(
                 console.print("[red]Agent process exited unexpectedly.[/red]")
                 stderr = session.stderr.strip()
                 if stderr:
-                    console.print(f"[red]Agent stderr:[/red]\n{stderr}")
+                    console.print(f"[dim]{stderr}[/dim]")
                 break
 
             msg_counter += 1
@@ -257,31 +284,48 @@ def _run_chat(
             try:
                 session.send_message(user_input, message_id)
             except Exception as e:
-                console.print(f"[red]Failed to send message:[/red] {e}")
+                console.print(f"[red]Send failed:[/red] {e}")
                 stderr = session.stderr.strip()
                 if stderr:
-                    console.print(f"[red]Agent stderr:[/red]\n{stderr}")
+                    console.print(f"[dim]{stderr}[/dim]")
                 break
 
             # Read responses until we get a done=true response
+            accumulated_content = ""
+            thinking = console.status("[dim]Thinking...[/dim]", spinner="dots")
+            thinking.start()
+
             while True:
                 msg = session.receive(timeout=300)
                 if msg is None:
-                    console.print("[yellow]Agent response timed out.[/yellow]")
+                    thinking.stop()
+                    console.print("[yellow]Response timed out.[/yellow]")
                     break
 
                 msg_type = msg.get("type")
                 if msg_type == "response":
+                    thinking.stop()
                     content = msg.get("content", "")
                     if content:
-                        console.print(f"[bold green]{manifest.display_name}:[/bold green] {content}")
+                        accumulated_content += content
                     if msg.get("done", False):
+                        if accumulated_content:
+                            console.print()
+                            console.print(
+                                Markdown(accumulated_content),
+                                style="dim",
+                            )
+                            console.print()
                         break
                 elif msg_type == "activity":
+                    thinking.stop()
                     tool = msg.get("tool", "?")
                     desc = msg.get("description", "")
-                    console.print(f"  [dim][{tool}] {desc}[/dim]")
+                    console.print(f"  [dim]› {tool}: {desc}[/dim]")
+                    thinking = console.status("[dim]Thinking...[/dim]", spinner="dots")
+                    thinking.start()
                 elif msg_type == "error":
+                    thinking.stop()
                     console.print(f"  [red]Error: {msg.get('error', 'Unknown')}[/red]")
                     break
 
@@ -289,7 +333,7 @@ def _run_chat(
                 console.print("[red]Agent process exited unexpectedly.[/red]")
                 stderr = session.stderr.strip()
                 if stderr:
-                    console.print(f"[red]Agent stderr:[/red]\n{stderr}")
+                    console.print(f"[dim]{stderr}[/dim]")
                 break
 
     finally:
