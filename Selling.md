@@ -16,7 +16,7 @@ For developers, the bar to publish an agent is intentionally low. No framework, 
 
 **The use case I'm most excited about: agent delegation.**
 
-Think about something like [OpenClaw](https://openclaw.ai/) — the open-source AI agent that's been blowing up lately (175k+ GitHub stars). It's great at orchestrating tasks, but it does everything itself. Now imagine if agents like OpenClaw could spawn specialist sub-agents from a shared marketplace mid-task. Need web research? Delegate to a research agent. Need code review? Spin up a code reviewer. Each sub-agent runs in its own sandbox with its own permissions — fully isolated.
+Think about something like [OpenClaw](https://openclaw.ai/) — the open-source AI agent that's been blowing up lately (175k+ GitHub stars). It can already spin up a terminal and orchestrate a team of Claude Code or Codex agents. Now imagine if agents like OpenClaw could also spawn specialist sub-agents from a shared marketplace mid-task. Need web research? Delegate to a research agent. Need code review? Spin up a code reviewer. Each sub-agent runs in its own sandbox with its own permissions — fully isolated.
 
 That's what Primordial enables. Agents that compose other agents. Not one monolith trying to do everything — a network of specialists, each doing one thing well, each sandboxed independently.
 
