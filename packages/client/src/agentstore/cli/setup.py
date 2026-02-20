@@ -8,19 +8,9 @@ from rich.table import Table
 
 from agentstore.config import get_config
 from agentstore.security.key_vault import KeyVault
+from agentstore.cli.providers import pick_provider
 
 console = Console()
-
-# Provider name, env var hint, signup URL
-PROVIDERS = [
-    ("anthropic", "ANTHROPIC_API_KEY", "https://console.anthropic.com/settings/keys"),
-    ("openai", "OPENAI_API_KEY", "https://platform.openai.com/api-keys"),
-    ("brave", "BRAVE_API_KEY", "https://brave.com/search/api/"),
-    ("groq", "GROQ_API_KEY", "https://console.groq.com/keys"),
-    ("google", "GOOGLE_API_KEY", "https://aistudio.google.com/apikey"),
-    ("mistral", "MISTRAL_API_KEY", "https://console.mistral.ai/api-keys/"),
-    ("deepseek", "DEEPSEEK_API_KEY", "https://platform.deepseek.com/api_keys"),
-]
 
 _BANNER = r"""          ___           ___                       ___           ___
          /\  \         /\  \          ___          /\__\         /\  \
@@ -56,40 +46,6 @@ def _print_banner() -> None:
     console.print()
 
 
-def _build_provider_list(existing: set[str]) -> list[tuple[int, str, str, str, str]]:
-    """Build numbered list of all providers (known + any extras in vault).
-
-    Returns list of (number, provider, env_var, url, status).
-    """
-    items: list[tuple[int, str, str, str, str]] = []
-    seen = set()
-    idx = 1
-
-    # Known providers + e2b
-    all_known = list(PROVIDERS) + [("e2b", "E2B_API_KEY", "https://e2b.dev/dashboard")]
-    for provider, env_var, url in all_known:
-        status = "[green]stored[/green]" if provider in existing else "[dim]not set[/dim]"
-        items.append((idx, provider, env_var, url, status))
-        seen.add(provider)
-        idx += 1
-
-    # Any extra providers in the vault that aren't in PROVIDERS
-    for provider in sorted(existing - seen):
-        env_var = f"{provider.upper()}_API_KEY"
-        status = "[green]stored[/green]"
-        items.append((idx, provider, env_var, "", status))
-        idx += 1
-
-    return items
-
-
-def _print_provider_list(items: list[tuple[int, str, str, str, str]]) -> None:
-    """Print the numbered provider list."""
-    for idx, provider, env_var, url, status in items:
-        url_hint = f"  {url}" if url else ""
-        console.print(f"  [cyan]{idx:>2}[/cyan]  {provider:<12} {status}[dim]{url_hint}[/dim]")
-
-
 @click.command()
 def setup():
     """Configure API keys — pick a provider, add or update its key.
@@ -118,60 +74,13 @@ def setup():
     added = 0
 
     while True:
-        existing = {e["provider"] for e in vault.list_keys()}
-        items = _build_provider_list(existing)
-        _print_provider_list(items)
-        console.print(f"  [cyan] +[/cyan]  [dim]Add a custom provider[/dim]")
-        console.print()
-
-        choice = click.prompt(
-            "Pick a number (or name), Enter to finish",
-            default="",
-            show_default=False,
-        ).strip()
-
-        if not choice:
+        result = pick_provider(vault)
+        if result is None:
             break
-
-        # Resolve choice to a provider
-        provider_name = None
-        env_var = None
-        if choice == "+":
-            provider_name = click.prompt("  Provider name").strip().lower()
-            env_var = f"{provider_name.upper()}_API_KEY"
-        elif choice.isdigit():
-            num = int(choice)
-            match = [i for i in items if i[0] == num]
-            if match:
-                _, provider_name, env_var, _, _ = match[0]
-            else:
-                console.print("[red]Invalid number.[/red]")
-                continue
-        else:
-            # Try matching by name
-            name_lower = choice.lower()
-            match = [i for i in items if i[1] == name_lower]
-            if match:
-                _, provider_name, env_var, _, _ = match[0]
-            else:
-                # Treat as new custom provider
-                provider_name = name_lower
-                env_var = f"{provider_name.upper()}_API_KEY"
-
-        key = click.prompt(
-            f"  Paste {provider_name.upper()} API key (Enter to cancel)",
-            default="",
-            show_default=False,
-            hide_input=True,
-        )
-
-        if key.strip():
-            vault.add_key(provider_name, key.strip())
-            console.print(f"  [green]Stored {provider_name}.[/green]")
-            added += 1
-        else:
-            console.print(f"  [dim]Skipped.[/dim]")
-
+        provider_name, key = result
+        vault.add_key(provider_name, key)
+        console.print(f"  [green]Stored {provider_name}.[/green]")
+        added += 1
         console.print()
 
     # Summary

@@ -32,6 +32,49 @@ class SandboxError(Exception):
 class SandboxManager:
     """Manages E2B sandboxes for agent execution."""
 
+    # Package registries that setup commands need — always allowed when
+    # the agent declares a setup_command so pip/npm/etc. can fetch packages.
+    _PACKAGE_REGISTRY_DOMAINS = [
+        # Python
+        "pypi.org",
+        "files.pythonhosted.org",
+        # Node
+        "registry.npmjs.org",
+        "registry.yarnpkg.com",
+        "nodejs.org",
+        # Git-based deps (npm/pip both support github refs)
+        "github.com",
+        "codeload.github.com",
+    ]
+
+    @staticmethod
+    def _build_network_kwargs(manifest: AgentManifest) -> dict[str, Any]:
+        """Build E2B network kwargs from manifest permissions.
+
+        Three modes:
+        - network_unrestricted: true → no filtering (full internet)
+        - network: [domains...] → deny all except listed domains
+        - No network config → deny all (fully isolated)
+
+        Package registries (pypi.org, etc.) are auto-allowed when a
+        setup_command is declared, so pip/npm installs work.
+        """
+        perms = manifest.permissions
+        if perms.network_unrestricted:
+            return {}
+
+        allowed = [p.domain for p in perms.network]
+
+        # Auto-allow package registries when there's a setup command
+        if manifest.runtime.setup_command:
+            for domain in SandboxManager._PACKAGE_REGISTRY_DOMAINS:
+                if domain not in allowed:
+                    allowed.append(domain)
+
+        if allowed:
+            return {"network": {"deny_out": ["0.0.0.0/0"], "allow_out": allowed}}
+        return {"network": {"deny_out": ["0.0.0.0/0"]}}
+
     def _ensure_e2b_api_key(self, env_vars: dict[str, str]) -> None:
         """Ensure E2B_API_KEY is available, checking env_vars and os.environ."""
         if os.environ.get("E2B_API_KEY"):
@@ -101,9 +144,11 @@ class SandboxManager:
                 on_status(msg)
 
         _status("Creating sandbox...")
+        network_kwargs = self._build_network_kwargs(manifest)
         sandbox = Sandbox.create(
             template=manifest.runtime.e2b_template,
             envs=env_vars,
+            **network_kwargs,
         )
 
         try:

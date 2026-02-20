@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Optional
 
 import yaml
 
@@ -41,18 +42,8 @@ def _validate_manifest(manifest: AgentManifest, agent_dir: Path) -> None:
             "lowercase letters, numbers, and hyphens only"
         )
 
-    # Must have either entry_point (Python SDK) or run_command (generic)
-    if not manifest.runtime.entry_point and not manifest.runtime.run_command:
-        raise ValueError(
-            "Runtime must specify either 'entry_point' (for Python SDK agents) "
-            "or 'run_command' (for generic agents)"
-        )
-
-    if manifest.runtime.entry_point and ":" not in manifest.runtime.entry_point:
-        raise ValueError(
-            f"Invalid entry_point '{manifest.runtime.entry_point}': "
-            "must be in format 'module.path:function_name'"
-        )
+    if not manifest.runtime.run_command:
+        raise ValueError("Runtime must specify 'run_command'")
 
     # If dependencies file is specified, it must exist
     if manifest.runtime.dependencies:
@@ -65,3 +56,33 @@ def _is_valid_name(name: str) -> bool:
     if len(name) < 3 or len(name) > 40:
         return False
     return bool(re.match(r"^[a-z][a-z0-9-]*[a-z0-9]$", name))
+
+
+def resolve_agent_name(agent_path: str, agents_dir: Optional[Path] = None) -> str:
+    """Resolve an agent path (local dir, GitHub URL, or bare name) to its manifest name.
+
+    Tries to load the manifest to get the canonical name. Falls back to the raw input.
+    """
+    from agentstore.github import GitHubResolver, GitHubResolverError, is_github_url, parse_github_url
+
+    if is_github_url(agent_path):
+        try:
+            github_ref = parse_github_url(agent_path)
+            resolver = GitHubResolver()
+            agent_dir = resolver.resolve(github_ref)
+        except GitHubResolverError:
+            return agent_path
+    else:
+        agent_dir = Path(agent_path)
+        if not agent_dir.exists() and agents_dir:
+            installed = agents_dir / agent_path
+            if installed.exists():
+                agent_dir = installed
+            else:
+                return agent_path
+
+    try:
+        manifest = load_manifest(agent_dir)
+        return manifest.name
+    except (FileNotFoundError, ValueError):
+        return agent_path

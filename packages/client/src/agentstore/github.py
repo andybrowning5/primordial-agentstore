@@ -129,31 +129,6 @@ def parse_github_url(url: str, ref_override: Optional[str] = None) -> GitHubRef:
 _SEMVER_TAG = re.compile(r"^v?\d+\.\d+")
 
 
-def _inject_known_agent(repo_id: str, cache_path: Path) -> bool:
-    """Inject bundled agent.yaml + bridge for known third-party agents.
-
-    Returns True if a wrapper was injected.
-    """
-    wrappers_dir = Path(__file__).parent / "wrappers"
-    # Map repo identifiers to wrapper directories
-    wrapper_map: dict[str, str] = {
-    }
-    wrapper_name = wrapper_map.get(repo_id)
-    if not wrapper_name:
-        return False
-
-    wrapper_dir = wrappers_dir / wrapper_name
-    if not wrapper_dir.exists():
-        return False
-
-    # Copy all wrapper files into the cloned repo
-    for f in wrapper_dir.iterdir():
-        if f.is_file():
-            shutil.copy2(f, cache_path / f.name)
-
-    return (cache_path / "agent.yaml").exists()
-
-
 class GitHubResolver:
     """Resolves GitHub repos to local cached directories."""
 
@@ -343,14 +318,6 @@ class GitHubResolver:
         for child in sorted(cache_path.iterdir()):
             if child.is_dir() and (child / "agent.yaml").exists():
                 return child
-
-        # Check for bundled wrappers for known agents
-        meta_path = cache_path / self.META_FILE
-        if meta_path.exists():
-            meta = json.loads(meta_path.read_text())
-            repo_id = f"{meta.get('owner', '')}/{meta.get('repo', '')}".lower()
-            if _inject_known_agent(repo_id, cache_path):
-                return cache_path
 
         raise GitHubResolverError(
             f"No agent.yaml found in repository. "

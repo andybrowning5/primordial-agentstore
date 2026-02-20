@@ -6,10 +6,9 @@ from rich.table import Table
 
 from agentstore.config import get_config
 from agentstore.security.key_vault import KeyVault
+from agentstore.cli.providers import pick_provider
 
 console = Console()
-
-KNOWN_PROVIDERS = ["anthropic", "openai", "groq", "google", "mistral", "deepseek"]
 
 
 @click.group()
@@ -19,18 +18,32 @@ def keys():
 
 
 @keys.command()
-@click.argument("provider", type=click.Choice(KNOWN_PROVIDERS + ["other"]))
-@click.argument("api_key")
+@click.argument("provider", required=False, default=None)
+@click.argument("api_key", required=False, default=None)
 @click.option("--key-id", default=None, help="Friendly identifier for this key")
-def add(provider: str, api_key: str, key_id: str | None):
-    """Add or update an API key for a provider."""
-    if provider == "other":
-        provider = click.prompt("Enter provider name")
+def add(provider: str | None, api_key: str | None, key_id: str | None):
+    """Add or update an API key for a provider.
 
+    With no arguments, shows an interactive picker.
+    With PROVIDER and API_KEY, stores directly.
+    """
     config = get_config()
     vault = KeyVault(config.keys_file)
-    stored_id = vault.add_key(provider, api_key, key_id)
-    console.print(f"[green]Key stored:[/green] {provider} (id: {stored_id})")
+
+    # Direct mode: both args provided
+    if provider and api_key:
+        stored_id = vault.add_key(provider, api_key, key_id)
+        console.print(f"[green]Key stored:[/green] {provider} (id: {stored_id})")
+        return
+
+    # Interactive picker mode
+    while True:
+        result = pick_provider(vault)
+        if result is None:
+            break
+        target_provider, key = result
+        vault.add_key(target_provider, key)
+        console.print(f"  [green]Stored {target_provider}.[/green]")
 
 
 @keys.command(name="list")

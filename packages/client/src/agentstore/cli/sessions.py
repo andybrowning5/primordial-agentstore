@@ -2,47 +2,14 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import click
 from rich.console import Console
 from rich.table import Table
 
 from agentstore.config import get_config
-from agentstore.github import GitHubResolver, GitHubResolverError, is_github_url, parse_github_url
-from agentstore.manifest import load_manifest
+from agentstore.manifest import resolve_agent_name
 
 console = Console()
-
-
-def _resolve_agent_name(agent_path: str) -> str:
-    """Resolve an agent path (local dir, GitHub URL, or bare name) to its manifest name."""
-    config = get_config()
-
-    if is_github_url(agent_path):
-        try:
-            github_ref = parse_github_url(agent_path)
-            resolver = GitHubResolver()
-            agent_dir = resolver.resolve(github_ref)
-        except GitHubResolverError as e:
-            console.print(f"[red]GitHub resolve failed:[/red] {e}")
-            raise SystemExit(1)
-    else:
-        agent_dir = Path(agent_path)
-        if not agent_dir.exists():
-            installed = config.agents_dir / agent_path
-            if installed.exists():
-                agent_dir = installed
-            else:
-                # Treat as a bare agent name (already resolved)
-                return agent_path
-
-    try:
-        manifest = load_manifest(agent_dir)
-        return manifest.name
-    except (FileNotFoundError, ValueError):
-        # Fall back to using the raw input
-        return agent_path
 
 
 @click.command()
@@ -58,8 +25,8 @@ def sessions(agent_path: str):
       agentstore sessions ./my-agent
       agentstore sessions https://github.com/user/repo
     """
-    agent_name = _resolve_agent_name(agent_path)
     config = get_config()
+    agent_name = resolve_agent_name(agent_path, agents_dir=config.agents_dir)
     session_list = config.list_sessions(agent_name)
 
     if not session_list:
