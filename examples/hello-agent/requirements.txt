@@ -1,1 +1,1 @@
-agentstore-sdk
+# No dependencies — just the standard library

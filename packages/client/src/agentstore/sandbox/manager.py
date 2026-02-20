@@ -17,13 +17,10 @@ from agentstore.models import AgentManifest
 
 AGENT_HOME_IN_SANDBOX = "/home/user"
 AGENT_DIR_IN_SANDBOX = "/home/user/agent"
-SDK_DIR_IN_SANDBOX = "/home/user/agentstore-sdk"
 SKILL_FILE = Path(__file__).parent / "skill.md"
 SKILL_DEST = "/home/user/skill.md"
-# SDK source — relative to this file: sandbox/manager.py -> up to agentstore -> up to src -> up to client -> up to packages -> up to root -> sdk
-SDK_SOURCE_DIR = Path(__file__).resolve().parents[5] / "sdk"
 _STATE_EXCLUDE_DIRS = [
-    "agent", "venv", "workspace", "agentstore-sdk",
+    "agent", "venv", "workspace",
     ".cache", ".local", ".npm", ".docker",
 ]
 
@@ -118,18 +115,6 @@ class SandboxManager:
             if state_dir:
                 _status("Restoring state...")
                 self._restore_state(sandbox, state_dir)
-
-            # Install agentstore-sdk if available locally (not yet on PyPI)
-            if SDK_SOURCE_DIR.exists() and (SDK_SOURCE_DIR / "pyproject.toml").exists():
-                _status("Installing Agent Store SDK...")
-                self._upload_directory(sandbox, SDK_SOURCE_DIR, SDK_DIR_IN_SANDBOX)
-                sdk_result = sandbox.commands.run(
-                    f"pip install {SDK_DIR_IN_SANDBOX}/",
-                    timeout=120,
-                )
-                if sdk_result.exit_code != 0:
-                    error_detail = (sdk_result.stderr or sdk_result.stdout or "")[:500]
-                    raise SandboxError(f"SDK installation failed: {error_detail}")
 
             if manifest.runtime.setup_command:
                 _status("Running setup command...")

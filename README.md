@@ -14,7 +14,7 @@ An open marketplace for AI agents. You build an agent, publish it, and anyone ca
 - **GitHub Agents** — Run agents directly from GitHub URLs with automatic caching
 - **Encrypted Key Vault** — API keys encrypted at rest with Fernet (AES-128-CBC + HMAC-SHA256), derived via PBKDF2
 - **Agent Delegation** — Agents spawn sub-agents via `--agent-read` pipe mode
-- **Persistent State** — Config, structured state, and raw filesystem — all survive across sessions
+- **Persistent State** — Your agent's filesystem survives across sessions, with multi-session support
 - **Permission Approval** — Users approve every permission (network domains, filesystem access) before launch
 
 ---
@@ -80,7 +80,7 @@ agentstore cache clear https://github.com/u/repo  # Clear specific entry
 
 ## Building Agents
 
-See **[BUILDING_AGENTS.md](BUILDING_AGENTS.md)** for the complete guide — the Ooze Protocol, manifest reference, Python SDK, Node.js examples, persistence patterns (including Zep memory integration), delegation, security model, and debugging tips.
+See **[BUILDING_AGENTS.md](BUILDING_AGENTS.md)** for the complete guide — the Ooze Protocol, manifest reference, examples, persistence, delegation, security model, and debugging tips.
 
 ---
 
@@ -120,7 +120,6 @@ AgentStore/
 │           ├── config.py          # Platform-specific paths
 │           ├── github.py          # GitHub URL resolver + caching
 │           └── manifest.py        # agent.yaml loader + validation
-├── sdk/                           # Python SDK (agentstore-sdk)
 ├── examples/
 │   ├── hello-agent/               # Minimal example agent
 │   └── steve-agent/               # Full-featured example agent
@@ -156,7 +155,6 @@ agentstore run ./examples/steve-agent
 
 ```bash
 pip install -e ./packages/client
-pip install -e ./sdk
 pytest
 ruff check .
 ```

@@ -102,48 +102,40 @@ permissions:
 
 ---
 
-## Python SDK
+## Python Example
 
-The SDK handles the Ooze Protocol for you. Subclass `Agent` and implement `handle_message`:
-
-```python
-from agentstore_sdk import Agent
-
-
-class MyAgent(Agent):
-
-    def setup(self):
-        """Called once when the session starts."""
-        pass
-
-    def handle_message(self, content: str, message_id: str):
-        """Handle a user message. Must call self.send_response() at least once."""
-        self.send_response(f"You said: {content}", message_id, done=True)
-
-    def teardown(self):
-        """Called when the session ends."""
-        pass
-
-
-if __name__ == "__main__":
-    MyAgent().run_loop()
-```
-
-### I/O Helpers
+No SDK needed — just speak the protocol directly:
 
 ```python
-# Final response
-self.send_response("Done!", message_id, done=True)
+import json
+import sys
 
-# Streaming — send partial chunks, then finalize
-self.send_response("Working on it...", message_id, done=False)
-self.send_response("Here's the answer.", message_id, done=True)
+def send(msg):
+    sys.stdout.write(json.dumps(msg) + "\n")
+    sys.stdout.flush()
 
-# Show tool activity in the UI
-self.send_activity("web_search", "Searching for docs...", message_id)
+send({"type": "ready"})
 
-# Report an error
-self.send_error("Something went wrong", message_id)
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    msg = json.loads(line)
+
+    if msg["type"] == "shutdown":
+        break
+
+    if msg["type"] == "message":
+        mid = msg["message_id"]
+
+        # Show progress
+        send({"type": "activity", "tool": "thinking", "description": "Processing...", "message_id": mid})
+
+        # Stream partial responses
+        send({"type": "response", "content": "Working on it...", "message_id": mid, "done": False})
+
+        # Final response
+        send({"type": "response", "content": f"You said: {msg['content']}", "message_id": mid, "done": True})
 ```
 
 ---
@@ -159,29 +151,18 @@ There's nothing to learn — just write files. The platform handles the rest.
 ```python
 from pathlib import Path
 
-class MyAgent(Agent):
+# Check if we already registered with an external service
+id_file = Path("/home/user/zep_user_id.txt")
+if id_file.exists():
+    user_id = id_file.read_text().strip()
+else:
+    user_id = register_with_service()
+    id_file.write_text(user_id)
 
-    def setup(self):
-        # Check if we already registered with an external service
-        id_file = Path("/home/user/zep_user_id.txt")
-        if id_file.exists():
-            self.user_id = id_file.read_text().strip()
-        else:
-            self.user_id = register_with_service()
-            id_file.write_text(self.user_id)
-
-    def handle_message(self, content: str, message_id: str):
-        # Write notes, logs, whatever — it persists
-        log = Path("/home/user/conversation.log")
-        with log.open("a") as f:
-            f.write(f"user: {content}\n")
-
-        response = self.think(content)
-
-        with log.open("a") as f:
-            f.write(f"agent: {response}\n")
-
-        self.send_response(response, message_id, done=True)
+# Write logs, notes, whatever — it persists
+log = Path("/home/user/conversation.log")
+with log.open("a") as f:
+    f.write("session started\n")
 ```
 
 ### What persists
@@ -197,23 +178,28 @@ class MyAgent(Agent):
 
 ## Wrapping CLI Tools
 
-Any CLI tool becomes an agent with the SDK:
+Any CLI tool becomes an agent with a thin bridge:
 
 ```python
-import subprocess
-from agentstore_sdk import Agent
+import json, subprocess, sys
 
-class CLIAgent(Agent):
+def send(msg):
+    sys.stdout.write(json.dumps(msg) + "\n")
+    sys.stdout.flush()
 
-    def handle_message(self, content: str, message_id: str):
+send({"type": "ready"})
+
+for line in sys.stdin:
+    msg = json.loads(line.strip())
+    if msg["type"] == "shutdown":
+        break
+    if msg["type"] == "message":
         result = subprocess.run(
-            ["some-cli-tool", "--message", content],
+            ["some-cli-tool", "--message", msg["content"]],
             capture_output=True, text=True, timeout=280,
         )
-        self.send_response(result.stdout.strip(), message_id)
-
-if __name__ == "__main__":
-    CLIAgent().run_loop()
+        send({"type": "response", "content": result.stdout.strip(),
+              "message_id": msg["message_id"], "done": True})
 ```
 
 ---

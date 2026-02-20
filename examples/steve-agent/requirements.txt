@@ -1,0 +1,13 @@
+deepagents>=0.2
+langgraph>=0.2
+langchain>=0.3
+langchain-openai
+langchain-anthropic
+pydantic>=2.0
+python-dotenv
+httpx
+beautifulsoup4
+lxml
+pdfplumber
+python-docx
+rich>=13.0
