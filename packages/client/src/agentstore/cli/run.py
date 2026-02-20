@@ -26,23 +26,64 @@ def _pick_session(config, agent_name: str) -> Path:
     sessions = config.list_sessions(agent_name)
 
     if not sessions:
-        # First time — create default session silently
         session_name = datetime.now().strftime("%Y%m%d-%H%M%S")
         return config.session_state_dir(agent_name, session_name)
 
-    console.print("\n[bold]Sessions:[/bold]")
-    console.print(f"  [cyan]0)[/cyan] New session")
+    while True:
+        console.print("\n[bold]Sessions:[/bold]")
+        console.print(f"  [cyan]0)[/cyan] New session")
+        for i, name in enumerate(sessions, 1):
+            console.print(f"  [cyan]{i})[/cyan] {name}")
+        console.print(f"  [red]d)[/red] Delete a session")
+        console.print()
+
+        choice = click.prompt("Select session", default="0").strip().lower()
+
+        if choice == "d":
+            _delete_session_prompt(config, agent_name, sessions)
+            sessions = config.list_sessions(agent_name)
+            if not sessions:
+                session_name = datetime.now().strftime("%Y%m%d-%H%M%S")
+                return config.session_state_dir(agent_name, session_name)
+            continue
+
+        try:
+            num = int(choice)
+        except ValueError:
+            continue
+
+        if num == 0 or num > len(sessions):
+            session_name = datetime.now().strftime("%Y%m%d-%H%M%S")
+            return config.session_state_dir(agent_name, session_name)
+
+        return config.session_state_dir(agent_name, sessions[num - 1])
+
+
+def _delete_session_prompt(config, agent_name: str, sessions: list[str]) -> None:
+    """Prompt user to pick a session to delete."""
+    console.print("\n[bold red]Delete session:[/bold red]")
     for i, name in enumerate(sessions, 1):
         console.print(f"  [cyan]{i})[/cyan] {name}")
     console.print()
 
-    choice = click.prompt("Select session", type=int, default=0)
+    choice = click.prompt("Session to delete (Enter to cancel)", default="").strip()
+    if not choice:
+        return
 
-    if choice == 0 or choice > len(sessions):
-        session_name = datetime.now().strftime("%Y%m%d-%H%M%S")
-        return config.session_state_dir(agent_name, session_name)
+    try:
+        num = int(choice)
+    except ValueError:
+        console.print("[red]Invalid number.[/red]")
+        return
 
-    return config.session_state_dir(agent_name, sessions[choice - 1])
+    if num < 1 or num > len(sessions):
+        console.print("[red]Invalid number.[/red]")
+        return
+
+    name = sessions[num - 1]
+    if click.confirm(f"Delete session '{name}'? This cannot be undone"):
+        config.delete_session(agent_name, name)
+        console.print(f"[green]Deleted session '{name}'.[/green]")
 
 
 @click.command()

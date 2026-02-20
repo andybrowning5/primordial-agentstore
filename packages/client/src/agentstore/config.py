@@ -73,6 +73,15 @@ class AgentStoreConfig:
             reverse=True,
         )
 
+    def delete_session(self, agent_name: str, session_name: str) -> bool:
+        """Delete a session's state directory. Returns True if it existed."""
+        import shutil
+        path = self.agent_state_dir(agent_name) / self._sanitize_name(session_name)
+        if path.exists() and path.is_dir():
+            shutil.rmtree(path)
+            return True
+        return False
+
     @property
     def repos_cache_dir(self) -> Path:
         path = self.cache_dir / "repos"
