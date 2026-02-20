@@ -235,10 +235,17 @@ def run(
 
         api_key = vault.get_key(provider)
         if not api_key:
-            console.print(f"[red]No API key found for provider '{provider}'.[/red]")
-            console.print(f"[dim]Add one with:[/dim] primordial keys add {provider} <your-key>")
-            console.print(f"[dim]Or run:[/dim] primordial setup")
-            raise SystemExit(1)
+            console.print(
+                f"\n[bold yellow]{provider.upper()} API key required[/bold yellow]\n"
+                f"[dim]This agent uses {provider} as its model provider.[/dim]\n"
+            )
+            key = click.prompt(f"  Paste {provider.upper()} API key", hide_input=True)
+            if key.strip():
+                vault.add_key(provider, key.strip())
+                console.print(f"  [green]Stored {provider}.[/green]\n")
+            else:
+                console.print(f"[red]Cannot proceed without {provider} key.[/red]")
+                raise SystemExit(1)
 
     # Only inject keys the manifest declares — never leak unrelated keys
     if manifest.keys:

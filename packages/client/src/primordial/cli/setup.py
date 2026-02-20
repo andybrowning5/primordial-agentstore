@@ -51,11 +51,10 @@ def setup():
 
     console.print(
         Panel(
-            "[bold]Welcome to Primordial AgentStore[/bold]\n\n"
-            "Agents need API keys to call LLMs, search the web, and use external services.\n"
-            "Pick a provider below to add or update its key.\n\n"
-            "[dim]Keys are encrypted at rest on this machine. They are injected into\n"
-            "agent sandboxes as environment variables at runtime.[/dim]",
+            "[bold]Primordial Key Vault[/bold]\n\n"
+            "Manage your stored API keys. Pick one to update, or + to add.\n\n"
+            "[dim]Keys are encrypted at rest on this machine.\n"
+            "Missing keys are prompted automatically when you run an agent.[/dim]",
             border_style="bright_cyan",
             padding=(1, 2),
         )
