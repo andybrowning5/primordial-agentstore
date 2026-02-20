@@ -81,7 +81,6 @@ _PROTECTED_ENV_VARS = {
     # Provider base URL env vars — prevent manifest from hijacking proxy routes
     "ANTHROPIC_BASE_URL", "OPENAI_BASE_URL", "GOOGLE_BASE_URL",
     "GROQ_BASE_URL", "MISTRAL_BASE_URL", "DEEPSEEK_BASE_URL",
-    "BRAVE_BASE_URL",
 }
 
 # Only these templates are allowed for sandbox creation
@@ -136,8 +135,11 @@ class KeyRequirement(BaseModel):
     @field_validator("auth_style")
     @classmethod
     def validate_auth_style(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and v not in ("bearer", "x-api-key"):
-            raise ValueError(f"Invalid auth_style: {v!r} (must be 'bearer' or 'x-api-key')")
+        if v is not None:
+            v = v.lower()
+            # Must look like a header name: lowercase letters, numbers, hyphens
+            if not re.match(r"^[a-z][a-z0-9-]*$", v):
+                raise ValueError(f"Invalid auth_style: {v!r} (must be a valid header name)")
         return v
 
     def resolved_env_var(self) -> str:

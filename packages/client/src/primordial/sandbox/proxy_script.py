@@ -77,7 +77,7 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
 
         # Build headers for upstream, stripping hop-by-hop and auth headers
         skip = {"host", "transfer-encoding", "connection", "proxy-connection",
-                "x-api-key", "x-subscription-token", "authorization"}
+                "authorization", self.server.auth_style}
         headers = {}
         for key, value in self.headers.items():
             if key.lower() not in skip:
@@ -86,13 +86,12 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         # Set correct Host for upstream
         headers["Host"] = self.server.target_host
 
-        # Inject real API key
-        if self.server.auth_style == "x-api-key":
-            headers["x-api-key"] = self.server.real_key
-        elif self.server.auth_style == "x-subscription-token":
-            headers["X-Subscription-Token"] = self.server.real_key
-        else:
+        # Inject real API key using the auth style declared in the manifest
+        if self.server.auth_style == "bearer":
             headers["Authorization"] = f"Bearer {self.server.real_key}"
+        else:
+            # Custom header (e.g. x-api-key, x-subscription-token)
+            headers[self.server.auth_style] = self.server.real_key
 
         # Connect to upstream over HTTPS
         try:

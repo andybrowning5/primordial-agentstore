@@ -30,7 +30,6 @@ _PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
     "groq":      {"domain": "api.groq.com",      "base_url_env": "GROQ_BASE_URL",      "auth_style": "bearer"},
     "mistral":   {"domain": "api.mistral.ai",    "base_url_env": "MISTRAL_BASE_URL",   "auth_style": "bearer"},
     "deepseek":  {"domain": "api.deepseek.com",  "base_url_env": "DEEPSEEK_BASE_URL",  "auth_style": "bearer"},
-    "brave":     {"domain": "api.search.brave.com", "base_url_env": "BRAVE_BASE_URL",  "auth_style": "x-subscription-token"},
 }
 
 AGENT_HOME_IN_SANDBOX = "/home/user"
