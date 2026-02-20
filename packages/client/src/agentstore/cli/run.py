@@ -3,15 +3,11 @@
 import json
 import select
 import sys
-import threading
-import time
 import uuid
 from pathlib import Path
 
 import click
 from rich.console import Console
-from rich.live import Live
-from rich.text import Text
 
 from agentstore.config import get_config
 from agentstore.github import GitHubResolver, GitHubResolverError, is_github_url, parse_github_url
@@ -19,94 +15,20 @@ from agentstore.manifest import load_manifest
 from agentstore.security.key_vault import KeyVault
 from agentstore.security.permissions import format_permissions_for_display
 from agentstore.sandbox.manager import SandboxManager
+from agentstore.cli.helix import HelixSpinner
 
 console = Console()
 
 
-class SetupTimer:
-    """Live elapsed timer for sandbox setup phases."""
-
-    SPINNER_CHARS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-
-    def __init__(self, console: Console):
-        self._console = console
-        self._current_phase = ""
-        self._phase_start = 0.0
-        self._total_start = 0.0
-        self._live = Live(console=console, refresh_per_second=10)
-        self._running = False
-        self._tick = 0
-        self._thread: threading.Thread | None = None
-        self._completed_phases: list[tuple[str, float]] = []
-
-    def start(self) -> None:
-        self._total_start = time.monotonic()
-        self._running = True
-        self._live.start()
-        self._thread = threading.Thread(target=self._update_loop, daemon=True)
-        self._thread.start()
-
-    def set_phase(self, phase: str) -> None:
-        now = time.monotonic()
-        if self._current_phase:
-            elapsed = now - self._phase_start
-            self._completed_phases.append((self._current_phase, elapsed))
-            check = Text()
-            check.append("  ✓ ", style="green")
-            check.append(self._current_phase, style="dim")
-            check.append(f" ({elapsed:.1f}s)", style="dim")
-            self._live.update(check)
-            self._live.refresh()
-            self._console.print(check)
-        self._current_phase = phase
-        self._phase_start = now
-
-    def _update_loop(self) -> None:
-        while self._running:
-            self._tick += 1
-            if self._current_phase:
-                elapsed = time.monotonic() - self._phase_start
-                spinner = self.SPINNER_CHARS[self._tick % len(self.SPINNER_CHARS)]
-                line = Text()
-                line.append(f"  {spinner} ", style="cyan")
-                line.append(self._current_phase, style="dim")
-                line.append(f" ({elapsed:.1f}s)", style="dim bold")
-                self._live.update(line)
-            time.sleep(0.1)
-
-    def stop(self) -> None:
-        now = time.monotonic()
-        self._running = False
-        if self._current_phase:
-            elapsed = now - self._phase_start
-            self._completed_phases.append((self._current_phase, elapsed))
-            check = Text()
-            check.append("  ✓ ", style="green")
-            check.append(self._current_phase, style="dim")
-            check.append(f" ({elapsed:.1f}s)", style="dim")
-            self._live.update(check)
-            self._live.refresh()
-            self._console.print(check)
-        self._live.stop()
-        total = now - self._total_start
-        self._console.print(f"  [dim]Setup complete in {total:.1f}s[/dim]\n")
-
-
 @click.command()
 @click.argument("agent_path")
-@click.option("--workspace", "-w", default=".", help="Workspace directory to mount")
-@click.option("--model", "-m", default=None, help="Override model (provider:model format)")
-@click.option("--timeout", default=None, type=int, help="Timeout in seconds")
-@click.option("--json-io", is_flag=True, help="JSON pipe mode (NDJSON stdin/stdout)")
+@click.option("--agent-read", is_flag=True, help="Ooze Protocol pipe mode (NDJSON stdin/stdout)")
 @click.option("--ref", default=None, help="Git ref (branch, tag, commit) for GitHub agents")
 @click.option("--refresh", is_flag=True, help="Force re-fetch of GitHub agent (ignore cache)")
 @click.option("--yes", "-y", is_flag=True, help="Skip approval prompt")
 def run(
     agent_path: str,
-    workspace: str,
-    model: str | None,
-    timeout: int | None,
-    json_io: bool,
+    agent_read: bool,
     ref: str | None,
     refresh: bool,
     yes: bool,
@@ -115,7 +37,6 @@ def run(
 
     AGENT_PATH can be:
       - A local directory (./my-agent)
-      - An installed agent name
       - A GitHub URL (https://github.com/user/repo)
     """
     config = get_config()
@@ -202,8 +123,6 @@ def run(
     else:
         # Fallback: check the model provider key exists
         provider = manifest.runtime.default_model.provider
-        if model:
-            provider = model.split(":")[0] if ":" in model else provider
 
         api_key = vault.get_key(provider)
         if not api_key:
@@ -213,9 +132,10 @@ def run(
             raise SystemExit(1)
 
     env_vars = vault.get_env_vars()  # inject all stored keys
+    workspace = "."
     manager = SandboxManager()
 
-    if json_io:
+    if agent_read:
         _run_json(manager, agent_dir, manifest, workspace, env_vars, state_dir)
     else:
         _run_chat(manager, agent_dir, manifest, workspace, env_vars, state_dir)
@@ -233,38 +153,30 @@ def _run_chat(
     console.print(f"\n[bold]Starting {manifest.display_name}[/bold] v{manifest.version}")
     console.print(f"[dim]Type 'exit' or Ctrl+C to quit[/dim]\n")
 
-    timer = SetupTimer(console)
-    timer.start()
+    with HelixSpinner(console) as spinner:
+        try:
+            session = manager.run_agent(
+                agent_dir=agent_dir,
+                manifest=manifest,
+                workspace=Path(workspace).resolve(),
+                env_vars=env_vars,
+                state_dir=state_dir,
+                on_status=spinner.set_phase,
+            )
+        except Exception as e:
+            console.print(f"\n[red]Failed to start agent:[/red] {e}")
+            raise SystemExit(1)
 
-    def _status(msg: str) -> None:
-        timer.set_phase(msg)
-
-    try:
-        session = manager.run_agent(
-            agent_dir=agent_dir,
-            manifest=manifest,
-            workspace=Path(workspace).resolve(),
-            env_vars=env_vars,
-            state_dir=state_dir,
-            on_status=_status,
-        )
-    except Exception as e:
-        timer.stop()
-        console.print(f"[red]Failed to start agent:[/red] {e}")
-        raise SystemExit(1)
-
-    try:
-        timer.set_phase("Waiting for agent to initialize...")
+        spinner.set_phase("Waiting for agent to initialize...")
         if not session.wait_ready(timeout=120):
-            timer.stop()
-            console.print("[red]Agent failed to start (no ready signal)[/red]")
+            console.print("\n[red]Agent failed to start (no ready signal)[/red]")
             stderr = session.stderr.strip()
             if stderr:
                 console.print(f"[red]Agent stderr:[/red]\n{stderr}")
             session.shutdown()
             raise SystemExit(1)
 
-        timer.stop()
+    try:
         console.print("[green]Agent ready.[/green]\n")
         msg_counter = 0
 

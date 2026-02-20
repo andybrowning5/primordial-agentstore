@@ -2,30 +2,23 @@
 
 import click
 
+from agentstore.cli.cache import cache
 from agentstore.cli.keys import keys
 from agentstore.cli.run import run
-from agentstore.cli.browse import browse, search, info
-from agentstore.cli.auth import auth
-from agentstore.cli.publish import publish, init
-from agentstore.cli.config_cmd import config
+from agentstore.cli.setup import setup
 
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="agentstore")
+@click.version_option(version="0.1.0", prog_name="primordial")
 def cli():
-    """Agent Store - Marketplace for specialized TUI AI agents."""
+    """Primordial AgentStore - The digital soup from which agents emerge."""
     pass
 
 
-cli.add_command(keys)
+cli.add_command(setup)
 cli.add_command(run)
-cli.add_command(browse)
-cli.add_command(search)
-cli.add_command(info)
-cli.add_command(auth)
-cli.add_command(publish)
-cli.add_command(init)
-cli.add_command(config)
+cli.add_command(keys)
+cli.add_command(cache)
 
 
 if __name__ == "__main__":
