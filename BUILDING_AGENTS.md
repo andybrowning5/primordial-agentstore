@@ -170,7 +170,7 @@ with log.open("a") as f:
 ```
 /home/user/
 ├── agent/         # Your agent code (read-only, not persisted)
-├── workspace/     # User's project directory (mounted from host)
+├── workspace/     # Agent's working directory
 └── *everything else persists between sessions*
 ```
 
@@ -258,7 +258,7 @@ Your agent runs inside an E2B Firecracker microVM (~150ms startup):
 
 - **No network by default** — every domain must be declared in the manifest with a reason
 - **No filesystem access** beyond the agent's own directories unless declared
-- **Resource limits** (memory, CPU) enforced by the sandbox
+- **Network filtering** — domain-level outbound rules enforced via E2B
 - **User approval** required before permissions are granted
 - **API keys** encrypted at rest with Fernet (AES-128-CBC + HMAC-SHA256), injected as env vars at runtime
 
@@ -279,12 +279,12 @@ agentstore run ./my-agent          # Interactive chat — easiest way to test
 Tips:
 - Use `python -u` (unbuffered) in `run_command` to avoid stdout buffering
 - Print to **stderr** for debug logs — stdout is the Ooze Protocol
-- Use `self.send_activity()` to show progress in the UI
+- Send `{"type": "activity", ...}` messages to show progress in the UI
 - If your agent hangs, check for missing `done: true` or stdout buffering
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| Agent never becomes ready | Missing `{"type": "ready"}` | Use `run_loop()` — the SDK handles this |
-| User sees no response | `send_response` not called or `done` not `true` | Always end with `self.send_response(..., done=True)` |
+| Agent never becomes ready | Missing `{"type": "ready"}` on stdout | Print `{"type": "ready"}` before reading stdin |
+| User sees no response | Missing `done: true` on final response | Always end with `{"type": "response", ..., "done": true}` |
 | State lost between sessions | Writing outside `/home/user/` | Write to `/home/user/` — everything there persists |
 | Import errors on startup | Dependencies not installed | Check `setup_command` in manifest |

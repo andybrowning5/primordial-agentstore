@@ -8,7 +8,7 @@ An open marketplace for AI agents. You build an agent, publish it, and anyone ca
 
 ## Features
 
-- **Sandbox Isolation** — Every agent runs in a Firecracker microVM (~150ms startup) with enforced resource limits
+- **Sandbox Isolation** — Every agent runs in a Firecracker microVM (~150ms startup)
 - **Language-Agnostic** — Any language that reads stdin and writes stdout works (Python, Node.js, Rust, bash…)
 - **The Ooze Protocol** — Simple NDJSON message protocol. No framework lock-in.
 - **GitHub Agents** — Run agents directly from GitHub URLs with automatic caching
@@ -66,6 +66,23 @@ agentstore keys list                              # Show all stored keys
 agentstore keys remove anthropic                  # Remove a key
 ```
 
+### `agentstore search`
+
+Discover agents on GitHub (searches for repos tagged `ooze-agent`).
+
+```
+agentstore search                                 # Browse available agents
+```
+
+### `agentstore sessions <agent>`
+
+Manage sessions for an agent.
+
+```
+agentstore sessions gus                           # List sessions for "gus"
+agentstore sessions ./my-agent                    # Local agent sessions
+```
+
 ### `agentstore cache`
 
 Manage cached GitHub agent repos.
@@ -101,7 +118,7 @@ Full protocol spec in [BUILDING_AGENTS.md](BUILDING_AGENTS.md).
 
 - **Firecracker microVMs** — isolated sandbox per agent (~150ms startup)
 - **No network by default** — every domain declared in the manifest with a reason
-- **Resource limits** — memory, CPU, and duration enforced by the sandbox
+- **Network enforcement** — domain-level outbound filtering via E2B (SNI/Host header inspection)
 - **User approval** — permissions reviewed and approved before launch
 - **Encrypted key vault** — Fernet encryption, PBKDF2 key derivation (600k iterations), machine-bound, `0600` file permissions
 
@@ -114,7 +131,7 @@ AgentStore/
 ├── packages/
 │   └── client/
 │       └── src/agentstore/
-│           ├── cli/               # CLI commands (run, setup, keys, cache)
+│           ├── cli/               # CLI commands (run, setup, keys, cache, search, sessions)
 │           ├── sandbox/           # Sandbox manager (E2B/Firecracker)
 │           ├── security/          # Key vault, permission handling
 │           ├── config.py          # Platform-specific paths
@@ -124,9 +141,7 @@ AgentStore/
 │   ├── hello-agent/               # Minimal example agent
 │   └── steve-agent/               # Full-featured example agent
 ├── BUILDING_AGENTS.md             # Guide to building agents
-├── pyproject.toml
-├── Dockerfile.backend
-└── docker-compose.yml
+└── pyproject.toml
 ```
 
 ---
