@@ -77,7 +77,7 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
 
         # Build headers for upstream, stripping hop-by-hop and auth headers
         skip = {"host", "transfer-encoding", "connection", "proxy-connection",
-                "x-api-key", "authorization"}
+                "x-api-key", "x-subscription-token", "authorization"}
         headers = {}
         for key, value in self.headers.items():
             if key.lower() not in skip:
@@ -89,6 +89,8 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         # Inject real API key
         if self.server.auth_style == "x-api-key":
             headers["x-api-key"] = self.server.real_key
+        elif self.server.auth_style == "x-subscription-token":
+            headers["X-Subscription-Token"] = self.server.real_key
         else:
             headers["Authorization"] = f"Bearer {self.server.real_key}"
 

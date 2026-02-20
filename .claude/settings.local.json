@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:docs.docker.com)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(tree:*)",
+      "Bash(pip install:*)",
+      "Bash(agentstore --version:*)",
+      "Bash(agentstore:*)",
+      "Bash(python3:*)",
+      "Bash(git clone:*)",
+      "Bash(echo:*)",
+      "Bash(PYTHONPATH=packages/client/src:sdk/src python3 -m pytest:*)",
+      "Bash(PYTHONPATH=packages/client/src python3:*)",
+      "Bash(PYTHONPATH=packages/client/src:sdk/src python3:*)",
+      "Bash(gh repo create:*)",
+      "Bash(docker sandbox create:*)",
+      "Bash(docker sandbox:*)",
+      "Bash(# Test: tar pipe to get a directory into the sandbox cd /tmp && mkdir -p test-agent && echo \"\"def run\\(\\): return ''works''\"\" && tar cf - test-agent)",
+      "Bash(tar cf:*)",
+      "Bash(python -c:*)",
+      "WebFetch(domain:modal.com)",
+      "WebSearch"
+    ]
+  }
+}
