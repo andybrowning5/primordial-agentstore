@@ -21,69 +21,32 @@ from agentstore.cli.helix import HelixSpinner
 console = Console()
 
 
+def _new_session_name() -> str:
+    """Prompt for a custom session name or generate one."""
+    auto_name = datetime.now().strftime("%Y%m%d-%H%M%S")
+    name = click.prompt("Session name", default=auto_name).strip()
+    return name or auto_name
+
+
 def _pick_session(config, agent_name: str) -> Path:
     """Prompt user to create a new session or resume an existing one."""
     sessions = config.list_sessions(agent_name)
 
     if not sessions:
-        session_name = datetime.now().strftime("%Y%m%d-%H%M%S")
-        return config.session_state_dir(agent_name, session_name)
+        return config.session_state_dir(agent_name, _new_session_name())
 
-    while True:
-        console.print("\n[bold]Sessions:[/bold]")
-        console.print(f"  [cyan]0)[/cyan] New session")
-        for i, name in enumerate(sessions, 1):
-            console.print(f"  [cyan]{i})[/cyan] {name}")
-        console.print(f"  [red]d)[/red] Delete a session")
-        console.print()
-
-        choice = click.prompt("Select session", default="0").strip().lower()
-
-        if choice == "d":
-            _delete_session_prompt(config, agent_name, sessions)
-            sessions = config.list_sessions(agent_name)
-            if not sessions:
-                session_name = datetime.now().strftime("%Y%m%d-%H%M%S")
-                return config.session_state_dir(agent_name, session_name)
-            continue
-
-        try:
-            num = int(choice)
-        except ValueError:
-            continue
-
-        if num == 0 or num > len(sessions):
-            session_name = datetime.now().strftime("%Y%m%d-%H%M%S")
-            return config.session_state_dir(agent_name, session_name)
-
-        return config.session_state_dir(agent_name, sessions[num - 1])
-
-
-def _delete_session_prompt(config, agent_name: str, sessions: list[str]) -> None:
-    """Prompt user to pick a session to delete."""
-    console.print("\n[bold red]Delete session:[/bold red]")
+    console.print("\n[bold]Sessions:[/bold]")
+    console.print(f"  [cyan]0)[/cyan] New session")
     for i, name in enumerate(sessions, 1):
         console.print(f"  [cyan]{i})[/cyan] {name}")
     console.print()
 
-    choice = click.prompt("Session to delete (Enter to cancel)", default="").strip()
-    if not choice:
-        return
+    choice = click.prompt("Select session", type=int, default=0)
 
-    try:
-        num = int(choice)
-    except ValueError:
-        console.print("[red]Invalid number.[/red]")
-        return
+    if choice == 0 or choice > len(sessions):
+        return config.session_state_dir(agent_name, _new_session_name())
 
-    if num < 1 or num > len(sessions):
-        console.print("[red]Invalid number.[/red]")
-        return
-
-    name = sessions[num - 1]
-    if click.confirm(f"Delete session '{name}'? This cannot be undone"):
-        config.delete_session(agent_name, name)
-        console.print(f"[green]Deleted session '{name}'.[/green]")
+    return config.session_state_dir(agent_name, sessions[choice - 1])
 
 
 @click.command()
@@ -226,10 +189,9 @@ def _run_chat(
     state_dir: Path | None = None,
 ) -> None:
     """Run an agent with a human-friendly chat loop."""
-    console.print(f"\n[bold]Starting {manifest.display_name}[/bold] v{manifest.version}")
-    console.print(f"[dim]Type 'exit' or Ctrl+C to quit[/dim]\n")
+    agent_subtitle = f"Starting {manifest.display_name} v{manifest.version}"
 
-    with HelixSpinner(console) as spinner:
+    with HelixSpinner(console, subtitle=agent_subtitle) as spinner:
         try:
             session = manager.run_agent(
                 agent_dir=agent_dir,

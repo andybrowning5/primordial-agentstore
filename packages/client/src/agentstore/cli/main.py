@@ -5,6 +5,7 @@ import click
 from agentstore.cli.cache import cache
 from agentstore.cli.keys import keys
 from agentstore.cli.run import run
+from agentstore.cli.sessions import sessions
 from agentstore.cli.setup import setup
 
 
@@ -17,6 +18,7 @@ def cli():
 
 cli.add_command(setup)
 cli.add_command(run)
+cli.add_command(sessions)
 cli.add_command(keys)
 cli.add_command(cache)
 
