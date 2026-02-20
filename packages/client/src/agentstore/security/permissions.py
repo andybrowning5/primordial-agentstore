@@ -30,7 +30,6 @@ def format_permissions_for_display(manifest: AgentManifest) -> list[str]:
             lines.append(f"  - Can call: {a}")
 
     if manifest.keys:
-        lines.append("")
         lines.append("API keys:")
         config = get_config()
         vault = KeyVault(config.keys_file)
