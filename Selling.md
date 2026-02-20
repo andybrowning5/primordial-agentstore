@@ -12,7 +12,7 @@ So I built one where trust isn't required.
 
 Every agent runs in its own microVM. Your API keys never touch the agent's code — they're protected by a security layer that keeps them invisible to the agent process. You approve every permission before anything runs.
 
-For developers, the bar to publish an agent is intentionally low. No framework, no SDK. Your agent just reads and writes JSON lines over stdin/stdout. Python, Node, Rust, bash — anything works. Push to GitHub, tag it, and it shows up in the marketplace.
+For developers, the bar to publish an agent is intentionally low. No framework, no SDK. Your agent just reads and writes JSON lines over stdin/stdout. Python, Node, Rust, bash — anything works. Push to GitHub, add the `primordial-agent` topic tag, and it automatically shows up in the marketplace for anyone to discover and run.
 
 **The use case I'm most excited about: agent delegation.**
 
