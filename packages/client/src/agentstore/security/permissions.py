@@ -21,7 +21,8 @@ def format_permissions_for_display(manifest: AgentManifest) -> list[str]:
     else:
         lines.append("Network access: None (sandbox isolated)")
 
-    lines.append(f"Workspace access: {manifest.permissions.filesystem.workspace}")
+    lines.append(f"Workspace access:")
+    lines.append(f"  [bright_black]- {manifest.permissions.filesystem.workspace}[/bright_black]")
 
     if manifest.permissions.delegation.enabled:
         lines.append("Agent delegation: ENABLED")
