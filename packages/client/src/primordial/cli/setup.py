@@ -6,9 +6,9 @@ from rich.text import Text
 from rich.panel import Panel
 from rich.table import Table
 
-from agentstore.config import get_config
-from agentstore.security.key_vault import KeyVault
-from agentstore.cli.providers import pick_provider
+from primordial.config import get_config
+from primordial.security.key_vault import KeyVault
+from primordial.cli.providers import pick_provider
 
 console = Console()
 

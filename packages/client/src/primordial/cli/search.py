@@ -70,6 +70,6 @@ def search(query: str | None):
 
     repo_url = repos[idx]["html_url"]
     console.print(f"\n[bold]Running:[/bold] {repo_url}")
-    from agentstore.cli.run import run
+    from primordial.cli.run import run
     ctx = click.Context(run)
     ctx.invoke(run, agent_path=repo_url)

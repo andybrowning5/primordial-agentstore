@@ -13,13 +13,13 @@ import click
 from rich.console import Console
 from rich.markdown import Markdown
 
-from agentstore.config import get_config
-from agentstore.github import GitHubResolver, GitHubResolverError, is_github_url, parse_github_url
-from agentstore.manifest import load_manifest
-from agentstore.security.key_vault import KeyVault
-from agentstore.security.permissions import format_permissions_for_display
-from agentstore.sandbox.manager import SandboxManager
-from agentstore.cli.helix import HelixSpinner
+from primordial.config import get_config
+from primordial.github import GitHubResolver, GitHubResolverError, is_github_url, parse_github_url
+from primordial.manifest import load_manifest
+from primordial.security.key_vault import KeyVault
+from primordial.security.permissions import format_permissions_for_display
+from primordial.sandbox.manager import SandboxManager
+from primordial.cli.helix import HelixSpinner
 
 console = Console()
 

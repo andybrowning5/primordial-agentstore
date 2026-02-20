@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from agentstore.config import get_config
+from primordial.config import get_config
 
 
 class GitHubResolverError(Exception):

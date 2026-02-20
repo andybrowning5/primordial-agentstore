@@ -5,7 +5,7 @@ from __future__ import annotations
 import click
 from rich.console import Console
 
-from agentstore.security.key_vault import KeyVault
+from primordial.security.key_vault import KeyVault
 
 console = Console()
 

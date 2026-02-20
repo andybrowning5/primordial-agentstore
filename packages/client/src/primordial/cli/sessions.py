@@ -6,8 +6,8 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from agentstore.config import get_config
-from agentstore.manifest import resolve_agent_name
+from primordial.config import get_config
+from primordial.manifest import resolve_agent_name
 
 console = Console()
 

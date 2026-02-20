@@ -8,7 +8,7 @@ from typing import Optional
 
 import yaml
 
-from agentstore.models import AgentManifest
+from primordial.models import AgentManifest
 
 
 def load_manifest(path: Path) -> AgentManifest:
@@ -63,7 +63,7 @@ def resolve_agent_name(agent_path: str, agents_dir: Optional[Path] = None) -> st
 
     Tries to load the manifest to get the canonical name. Falls back to the raw input.
     """
-    from agentstore.github import GitHubResolver, GitHubResolverError, is_github_url, parse_github_url
+    from primordial.github import GitHubResolver, GitHubResolverError, is_github_url, parse_github_url
 
     if is_github_url(agent_path):
         try:

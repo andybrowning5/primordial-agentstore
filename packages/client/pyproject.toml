@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
-primordial = "agentstore.cli.main:cli"
+primordial = "primordial.cli.main:cli"
 
 [project.optional-dependencies]
 dev = [
@@ -30,4 +30,4 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/agentstore"]
+packages = ["src/primordial"]

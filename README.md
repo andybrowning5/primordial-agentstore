@@ -130,7 +130,7 @@ Full protocol spec in [BUILDING_AGENTS.md](BUILDING_AGENTS.md).
 AgentStore/
 ├── packages/
 │   └── client/
-│       └── src/agentstore/
+│       └── src/primordial/
 │           ├── cli/               # CLI commands (run, setup, keys, cache, search, sessions)
 │           ├── sandbox/           # Sandbox manager (E2B/Firecracker)
 │           ├── security/          # Key vault, permission handling
@@ -152,8 +152,8 @@ Uses [`platformdirs`](https://github.com/platformdirs/platformdirs):
 
 | Directory | macOS | Linux |
 |-----------|-------|-------|
-| Data (keys, state, agents) | `~/Library/Application Support/agentstore/` | `~/.local/share/agentstore/` |
-| Cache (GitHub repos) | `~/Library/Caches/agentstore/` | `~/.cache/agentstore/` |
+| Data (keys, state, agents) | `~/Library/Application Support/primordial/` | `~/.local/share/primordial/` |
+| Cache (GitHub repos) | `~/Library/Caches/primordial/` | `~/.cache/primordial/` |
 
 ---
 

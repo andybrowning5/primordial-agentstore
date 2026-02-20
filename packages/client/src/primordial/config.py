@@ -1,4 +1,4 @@
-"""Agent Store configuration."""
+"""Primordial AgentStore configuration."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 from platformdirs import user_data_dir, user_cache_dir
 
 
-APP_NAME = "agentstore"
+APP_NAME = "primordial"
 
 
 def get_data_dir() -> Path:

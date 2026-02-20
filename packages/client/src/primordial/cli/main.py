@@ -2,12 +2,12 @@
 
 import click
 
-from agentstore.cli.cache import cache
-from agentstore.cli.search import search
-from agentstore.cli.keys import keys
-from agentstore.cli.run import run
-from agentstore.cli.sessions import sessions
-from agentstore.cli.setup import setup
+from primordial.cli.cache import cache
+from primordial.cli.search import search
+from primordial.cli.keys import keys
+from primordial.cli.run import run
+from primordial.cli.sessions import sessions
+from primordial.cli.setup import setup
 
 
 @click.group()

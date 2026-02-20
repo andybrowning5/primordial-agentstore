@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agentstore.models import AgentManifest
+from primordial.models import AgentManifest
 
 
 def format_permissions_for_display(

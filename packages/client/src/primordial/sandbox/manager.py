@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 from e2b import Sandbox
 
-from agentstore.models import AgentManifest
+from primordial.models import AgentManifest
 
 AGENT_HOME_IN_SANDBOX = "/home/user"
 AGENT_DIR_IN_SANDBOX = "/home/user/agent"
