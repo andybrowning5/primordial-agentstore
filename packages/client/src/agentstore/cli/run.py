@@ -171,6 +171,9 @@ def run(
             raise SystemExit(1)
 
     env_vars = vault.get_env_vars()  # inject all stored keys
+    tz = config.get_timezone()
+    if tz:
+        env_vars["TZ"] = tz
     workspace = "."
     manager = SandboxManager()
 
