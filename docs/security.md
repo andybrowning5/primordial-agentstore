@@ -101,7 +101,7 @@ Agent process (user)                    Proxy (root)                     Upstrea
 
 **Known provider domain enforcement:**
 
-For known providers (Anthropic, OpenAI, Google, Groq, Mistral, DeepSeek, Brave), the proxy always uses the hardcoded domain from `_PROVIDER_DEFAULTS`, ignoring any `domain` override in the manifest. This prevents a malicious manifest from redirecting real API keys to attacker-controlled servers.
+For known providers (Anthropic, OpenAI, Google, Groq, Mistral, DeepSeek), the proxy always uses the hardcoded domain from `_PROVIDER_DEFAULTS`, ignoring any `domain` override in the manifest. This prevents a malicious manifest from redirecting real API keys to attacker-controlled servers.
 
 **Cross-provider theft prevention:**
 
@@ -122,7 +122,7 @@ Duplicate `env_var` or `base_url_env` values across manifest key entries are rej
 | Mistral | api.mistral.ai | `Authorization: Bearer` |
 | DeepSeek | api.deepseek.com | `Authorization: Bearer` |
 
-Custom providers can specify `domain`, `base_url_env`, and `auth_style` (any HTTP header name) in the manifest's `keys:` section. See [Custom Providers](custom-providers.md).
+These are just the built-in defaults. **Any API can be used safely through the proxy** — developers declare `domain`, `base_url_env`, and `auth_style` in the manifest's `keys:` section, and the proxy handles it identically: keys stay invisible to the agent, requests are pinned to the declared domain, and all the same protections apply. See [Custom Providers](custom-providers.md).
 
 ## 4. Key Vault — Encrypted At Rest
 
