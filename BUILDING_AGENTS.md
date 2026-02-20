@@ -2,11 +2,11 @@
 
 You build an agent. We give it a sandbox. Users run it safely.
 
-Your agent is a long-running process that speaks the **Ooze Protocol** — newline-delimited JSON (NDJSON) over stdin/stdout. The platform doesn't care what language you write it in, which LLM you call, or what tools you use. Declare your permissions in a manifest, wire up the protocol, and you're done.
+Your agent is a long-running process that speaks the **Primordial Protocol** — newline-delimited JSON (NDJSON) over stdin/stdout. The platform doesn't care what language you write it in, which LLM you call, or what tools you use. Declare your permissions in a manifest, wire up the protocol, and you're done.
 
 ---
 
-## The Ooze Protocol
+## The Primordial Protocol
 
 ### How it works (the intuition)
 
@@ -83,7 +83,7 @@ This design means **any language works** — Python, Node, Rust, even bash. Ther
 **Rules:**
 - Every message response chain must end with a `response` where `done: true`
 - Use `activity` messages to show progress in the UI (tool usage, loading indicators)
-- Print debug logs to **stderr** — stdout is reserved for the Ooze Protocol
+- Print debug logs to **stderr** — stdout is reserved for the Primordial Protocol
 - Use `python -u` (unbuffered) or `flush=True` to avoid stdout buffering — without it, Python buffers output and the platform never sees your messages
 
 ---
@@ -118,7 +118,7 @@ author:
 
 runtime:
   language: python                # "python", "node", or anything
-  run_command: python -u src/agent.py   # Required — the Ooze Protocol process
+  run_command: python -u src/agent.py   # Required — your agent's entrypoint
   setup_command: pip install -r requirements.txt  # Optional — runs once at sandbox startup
   dependencies: requirements.txt  # Optional — checked for existence
   default_model:
@@ -250,7 +250,7 @@ for line in sys.stdin:
 
 ## Agent Delegation
 
-Agents can spawn other agents via `--agent-read` mode. The calling agent communicates with the sub-agent over the same Ooze Protocol:
+Agents can spawn other agents via `--agent-read` mode. The calling agent communicates with the sub-agent over the same Primordial Protocol:
 
 ```python
 import json, subprocess
@@ -322,7 +322,7 @@ agentstore run ./my-agent          # Interactive chat — easiest way to test
 
 Tips:
 - Use `python -u` (unbuffered) in `run_command` to avoid stdout buffering
-- Print to **stderr** for debug logs — stdout is the Ooze Protocol
+- Print to **stderr** for debug logs — stdout is the Primordial Protocol
 - Send `{"type": "activity", ...}` messages to show progress in the UI
 - If your agent hangs, check for missing `done: true` or stdout buffering
 

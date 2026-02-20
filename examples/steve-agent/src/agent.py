@@ -1,7 +1,7 @@
 """Steve Agent Store adapter.
 
-Wraps Steve's LangGraph-based job hunting agent in the Ooze Protocol
-for use on the Agent Store platform.
+Wraps Steve's LangGraph-based job hunting agent in the Primordial Protocol
+for use on the Primordial AgentStore platform.
 """
 
 import json

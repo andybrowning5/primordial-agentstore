@@ -2,7 +2,7 @@
 
 **The digital soup from which agents emerge.**
 
-An open marketplace for AI agents. You build an agent, publish it, and anyone can run it — safely inside an isolated Firecracker microVM. There's no opinionated framework, no required language or LLM provider. Your agent just needs to speak the **Ooze Protocol** (NDJSON over stdin/stdout) and declare its permissions in a manifest.
+An open marketplace for AI agents. You build an agent, publish it, and anyone can run it — safely inside an isolated Firecracker microVM. There's no opinionated framework, no required language or LLM provider. Your agent just needs to speak the **Primordial Protocol** (NDJSON over stdin/stdout) and declare its permissions in a manifest.
 
 ---
 
@@ -10,7 +10,7 @@ An open marketplace for AI agents. You build an agent, publish it, and anyone ca
 
 - **Sandbox Isolation** — Every agent runs in a Firecracker microVM (~150ms startup)
 - **Language-Agnostic** — Any language that reads stdin and writes stdout works (Python, Node.js, Rust, bash…)
-- **The Ooze Protocol** — Simple NDJSON message protocol. No framework lock-in.
+- **Primordial Protocol** — Simple NDJSON message protocol. No framework lock-in.
 - **GitHub Agents** — Run agents directly from GitHub URLs with automatic caching
 - **Encrypted Key Vault** — API keys encrypted at rest with Fernet (AES-128-CBC + HMAC-SHA256), derived via PBKDF2
 - **Agent Delegation** — Agents spawn sub-agents via `--agent-read` pipe mode
@@ -49,7 +49,7 @@ Run an agent in a sandboxed environment.
 agentstore run ./my-agent                                    # Local directory
 agentstore run https://github.com/user/repo                  # GitHub URL
 agentstore run https://github.com/user/repo --ref v1.0.0     # Specific git ref
-agentstore run ./my-agent --agent-read                       # Ooze Protocol pipe mode
+agentstore run ./my-agent --agent-read                       # Primordial Protocol pipe mode
 agentstore run ./my-agent --yes                              # Skip permission approval
 agentstore run ./my-agent --refresh                          # Force re-fetch GitHub agent
 ```
@@ -68,7 +68,7 @@ agentstore keys remove anthropic                  # Remove a key
 
 ### `agentstore search`
 
-Discover agents on GitHub (searches for repos tagged `ooze-agent`).
+Discover agents on GitHub (searches for repos tagged `primordial-agent`).
 
 ```
 agentstore search                                 # Browse available agents
@@ -97,11 +97,11 @@ agentstore cache clear https://github.com/u/repo  # Clear specific entry
 
 ## Building Agents
 
-See **[BUILDING_AGENTS.md](BUILDING_AGENTS.md)** for the complete guide — the Ooze Protocol, manifest reference, examples, persistence, delegation, security model, and debugging tips.
+See **[BUILDING_AGENTS.md](BUILDING_AGENTS.md)** for the complete guide — the protocol, manifest reference, examples, persistence, delegation, security model, and debugging tips.
 
 ---
 
-## The Ooze Protocol (Overview)
+## The Primordial Protocol (Overview)
 
 Every agent is a process that speaks NDJSON over stdin/stdout:
 

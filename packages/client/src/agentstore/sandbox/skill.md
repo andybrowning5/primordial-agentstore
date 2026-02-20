@@ -11,11 +11,11 @@ agentstore run <agent> --agent-read --yes
 **Arguments:**
 
 - `<agent>` — A GitHub URL (`https://github.com/owner/repo`) or a local path to an agent directory containing an `agent.yaml`.
-- `--agent-read` — Communicate with the agent via the Ooze Protocol (NDJSON on stdin/stdout) instead of interactive mode.
+- `--agent-read` — Communicate with the agent via the Primordial Protocol (NDJSON on stdin/stdout) instead of interactive mode.
 - `--yes`, `-y` — Skip the permission approval prompt (auto-approve).
 - `--ref` — Git ref (branch, tag, commit) when using a GitHub agent.
 
-## The Ooze Protocol
+## The Primordial Protocol
 
 When using `--agent-read`, communication happens over newline-delimited JSON (NDJSON):
 
@@ -79,4 +79,4 @@ proc.wait()
 
 - You can only delegate to agents listed in your manifest's `permissions.delegation.allowed_agents`.
 - Delegated agents inherit your workspace unless you specify a different path.
-- Each spawned agent runs in its own sandbox with its own network and resource limits.
+- Each spawned agent runs in its own sandbox with its own network rules.

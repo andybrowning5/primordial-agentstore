@@ -70,7 +70,7 @@ def _pick_session(config, agent_name: str) -> Path:
 
 @click.command()
 @click.argument("agent_path")
-@click.option("--agent-read", is_flag=True, help="Ooze Protocol pipe mode (NDJSON stdin/stdout)")
+@click.option("--agent-read", is_flag=True, help="Primordial Protocol pipe mode (NDJSON stdin/stdout)")
 @click.option("--ref", default=None, help="Git ref (branch, tag, commit) for GitHub agents")
 @click.option("--refresh", is_flag=True, help="Force re-fetch of GitHub agent (ignore cache)")
 @click.option("--yes", "-y", is_flag=True, help="Skip approval prompt")
@@ -83,7 +83,7 @@ def run(
     yes: bool,
     session_name: str | None,
 ):
-    """Run an agent in a Primordial sandbox.
+    """Run an agent in a sandbox.
 
     AGENT_PATH can be:
       - A local directory (./my-agent)
