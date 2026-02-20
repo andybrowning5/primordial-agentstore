@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 
@@ -73,26 +72,6 @@ class AgentStoreConfig:
             key=lambda n: (agent_dir / n).stat().st_mtime,
             reverse=True,
         )
-
-    @property
-    def settings_file(self) -> Path:
-        return self.data_dir / "settings.json"
-
-    def _load_settings(self) -> dict:
-        if self.settings_file.exists():
-            return json.loads(self.settings_file.read_text())
-        return {}
-
-    def _save_settings(self, settings: dict) -> None:
-        self.settings_file.write_text(json.dumps(settings, indent=2))
-
-    def get_timezone(self) -> str | None:
-        return self._load_settings().get("timezone")
-
-    def set_timezone(self, tz: str) -> None:
-        settings = self._load_settings()
-        settings["timezone"] = tz
-        self._save_settings(settings)
 
     def delete_session(self, agent_name: str, session_name: str) -> bool:
         """Delete a session's state directory. Returns True if it existed."""

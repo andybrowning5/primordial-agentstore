@@ -186,56 +186,6 @@ def setup():
             table.add_row(entry["provider"], "ready")
         console.print(table)
 
-    # Timezone configuration
-    current_tz = config.get_timezone()
-    if current_tz:
-        console.print(f"  Timezone: [green]{current_tz}[/green]")
-        if click.confirm("  Change timezone?", default=False):
-            _prompt_timezone(config)
-    else:
-        _prompt_timezone(config)
-
     console.print()
     console.print(f"[bold bright_green]Done.[/bold bright_green] {added} key(s) added this session.")
     console.print()
-
-
-def _prompt_timezone(config) -> None:
-    """Ask the user for their timezone."""
-    import subprocess
-    # Try to detect system timezone
-    detected = None
-    try:
-        result = subprocess.run(
-            ["python3", "-c", "import time; print(time.tzname[0])"],
-            capture_output=True, text=True, timeout=3,
-        )
-        # Get IANA timezone instead
-        import platform
-        if platform.system() == "Darwin":
-            result = subprocess.run(
-                ["readlink", "/etc/localtime"],
-                capture_output=True, text=True, timeout=3,
-            )
-            if result.returncode == 0:
-                # /var/db/timezone/zoneinfo/America/Chicago -> America/Chicago
-                parts = result.stdout.strip().split("/zoneinfo/")
-                if len(parts) == 2:
-                    detected = parts[1]
-        elif platform.system() == "Linux":
-            from pathlib import Path
-            tz_file = Path("/etc/timezone")
-            if tz_file.exists():
-                detected = tz_file.read_text().strip()
-    except Exception:
-        pass
-
-    prompt_text = "  Your timezone (e.g. America/New_York)"
-    if detected:
-        tz = click.prompt(prompt_text, default=detected).strip()
-    else:
-        tz = click.prompt(prompt_text).strip()
-
-    if tz:
-        config.set_timezone(tz)
-        console.print(f"  [green]Timezone set to {tz}[/green]")
