@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "agentstore-monorepo"
+name = "primordial-monorepo"
 version = "0.1.0"
-description = "Agent Store - Marketplace for specialized TUI AI agents"
+description = "Primordial AgentStore - The digital soup from which agents emerge"
 requires-python = ">=3.11"
 
 [tool.hatch.envs.default]

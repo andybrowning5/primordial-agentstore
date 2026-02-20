@@ -1,11 +1,11 @@
 # Primordial AgentStore Skill
 
-You are running inside a Primordial AgentStore sandbox. You can spin up other agents to help you with tasks using the `agentstore` CLI, which is available in your environment.
+You are running inside a Primordial AgentStore sandbox. You can spin up other agents to help you with tasks using the `primordial` CLI, which is available in your environment.
 
 ## Running an Agent
 
 ```bash
-agentstore run <agent> --agent-read --yes
+primordial run <agent> --agent-read --yes
 ```
 
 **Arguments:**
@@ -44,7 +44,7 @@ import subprocess
 import json
 
 proc = subprocess.Popen(
-    ["agentstore", "run", "https://github.com/owner/repo", "--agent-read", "--yes"],
+    ["primordial", "run", "https://github.com/owner/repo", "--agent-read", "--yes"],
     stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
 )
 

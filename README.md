@@ -23,74 +23,74 @@ An open marketplace for AI agents. You build an agent, publish it, and anyone ca
 
 ```bash
 # Install
-pip install agentstore
+pip install primordial
 
 # Configure API keys (interactive)
-agentstore setup
+primordial setup
 
 # Run an agent
-agentstore run ./my-agent
-agentstore run https://github.com/user/repo
+primordial run ./my-agent
+primordial run https://github.com/user/repo
 ```
 
 ---
 
 ## CLI Reference
 
-### `agentstore setup`
+### `primordial setup`
 
 Interactive setup wizard. Walks through known providers (Anthropic, OpenAI, Brave, Groq, Google, Mistral, DeepSeek, E2B) and stores encrypted API keys.
 
-### `agentstore run <agent>`
+### `primordial run <agent>`
 
 Run an agent in a sandboxed environment.
 
 ```
-agentstore run ./my-agent                                    # Local directory
-agentstore run https://github.com/user/repo                  # GitHub URL
-agentstore run https://github.com/user/repo --ref v1.0.0     # Specific git ref
-agentstore run ./my-agent --agent-read                       # Primordial Protocol pipe mode
-agentstore run ./my-agent --yes                              # Skip permission approval
-agentstore run ./my-agent --refresh                          # Force re-fetch GitHub agent
+primordial run ./my-agent                                    # Local directory
+primordial run https://github.com/user/repo                  # GitHub URL
+primordial run https://github.com/user/repo --ref v1.0.0     # Specific git ref
+primordial run ./my-agent --agent-read                       # Primordial Protocol pipe mode
+primordial run ./my-agent --yes                              # Skip permission approval
+primordial run ./my-agent --refresh                          # Force re-fetch GitHub agent
 ```
 
-### `agentstore keys`
+### `primordial keys`
 
 Manage API keys.
 
 ```
-agentstore keys add                               # Interactive picker
-agentstore keys add anthropic sk-...              # Direct add
-agentstore keys add anthropic sk-... --key-id prod  # With custom ID
-agentstore keys list                              # Show all stored keys
-agentstore keys remove anthropic                  # Remove a key
+primordial keys add                               # Interactive picker
+primordial keys add anthropic sk-...              # Direct add
+primordial keys add anthropic sk-... --key-id prod  # With custom ID
+primordial keys list                              # Show all stored keys
+primordial keys remove anthropic                  # Remove a key
 ```
 
-### `agentstore search`
+### `primordial search`
 
 Discover agents on GitHub (searches for repos tagged `primordial-agent`).
 
 ```
-agentstore search                                 # Browse available agents
+primordial search                                 # Browse available agents
 ```
 
-### `agentstore sessions <agent>`
+### `primordial sessions <agent>`
 
 Manage sessions for an agent.
 
 ```
-agentstore sessions gus                           # List sessions for "gus"
-agentstore sessions ./my-agent                    # Local agent sessions
+primordial sessions gus                           # List sessions for "gus"
+primordial sessions ./my-agent                    # Local agent sessions
 ```
 
-### `agentstore cache`
+### `primordial cache`
 
 Manage cached GitHub agent repos.
 
 ```
-agentstore cache list                             # List cached repos
-agentstore cache clear --all                      # Clear entire cache
-agentstore cache clear https://github.com/u/repo  # Clear specific entry
+primordial cache list                             # List cached repos
+primordial cache clear --all                      # Clear entire cache
+primordial cache clear https://github.com/u/repo  # Clear specific entry
 ```
 
 ---
@@ -160,8 +160,8 @@ Uses [`platformdirs`](https://github.com/platformdirs/platformdirs):
 ## Examples
 
 ```bash
-agentstore run ./examples/hello-agent
-agentstore run ./examples/steve-agent
+primordial run ./examples/hello-agent
+primordial run ./examples/steve-agent
 ```
 
 ---

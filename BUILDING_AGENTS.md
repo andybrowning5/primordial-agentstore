@@ -256,7 +256,7 @@ Agents can spawn other agents via `--agent-read` mode. The calling agent communi
 import json, subprocess
 
 proc = subprocess.Popen(
-    ["agentstore", "run", "https://github.com/user/code-reviewer",
+    ["primordial", "run", "https://github.com/user/code-reviewer",
      "--agent-read", "--yes"],
     stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
 )
@@ -317,7 +317,7 @@ Best practices:
 ## Debugging
 
 ```bash
-agentstore run ./my-agent          # Interactive chat — easiest way to test
+primordial run ./my-agent          # Interactive chat — easiest way to test
 ```
 
 Tips:

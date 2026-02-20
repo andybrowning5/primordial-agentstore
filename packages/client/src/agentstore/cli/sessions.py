@@ -21,9 +21,9 @@ def sessions(agent_path: str):
 
     \b
     Examples:
-      agentstore sessions gus
-      agentstore sessions ./my-agent
-      agentstore sessions https://github.com/user/repo
+      primordial sessions gus
+      primordial sessions ./my-agent
+      primordial sessions https://github.com/user/repo
     """
     config = get_config()
     agent_name = resolve_agent_name(agent_path, agents_dir=config.agents_dir)

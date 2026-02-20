@@ -186,8 +186,8 @@ def run(
         api_key = vault.get_key(provider)
         if not api_key:
             console.print(f"[red]No API key found for provider '{provider}'.[/red]")
-            console.print(f"[dim]Add one with:[/dim] agentstore keys add {provider} <your-key>")
-            console.print(f"[dim]Or run:[/dim] agentstore setup")
+            console.print(f"[dim]Add one with:[/dim] primordial keys add {provider} <your-key>")
+            console.print(f"[dim]Or run:[/dim] primordial setup")
             raise SystemExit(1)
 
     # Only inject keys the manifest declares — never leak unrelated keys

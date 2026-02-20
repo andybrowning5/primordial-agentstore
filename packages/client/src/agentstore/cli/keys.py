@@ -54,7 +54,7 @@ def list_keys():
     entries = vault.list_keys()
 
     if not entries:
-        console.print("[dim]No API keys stored. Use 'agentstore keys add' to add one.[/dim]")
+        console.print("[dim]No API keys stored. Use 'primordial keys add' to add one.[/dim]")
         return
 
     table = Table(title="Stored API Keys")

@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "agentstore"
+name = "primordial"
 version = "0.1.0"
-description = "Agent Store CLI & TUI client"
+description = "Primordial AgentStore CLI"
 requires-python = ">=3.11"
 dependencies = [
     "click>=8.1",
@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
-agentstore = "agentstore.cli.main:cli"
+primordial = "agentstore.cli.main:cli"
 
 [project.optional-dependencies]
 dev = [

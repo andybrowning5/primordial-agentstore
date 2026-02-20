@@ -88,8 +88,8 @@ class SandboxManager:
             return
         raise SandboxError(
             "E2B API key not found. Add one with:\n"
-            "  agentstore keys add e2b <your-key>\n"
-            "  or: agentstore setup\n"
+            "  primordial keys add e2b <your-key>\n"
+            "  or: primordial setup\n"
             "  or: export E2B_API_KEY=<your-key>\n"
             "Get your key at https://e2b.dev/dashboard"
         )
