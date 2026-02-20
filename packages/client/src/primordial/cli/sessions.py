@@ -21,7 +21,7 @@ def sessions(agent_path: str):
 
     \b
     Examples:
-      primordial sessions gus
+      primordial sessions my-agent
       primordial sessions ./my-agent
       primordial sessions https://github.com/user/repo
     """
