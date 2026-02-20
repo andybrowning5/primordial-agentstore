@@ -8,7 +8,7 @@ The problem that kept bugging me: there's no good way to share AI agents. You ca
 
 So I built one where trust isn't required.
 
-**GitHub repo → running agent in under 30 seconds.** You point Primordial at a repo, it spins up an isolated sandbox, handles your API keys securely, shows you exactly what permissions the agent needs, and you're chatting with it. That's it.
+**GitHub repo → running agent in under 30 seconds.** You point Primordial at a repo — or search compatible agents from the Primordial Search list — it spins up an isolated sandbox, handles your API keys securely, shows you exactly what permissions the agent needs, and you're chatting with it. That's it.
 
 Every agent runs in its own microVM. Your API keys never touch the agent's code — they're protected by a security layer that keeps them invisible to the agent process. You approve every permission before anything runs.
 
