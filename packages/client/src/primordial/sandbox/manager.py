@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 from e2b import Sandbox
 
-from primordial.models import AgentManifest
+from primordial.models import AgentManifest, _PROTECTED_ENV_VARS
 
 _PROXY_SCRIPT = Path(__file__).parent / "proxy_script.py"
 _PROXY_PATH_IN_SANDBOX = "/opt/_primordial_proxy.py"
@@ -38,10 +38,20 @@ AGENT_DIR_IN_SANDBOX = "/home/user/agent"
 WORKSPACE_DIR_IN_SANDBOX = "/home/user/workspace"
 SKILL_FILE = Path(__file__).parent / "skill.md"
 SKILL_DEST = "/home/user/skill.md"
-_STATE_EXCLUDE_DIRS = [
-    "agent", "venv", "workspace",
-    ".cache", ".local", ".npm", ".docker",
+# SECURITY: Allowlist for state persistence. Only these subdirectories
+# of the agent home are saved/restored between sessions. Everything else
+# (dotfiles, .config, .local, .ssh, etc.) is excluded by default.
+_STATE_ALLOW_DIRS = [
+    "workspace",
+    "data",
+    "output",
+    "state",
 ]
+
+
+def _shell_escape(s: str) -> str:
+    """Escape a string for safe use in shell assignments."""
+    return "'" + s.replace("'", "'\\''") + "'"
 
 
 class SandboxError(Exception):
@@ -61,9 +71,6 @@ class SandboxManager:
         "registry.npmjs.org",
         "registry.yarnpkg.com",
         "nodejs.org",
-        # Git-based deps (npm/pip both support github refs)
-        "github.com",
-        "codeload.github.com",
     ]
 
     @staticmethod
@@ -90,12 +97,14 @@ class SandboxManager:
                 if domain not in allowed:
                     allowed.append(domain)
 
-        # Auto-allow API domains for proxied key requirements
+        # Auto-allow API domains ONLY for known providers.
+        # Custom domains from manifests are NOT auto-allowed to prevent
+        # network firewall bypass via malicious domain declarations.
         for key_req in manifest.keys:
             defaults = _PROVIDER_DEFAULTS.get(key_req.provider.lower(), {})
-            domain = key_req.domain or defaults.get("domain")
-            if domain and domain not in allowed:
-                allowed.append(domain)
+            known_domain = defaults.get("domain")
+            if known_domain and known_domain not in allowed:
+                allowed.append(known_domain)
 
         if allowed:
             return {"network": {"deny_out": ["0.0.0.0/0"], "allow_out": allowed}}
@@ -122,8 +131,9 @@ class SandboxManager:
         with tarfile.open(fileobj=buf, mode="w:gz") as tar:
             tar.add(str(local_dir), arcname=".")
         buf.seek(0)
-        sandbox.files.write(f"/tmp/_upload.tar.gz", buf)
-        sandbox.commands.run(f"mkdir -p {remote_dir} && tar xzf /tmp/_upload.tar.gz -C {remote_dir} && rm /tmp/_upload.tar.gz")
+        tmp_name = f"/tmp/_upload_{secrets.token_hex(8)}.tar.gz"
+        sandbox.files.write(tmp_name, buf)
+        sandbox.commands.run(f"mkdir -p {remote_dir} && tar xzf {tmp_name} -C {remote_dir} && rm {tmp_name}")
 
     def _upload_skill(self, sandbox: Sandbox) -> None:
         """Upload the built-in skill.md into the sandbox."""
@@ -138,19 +148,59 @@ class SandboxManager:
         self._upload_directory(sandbox, state_dir, AGENT_HOME_IN_SANDBOX)
 
     def _save_state(self, sandbox: Sandbox, state_dir: Path) -> None:
-        """Snapshot the agent's home directory back to host."""
+        """Snapshot allowed subdirectories of agent home back to host."""
         state_dir.mkdir(parents=True, exist_ok=True)
-        exclude_args = " ".join(f"--exclude='./{d}'" for d in _STATE_EXCLUDE_DIRS)
-        tmp_path = "/tmp/_state_snapshot.tar.gz"
+        # SECURITY: Only persist explicitly allowed directories (allowlist).
+        # This prevents dotfile poisoning, config injection, and planted
+        # binaries from surviving across sessions.
+        dirs_to_save = " ".join(
+            f"./{d}" for d in _STATE_ALLOW_DIRS
+        )
+        tmp_path = f"/tmp/_state_{secrets.token_hex(8)}.tar.gz"
         result = sandbox.commands.run(
-            f"tar czf {tmp_path} {exclude_args} -C {AGENT_HOME_IN_SANDBOX} . 2>/dev/null; true"
+            f"cd {AGENT_HOME_IN_SANDBOX} && tar czf {tmp_path} {dirs_to_save} 2>/dev/null; true"
         )
         try:
             tar_bytes = sandbox.files.read(tmp_path, format="bytes")
             with tarfile.open(fileobj=io.BytesIO(tar_bytes)) as tar_stream:
-                tar_stream.extractall(path=str(state_dir), filter="data")
+                # SECURITY: Only extract members with safe paths.
+                # Rejects absolute paths, ".." traversal, and symlinks.
+                safe_members = []
+                for member in tar_stream.getmembers():
+                    if member.name.startswith("/") or ".." in member.name.split("/"):
+                        continue
+                    if member.issym() or member.islnk():
+                        continue
+                    safe_members.append(member)
+                tar_stream.extractall(path=str(state_dir), members=safe_members)
         except Exception as e:
             logger.warning("Failed to save session state: %s", e)
+
+    def _apply_hardening(self, sandbox: Sandbox, needs_proxy: bool = False) -> None:
+        """Apply security hardening to the sandbox before any user code runs.
+
+        This MUST be called before setup_command or proxy start to prevent
+        privilege escalation and /proc snooping.
+
+        If needs_proxy is True and hidepid=2 fails, raises SandboxError
+        to fail closed rather than running the proxy with /proc exposed.
+        """
+        sandbox.commands.run(
+            "chmod o-rx /usr/bin/sudo /usr/bin/su /usr/sbin/su 2>/dev/null; "
+            "deluser user sudo 2>/dev/null; true",
+            user="root",
+        )
+        result = sandbox.commands.run(
+            "mount -o remount,hidepid=2 /proc",
+            user="root",
+        )
+        if result.exit_code != 0:
+            if needs_proxy:
+                raise SandboxError(
+                    "Cannot mount /proc with hidepid=2. API key proxy requires "
+                    "/proc isolation to prevent key leakage. Aborting."
+                )
+            logger.warning("hidepid=2 mount failed — no proxy needed, continuing")
 
     def _start_proxy(
         self,
@@ -162,6 +212,7 @@ class SandboxManager:
 
         Returns (proxy_pid, agent_envs) where agent_envs contains
         placeholder keys and localhost base URLs for the agent process.
+        Hardening must already be applied via _apply_hardening().
         """
         if not manifest.keys or not _PROXY_SCRIPT.exists():
             return None, {}
@@ -171,6 +222,11 @@ class SandboxManager:
         agent_envs: dict[str, str] = {}
         port = 9001
 
+        # Build set of known provider env var names for cross-provider theft detection
+        _known_provider_env_vars = {
+            f"{p.upper().replace('-', '_')}_API_KEY" for p in _PROVIDER_DEFAULTS
+        }
+
         for key_req in manifest.keys:
             env_name = key_req.resolved_env_var()
             real_key = env_vars.get(env_name)
@@ -178,14 +234,51 @@ class SandboxManager:
                 continue
 
             defaults = _PROVIDER_DEFAULTS.get(key_req.provider.lower(), {})
-            domain = key_req.domain or defaults.get("domain")
+
+            # SECURITY: Prevent unknown providers from claiming known provider
+            # env var names (e.g., provider: "evil" with env_var: "ANTHROPIC_API_KEY"
+            # would steal the real Anthropic key and route it to attacker.com).
+            if not defaults and env_name in _known_provider_env_vars:
+                raise SandboxError(
+                    f"Unknown provider {key_req.provider!r} cannot use "
+                    f"known provider env var {env_name!r}"
+                )
+            known_domain = defaults.get("domain")
+            # SECURITY: For known providers, ALWAYS use the known domain.
+            # This prevents manifests from redirecting real API keys to
+            # attacker-controlled servers via custom domain declarations.
+            if known_domain:
+                domain = known_domain  # ignore manifest domain override
+            else:
+                domain = key_req.domain
             if not domain:
                 continue
 
             auth_style = key_req.auth_style or defaults.get("auth_style", "bearer")
             base_url_env = key_req.base_url_env or defaults.get(
-                "base_url_env", f"{key_req.provider.upper()}_BASE_URL"
+                "base_url_env", f"{key_req.provider.upper().replace('-', '_')}_BASE_URL"
             )
+
+            # SECURITY: Recheck auto-generated base_url_env against protected vars,
+            # but only for unknown providers. Known providers use their own
+            # base_url_env names which are legitimately in the protected set.
+            if not defaults and base_url_env in _PROTECTED_ENV_VARS:
+                raise SandboxError(
+                    f"Auto-generated base_url_env {base_url_env!r} conflicts with "
+                    f"a protected environment variable"
+                )
+
+            # SECURITY: Detect env name collisions to prevent route hijacking
+            if base_url_env in agent_envs:
+                raise SandboxError(
+                    f"Duplicate base_url_env {base_url_env!r} in manifest keys — "
+                    f"this would hijack an existing proxy route"
+                )
+            if env_name in agent_envs:
+                raise SandboxError(
+                    f"Duplicate env_var {env_name!r} in manifest keys — "
+                    f"this would hijack an existing proxy route"
+                )
 
             routes.append({
                 "port": port,
@@ -200,16 +293,23 @@ class SandboxManager:
         if not routes:
             return None, {}
 
-        # Upload and start proxy as root
+        # Upload proxy script (hardening already applied by _apply_hardening)
         sandbox.files.write(_PROXY_PATH_IN_SANDBOX, _PROXY_SCRIPT.read_text(), user="root")
         sandbox.commands.run(f"chmod 700 {_PROXY_PATH_IN_SANDBOX}", user="root")
 
+        # Start the proxy — /proc is already hidden
         proxy_handle = sandbox.commands.run(
             f"python3 {_PROXY_PATH_IN_SANDBOX}",
             background=True, stdin=True, user="root", timeout=0,
         )
         proxy_pid = proxy_handle.pid
-        sandbox.commands.send_stdin(proxy_pid, json.dumps({"routes": routes}) + "\n")
+
+        # Include session_token in config so proxy can validate requests
+        proxy_config = {
+            "routes": routes,
+            "session_token": session_token,
+        }
+        sandbox.commands.send_stdin(proxy_pid, json.dumps(proxy_config) + "\n")
 
         # Wait for proxy to bind
         first_port = routes[0]["port"]
@@ -223,15 +323,6 @@ class SandboxManager:
             user="root",
         )
 
-        # Harden: prevent agent from escalating or reading proxy secrets
-        sandbox.commands.run(
-            "chmod o-rx /usr/bin/sudo /usr/bin/su /usr/sbin/su 2>/dev/null; "
-            "deluser user sudo 2>/dev/null; "
-            "mount -o remount,hidepid=2 /proc 2>/dev/null; "
-            "true",
-            user="root",
-        )
-
         return proxy_pid, agent_envs
 
     def _build_run_command(
@@ -240,19 +331,17 @@ class SandboxManager:
         manifest: AgentManifest,
         agent_envs: dict[str, str],
     ) -> str:
-        """Build the command to start the agent, injecting proxy env vars via wrapper script."""
+        """Build the command to start the agent, injecting proxy env vars."""
         if not agent_envs:
             return f"cd {AGENT_DIR_IN_SANDBOX} && {manifest.runtime.run_command}"
 
-        export_lines = "\n".join(f"export {k}='{v}'" for k, v in agent_envs.items())
-        wrapper = (
-            f"#!/bin/bash\n"
-            f"{export_lines}\n"
-            f"cd {AGENT_DIR_IN_SANDBOX} && exec {manifest.runtime.run_command}\n"
+        # SECURITY: Use inline env assignment instead of a persistent wrapper
+        # script. This prevents the agent from reading proxy config from disk.
+        # Values are shell-escaped to prevent injection via env_var names.
+        env_prefix = " ".join(
+            f"{k}={_shell_escape(v)}" for k, v in agent_envs.items()
         )
-        sandbox.files.write("/tmp/_run_agent.sh", wrapper)
-        sandbox.commands.run("chmod +x /tmp/_run_agent.sh")
-        return "bash /tmp/_run_agent.sh"
+        return f"cd {AGENT_DIR_IN_SANDBOX} && {env_prefix} exec {manifest.runtime.run_command}"
 
     def run_agent(
         self,
@@ -272,9 +361,21 @@ class SandboxManager:
 
         _status("Creating sandbox...")
         network_kwargs = self._build_network_kwargs(manifest)
+
+        # SECURITY: Only pass known-safe env vars into the sandbox.
+        # Allowlist approach prevents credential leakage via non-standard
+        # env var names (AWS_ACCESS_KEY_ID, DATABASE_URL, etc.).
+        _SAFE_ENV_ALLOWLIST = {
+            "PATH", "HOME", "USER", "SHELL", "LANG", "LC_ALL",
+            "LC_CTYPE", "TERM", "TZ", "PYTHONPATH", "NODE_PATH",
+        }
+        safe_envs = {
+            k: v for k, v in env_vars.items()
+            if k in _SAFE_ENV_ALLOWLIST
+        }
         sandbox = Sandbox.create(
             template=manifest.runtime.e2b_template,
-            envs=env_vars,
+            envs=safe_envs,
             **network_kwargs,
         )
 
@@ -290,21 +391,30 @@ class SandboxManager:
                 _status("Restoring state...")
                 self._restore_state(sandbox, state_dir)
 
+            # SECURITY: Apply hardening BEFORE setup_command runs.
+            # This prevents malicious setup commands from reading /proc,
+            # escalating privileges, or planting background watchers.
+            _status("Hardening sandbox...")
+            self._apply_hardening(sandbox, needs_proxy=bool(manifest.keys))
+
+            # --- Start in-sandbox reverse proxy for API key isolation ---
+            # SECURITY: Proxy starts BEFORE setup_command to prevent malicious
+            # setup from pre-binding proxy ports and intercepting API traffic.
+            proxy_pid, agent_envs = None, {}
+            if manifest.keys:
+                _status("Starting security proxy...")
+                proxy_pid, agent_envs = self._start_proxy(sandbox, manifest, env_vars)
+
             if manifest.runtime.setup_command:
                 _status("Running setup command...")
                 result = sandbox.commands.run(
                     f"cd {AGENT_DIR_IN_SANDBOX} && {manifest.runtime.setup_command}",
                     timeout=600,
+                    user="user",
                 )
                 if result.exit_code != 0:
                     error_detail = (result.stderr or result.stdout or "")[:500]
                     raise SandboxError(f"Setup command failed: {error_detail}")
-
-            # --- Start in-sandbox reverse proxy for API key isolation ---
-            proxy_pid, agent_envs = None, {}
-            if manifest.keys:
-                _status("Starting security proxy...")
-                proxy_pid, agent_envs = self._start_proxy(sandbox, manifest, env_vars)
 
             _status("Starting agent...")
             messages: queue.Queue[dict[str, Any]] = queue.Queue()

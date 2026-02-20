@@ -137,9 +137,6 @@ AgentStore/
 │           ├── config.py          # Platform-specific paths
 │           ├── github.py          # GitHub URL resolver + caching
 │           └── manifest.py        # agent.yaml loader + validation
-├── examples/
-│   ├── hello-agent/               # Minimal example agent
-│   └── steve-agent/               # Full-featured example agent
 ├── BUILDING_AGENTS.md             # Guide to building agents
 └── pyproject.toml
 ```
@@ -154,15 +151,6 @@ Uses [`platformdirs`](https://github.com/platformdirs/platformdirs):
 |-----------|-------|-------|
 | Data (keys, state, agents) | `~/Library/Application Support/primordial/` | `~/.local/share/primordial/` |
 | Cache (GitHub repos) | `~/Library/Caches/primordial/` | `~/.cache/primordial/` |
-
----
-
-## Examples
-
-```bash
-primordial run ./examples/hello-agent
-primordial run ./examples/steve-agent
-```
 
 ---
 

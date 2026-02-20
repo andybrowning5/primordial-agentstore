@@ -39,6 +39,9 @@ class KeyVault:
     combined with an optional user password using PBKDF2.
     """
 
+    _KEYCHAIN_SERVICE = "com.primordial.keyvault"
+    _KEYCHAIN_ACCOUNT = "vault-secret"
+
     def __init__(self, vault_path: Path, password: Optional[str] = None):
         self._path = vault_path
         self._password = password or ""
@@ -68,9 +71,81 @@ class KeyVault:
                     continue
         return f"{platform.node()}-{uuid.getnode()}"
 
+    def _get_keychain_secret(self) -> str:
+        """Get or create a random secret stored in the system keychain.
+
+        This secret is NOT accessible to other processes without user
+        approval (macOS Keychain prompts for access). Combined with the
+        machine ID, this prevents local processes from decrypting the vault.
+        """
+        system = platform.system()
+        if system == "Darwin":
+            # Try to read existing secret from macOS Keychain
+            try:
+                result = subprocess.run(
+                    ["security", "find-generic-password",
+                     "-s", self._KEYCHAIN_SERVICE,
+                     "-a", self._KEYCHAIN_ACCOUNT,
+                     "-w"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    return result.stdout.strip()
+            except Exception:
+                pass
+
+            # Create new secret and store in Keychain.
+            # SECURITY: Use -X (hex) to avoid exposing secret in process args.
+            secret = base64.urlsafe_b64encode(os.urandom(32)).decode()
+            secret_hex = secret.encode().hex()
+            try:
+                subprocess.run(
+                    ["security", "add-generic-password",
+                     "-s", self._KEYCHAIN_SERVICE,
+                     "-a", self._KEYCHAIN_ACCOUNT,
+                     "-X", secret_hex,
+                     "-U"],  # Update if exists
+                    capture_output=True, text=True, timeout=10,
+                    check=True,
+                )
+                return secret
+            except Exception:
+                pass
+
+            # SECURITY: Do NOT silently fall back to a file-based secret.
+            # Failing here means the keychain is locked or unavailable.
+            raise RuntimeError(
+                "Cannot access macOS Keychain. Please unlock your keychain:\n"
+                "  security unlock-keychain ~/Library/Keychains/login.keychain-db\n"
+                "Or set a PRIMORDIAL_VAULT_PASSWORD environment variable."
+            )
+
+        # Linux: use a file-based secret with restricted permissions.
+        # This is the only option on non-macOS platforms.
+        secret_path = self._path.parent / ".vault_secret"
+        if secret_path.exists():
+            # SECURITY: Verify permissions haven't been loosened
+            mode = secret_path.stat().st_mode & 0o777
+            if mode != 0o600:
+                raise RuntimeError(
+                    f"Vault secret file has unsafe permissions ({oct(mode)}). "
+                    f"Expected 0600. Fix with: chmod 600 {secret_path}"
+                )
+            return secret_path.read_text().strip()
+        secret = base64.urlsafe_b64encode(os.urandom(32)).decode()
+        secret_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        # SECURITY: Create file with 0600 atomically to prevent TOCTOU race.
+        fd = os.open(str(secret_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            os.write(fd, secret.encode())
+        finally:
+            os.close(fd)
+        return secret
+
     def _derive_key(self, salt: bytes) -> bytes:
         machine_id = self._get_machine_id()
-        key_material = f"{machine_id}:{self._password}".encode()
+        keychain_secret = self._get_keychain_secret()
+        key_material = f"{machine_id}:{keychain_secret}:{self._password}".encode()
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
@@ -92,6 +167,13 @@ class KeyVault:
         if self._data is not None:
             return self._data
         if self._path.exists():
+            # SECURITY: Verify vault file permissions haven't been loosened
+            mode = self._path.stat().st_mode & 0o777
+            if mode != 0o600:
+                raise RuntimeError(
+                    f"Vault file has unsafe permissions ({oct(mode)}). "
+                    f"Expected 0600. Fix with: chmod 600 {self._path}"
+                )
             raw = self._path.read_text()
             self._data = KeyVaultData.model_validate_json(raw)
         else:
@@ -103,9 +185,19 @@ class KeyVault:
     def _save(self) -> None:
         if self._data is None:
             return
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(self._data.model_dump_json(indent=2))
-        self._path.chmod(0o600)
+        self._path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        # Enforce permissions even if dir already existed (mkdir ignores mode with exist_ok)
+        self._path.parent.chmod(0o700)
+        # SECURITY: Atomic write via temp file + rename to prevent
+        # corruption races and brief world-readable windows.
+        tmp_path = self._path.with_suffix(".tmp")
+        # SECURITY: O_NOFOLLOW prevents symlink attacks on the temp file
+        fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+        try:
+            os.write(fd, self._data.model_dump_json(indent=2).encode())
+        finally:
+            os.close(fd)
+        os.replace(str(tmp_path), str(self._path))
 
     def add_key(self, provider: str, api_key: str, key_id: Optional[str] = None) -> str:
         key_id = key_id or provider

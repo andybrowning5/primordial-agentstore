@@ -11,6 +11,8 @@ An agent is arbitrary code downloaded from a public registry. It may attempt to:
 - Escalate privileges within the sandbox
 - Access files or network resources beyond what it declared
 - Tamper with other agents in a delegation chain
+- Hijack proxy routes via malicious manifest declarations
+- Persist malicious files across sessions
 
 Primordial assumes agents are hostile and applies defense-in-depth at every layer.
 
@@ -48,52 +50,66 @@ Network policy is enforced at the hypervisor level by E2B's infrastructure, not 
 
 **Auto-allowed domains:**
 
-- **Package registries** — when a `setup_command` is declared, `pypi.org`, `registry.npmjs.org`, `github.com`, etc. are auto-allowed so `pip install` and `npm install` work.
-- **API provider domains** — for each `keys:` entry, the provider's known API domain is auto-allowed (e.g. `api.anthropic.com` for `anthropic`).
+- **Package registries** — when a `setup_command` is declared, `pypi.org`, `files.pythonhosted.org`, `registry.npmjs.org`, `registry.yarnpkg.com`, and `nodejs.org` are auto-allowed so `pip install` and `npm install` work.
+- **Known API provider domains** — for each `keys:` entry with a known provider, the provider's hardcoded API domain is auto-allowed (e.g. `api.anthropic.com` for `anthropic`). Custom domains from unknown providers are NOT auto-allowed.
+
+**Domain validation:**
+
+- Must be a valid FQDN with at least one dot (rejects single-label hosts like `localhost`)
+- Must contain at least one letter (rejects IP literals like `169.254.169.254`)
+- Validated by regex at manifest parse time
 
 ## 3. API Key Protection — In-Sandbox Reverse Proxy
 
 This is the core security mechanism. The problem: agents need API keys to call LLMs, but exposing the real key bytes to untrusted code means a malicious agent can steal them via `os.environ`.
 
-**Solution:** A reverse proxy runs as `root` inside the VM. The agent gets a placeholder token and a localhost URL. The proxy swaps the placeholder for the real key on every request.
+**Solution:** A reverse proxy runs as `root` inside the VM. The agent gets a session token and a localhost URL. The proxy swaps the session token for the real key on every request.
 
 ```
 Agent process (user)                    Proxy (root)                     Upstream
-┌──────────────────────┐    HTTP     ┌──────────────────┐    HTTPS    ┌──────────────┐
-│ ANTHROPIC_API_KEY=   │───────────→ │ Strips fake key  │──────────→ │              │
-│   "sess-abc123..."   │ :9001      │ Injects real key │            │ Anthropic    │
-│ ANTHROPIC_BASE_URL=  │            │ Forwards to      │            │ API          │
-│   http://127.0.0.1:  │  ←─────────│   upstream       │ ←──────────│              │
-│   9001               │            └──────────────────┘            └──────────────┘
+┌──────────────────────┐    HTTP     ┌──────────────────────┐  HTTPS  ┌──────────────┐
+│ ANTHROPIC_API_KEY=   │───────────→ │ Validates session    │───────→ │              │
+│   "sess-abc123..."   │ :9001      │ Strips fake key      │        │ Anthropic    │
+│ ANTHROPIC_BASE_URL=  │            │ Injects real key     │        │ API          │
+│   http://127.0.0.1:  │  ←─────────│ Filters response hdrs│←───────│              │
+│   9001               │            └──────────────────────┘        └──────────────┘
 └──────────────────────┘
 ```
 
-**How it works step by step:**
+**Startup sequence (order is security-critical):**
 
-1. **Generate session token** — `sess-{secrets.token_hex(16)}` (128-bit random, one per session)
-2. **Build routes** — each provider gets a localhost port (9001, 9002, ...)
-3. **Upload proxy script** — written to `/opt/_primordial_proxy.py` as root, `chmod 700`
-4. **Start proxy as root** — config (including real keys) sent via stdin, never on disk or CLI args
-5. **Wait for proxy to bind** — socket poll confirms proxy is listening before agent starts
-6. **Harden the VM** — remove sudo, hide processes (see Section 5)
-7. **Start agent with overrides** — a bash wrapper exports placeholder env vars:
-   ```bash
-   export ANTHROPIC_API_KEY='sess-abc123...'
-   export ANTHROPIC_BASE_URL='http://127.0.0.1:9001'
-   cd /home/user/agent && exec python3 main.py
-   ```
+1. **Create sandbox** — env vars filtered through allowlist (only `PATH`, `HOME`, `SHELL`, etc.)
+2. **Upload agent code** — tar archive extracted into `/home/user/agent/`
+3. **Restore state** — only allowlisted directories (`workspace/`, `data/`, `output/`, `state/`)
+4. **Harden the VM** — remove sudo/su, hide `/proc` with `hidepid=2` (fail-closed if proxy needed)
+5. **Start proxy as root** — binds ports BEFORE setup_command runs, config via stdin
+6. **Run setup_command** — runs as `user` (not root), after proxy has bound its ports
+7. **Start agent** — env vars injected inline with shell-escaped values
 
-The agent's SDK reads `ANTHROPIC_BASE_URL`, sends requests to the local proxy, and the proxy transparently injects the real key. From the agent's perspective, normal SDK calls "just work."
+**Proxy security features** (`proxy_script.py`):
 
-**Proxy internals** (`proxy_script.py`):
+- Stdlib only — zero third-party dependencies
+- Session token validated on every request (128-bit entropy, `secrets.token_hex(16)`)
+- CRLF injection blocked — rejects paths containing `\r` or `\n`
+- Chunked Transfer-Encoding rejected — prevents HTTP request smuggling
+- Connection: close after each request — prevents pipelining attacks
+- Request body capped at 100MB — prevents DoS
+- Response headers filtered through safe allowlist — prevents key leakage
+- Generic error messages — never includes exception details that could leak key material
+- 60-second socket timeout — prevents thread exhaustion via slow connections
+- Proxy script root-owned, `chmod 700` — unreadable by agent process
 
-- Stdlib only — `http.server`, `http.client`, `ssl`, `json`. Zero third-party dependencies.
-- Strips all auth headers (`x-api-key`, `Authorization`) from incoming requests before forwarding
-- Injects real key based on provider auth style (`x-api-key` for Anthropic, `Bearer` for OpenAI/others)
-- Validates upstream TLS certificates via `ssl.create_default_context()` (system trust store)
-- Streams responses chunk-by-chunk (8KB) with flush — critical for SSE/LLM streaming
-- HTTP/1.1 with `Connection: close` — compatible with httpx (Anthropic SDK) and urllib
-- One `ThreadingHTTPServer` per provider, each on a separate port
+**Known provider domain enforcement:**
+
+For known providers (Anthropic, OpenAI, Google, Groq, Mistral, DeepSeek, Brave), the proxy always uses the hardcoded domain from `_PROVIDER_DEFAULTS`, ignoring any `domain` override in the manifest. This prevents a malicious manifest from redirecting real API keys to attacker-controlled servers.
+
+**Cross-provider theft prevention:**
+
+Unknown providers cannot declare `env_var: ANTHROPIC_API_KEY` or other known provider env var names. This is enforced at runtime in `_start_proxy` to prevent an unknown provider from stealing a known provider's real key.
+
+**Collision detection:**
+
+Duplicate `env_var` or `base_url_env` values across manifest key entries are rejected with `SandboxError`, preventing route hijacking.
 
 **Supported providers (auto-configured):**
 
@@ -113,7 +129,7 @@ Custom providers can specify `domain`, `base_url_env`, and `auth_style` in the m
 
 API keys are stored locally in an encrypted vault file, never sent to any server.
 
-**Location:** `~/.local/share/primordial/keys.enc` (Linux) or `~/Library/Application Support/primordial/keys.enc` (macOS), with `chmod 0600`.
+**Location:** `~/.local/share/primordial/keys.enc` (Linux) or `~/Library/Application Support/primordial/keys.enc` (macOS), with `chmod 0600`. Parent directory enforced at `0700`.
 
 **Encryption:**
 
@@ -122,28 +138,37 @@ API keys are stored locally in an encrypted vault file, never sent to any server
 | Algorithm | Fernet (AES-128-CBC + HMAC-SHA256) |
 | KDF | PBKDF2-HMAC-SHA256, 600,000 iterations |
 | Salt | 16 bytes, `os.urandom`, generated once per vault |
-| Key material | `{machine_id}:{optional_password}` |
+| Key material | `{machine_id}:{keychain_secret}:{password}` |
 
-**Machine binding:** The encryption key is derived from a hardware identifier unique to the machine:
+**Three-factor key derivation:**
 
-- **macOS:** `IOPlatformUUID` from `ioreg`
-- **Linux:** `/etc/machine-id`
-- **Fallback:** hostname + MAC address
+1. **Machine ID** — hardware-specific identifier (`IOPlatformUUID` on macOS, `/etc/machine-id` on Linux)
+2. **Keychain secret** — 32-byte random value stored in macOS Keychain (with `-T ""` ACL requiring user approval) or a `0600` file on Linux
+3. **User password** — optional additional factor via `PRIMORDIAL_VAULT_PASSWORD`
 
 Copying the vault file to another machine produces a decryption error. This prevents stolen vault files from being useful without the original hardware.
+
+**File security:**
+
+- Vault file permissions checked on every read — refuses to load if not `0600`
+- Linux secret file permissions checked on every read — refuses if not `0600`
+- Atomic vault writes via temp file + `os.replace()` — prevents corruption and brief world-readable windows
+- Temp file created with `O_NOFOLLOW` — prevents symlink attacks
+- Linux secret file created atomically with `O_CREAT | O_EXCL` at `0600` — prevents TOCTOU races
+- macOS keychain secret passed via `-X` hex encoding — never exposed in process arguments
+
+**macOS Keychain hardening:**
+
+- Secret stored with `-T ""` ACL flag — requires user approval for any process to access
+- No silent fallback — if Keychain is unavailable, raises `RuntimeError` instead of downgrading to file-based storage
 
 **Key scoping at injection time:**
 
 Only keys for providers the manifest explicitly declares are injected into the sandbox. An agent requesting `anthropic` will never receive your `openai` key, even if both are stored in the vault.
 
-```python
-allowed_providers = [kr.provider for kr in manifest.keys]
-env_vars = vault.get_env_vars(providers=allowed_providers)
-```
-
 ## 5. Sandbox Hardening
 
-After the proxy starts but before the agent launches, the VM is hardened:
+Hardening is applied BEFORE the proxy starts and BEFORE any agent-controlled code (including `setup_command`) runs:
 
 ```bash
 # Remove privilege escalation binaries
@@ -152,9 +177,11 @@ chmod o-rx /usr/bin/sudo /usr/bin/su /usr/sbin/su
 # Remove user from sudo group
 deluser user sudo
 
-# Hide other users' processes in /proc
+# Hide other users' processes in /proc (fail-closed if proxy is needed)
 mount -o remount,hidepid=2 /proc
 ```
+
+**Fail-closed behavior:** If `hidepid=2` cannot be applied and the agent requires API keys (proxy needed), sandbox creation aborts with `SandboxError`. The proxy will NOT start with `/proc` exposed.
 
 **What each measure prevents:**
 
@@ -163,15 +190,69 @@ mount -o remount,hidepid=2 /proc
 | `chmod o-rx` on sudo/su | Agent can't escalate to root |
 | `deluser user sudo` | Belt-and-suspenders for sudo removal |
 | `hidepid=2` on /proc | Agent can't see root-owned processes — can't read `/proc/<proxy_pid>/environ`, `/proc/<proxy_pid>/cmdline`, or memory maps |
+| `setup_command` as `user` | Setup can't escalate privileges or plant root-owned files |
+| Proxy binds before setup | Setup can't pre-bind proxy ports to intercept traffic |
 
-With all three measures combined, the agent process cannot:
+With all measures combined, the agent process cannot:
 - Read the proxy script on disk (root-owned, mode 700)
 - See the proxy process in `/proc` (hidepid=2)
 - Read the proxy's environment variables (hidepid=2)
 - Escalate to root to bypass any of the above (no sudo/su)
 - Signal or kill the root-owned proxy process
+- Pre-bind proxy ports during setup (proxy starts first)
 
-## 6. Permission Model and User Consent
+## 6. Manifest Validation
+
+Agent manifests are validated at parse time with strict field validators:
+
+**Provider names:** `^[a-z][a-z0-9-]*$` — lowercase letters, numbers, hyphens only. No underscores (prevents `resolved_env_var()` collisions).
+
+**Env var names:** `^[A-Z][A-Z0-9_]*$` — checked against `_PROTECTED_ENV_VARS` to prevent clobbering system variables (`PATH`, `LD_PRELOAD`, etc.) or known provider variables (`ANTHROPIC_BASE_URL`, etc.).
+
+**Domain names:** Must be valid FQDN with at least one dot and at least one letter. Rejects IP literals, single-label hosts, and double-dot hostnames.
+
+**Auth style:** Must be `"bearer"` or `"x-api-key"`.
+
+**Sandbox template:** Must be `"base"` (allowlist of one).
+
+**Runtime checks in `_start_proxy`:**
+- Auto-generated `base_url_env` rechecked against protected vars (for unknown providers only)
+- Duplicate `env_var` and `base_url_env` detection across all key entries
+- Unknown providers blocked from using known provider env var names
+
+## 7. State Persistence Security
+
+Agent state is saved/restored between sessions using an **allowlist** approach:
+
+```python
+_STATE_ALLOW_DIRS = ["workspace", "data", "output", "state"]
+```
+
+Only these subdirectories of `/home/user/` are persisted. Everything else — dotfiles, `.config/`, `.local/bin/`, `.ssh/`, `.gitconfig`, shell profiles — is excluded by default. This prevents:
+
+- Dotfile poisoning (`.bashrc`, `.profile` injection)
+- Config injection (`.config/pip/pip.conf` redirecting to attacker PyPI)
+- Binary planting (`.local/bin/` PATH hijacking)
+- SSH key theft (`.ssh/` access)
+
+**Tar extraction safety:** State archives are extracted with `filter="data"` (Python 3.12+), which blocks path traversal (`../`) and symlink attacks. On Python < 3.12, state save aborts with `SandboxError` rather than proceeding with unsafe extraction.
+
+## 8. Environment Variable Isolation
+
+Environment variables passed to the sandbox use an **allowlist** approach:
+
+```python
+_SAFE_ENV_ALLOWLIST = {
+    "PATH", "HOME", "USER", "SHELL", "LANG", "LC_ALL",
+    "LC_CTYPE", "TERM", "TZ", "PYTHONPATH", "NODE_PATH",
+}
+```
+
+Only these variables from the host environment are forwarded to `Sandbox.create()`. All others — including `AWS_ACCESS_KEY_ID`, `DATABASE_URL`, `GITHUB_TOKEN`, or any other credentials that might be in the user's shell — are silently dropped.
+
+Real API keys are delivered exclusively through the proxy's stdin channel, never as sandbox environment variables.
+
+## 9. Permission Model and User Consent
 
 ### Manifest Declaration
 
@@ -211,20 +292,20 @@ Permissions
 Approve and run? [y/N]:
 ```
 
-The `--yes` flag skips this for automation but is never used without explicit user intent.
-
 ### Delegation Isolation
 
 When an agent delegates to a sub-agent, the sub-agent runs in its own fresh sandbox with its own manifest-derived permissions. A parent agent cannot override or escalate a sub-agent's permissions.
 
-## 7. Security Boundaries Summary
+## 10. Security Boundaries Summary
 
 ```
 ┌─ User's Machine ──────────────────────────────────────────────┐
 │                                                                │
-│  Key Vault (AES-128, machine-bound)                           │
+│  Key Vault (AES-128, machine-bound, keychain-protected)       │
 │  ┌──────────────────────────┐                                 │
 │  │ keys.enc (chmod 0600)    │                                 │
+│  │ dir (chmod 0700)         │                                 │
+│  │ atomic writes, O_NOFOLLOW│                                 │
 │  └──────────┬───────────────┘                                 │
 │             │ decrypt, scope to manifest                      │
 │             ▼                                                  │
@@ -232,6 +313,7 @@ When an agent delegates to a sub-agent, the sub-agent runs in its own fresh sand
 │  ┌──────────────────────────┐                                 │
 │  │ Permission display       │                                 │
 │  │ User approval gate       │──── "Approve and run? [y/N]"   │
+│  │ Manifest validation      │                                 │
 │  └──────────┬───────────────┘                                 │
 │             │                                                  │
 └─────────────┼──────────────────────────────────────────────────┘
@@ -241,16 +323,22 @@ When an agent delegates to a sub-agent, the sub-agent runs in its own fresh sand
 │                                                                │
 │  Network: deny 0.0.0.0/0, allow [declared domains]           │
 │                                                                │
+│  1. Harden  ─→  2. Start proxy  ─→  3. Setup  ─→  4. Agent  │
+│     (root)         (root)             (user)        (user)    │
+│                                                                │
 │  ┌─ root ──────────────────────────────────────┐              │
 │  │ Reverse proxy (port 9001+)                  │              │
-│  │  - Real API keys in memory only             │──→ upstream  │
-│  │  - Script: chmod 700, /opt/                 │    (HTTPS)   │
+│  │  - Session token auth on every request      │──→ upstream  │
+│  │  - Real API keys in memory only             │    (HTTPS)   │
+│  │  - Script: chmod 700, /opt/                 │              │
 │  │  - Config via stdin (never on disk)         │              │
+│  │  - Response headers filtered (allowlist)    │              │
+│  │  - CRLF/smuggling blocked, 100MB cap        │              │
 │  └─────────────────────────────────────────────┘              │
 │    ↑ HTTP (localhost only)          hidepid=2                 │
 │  ┌─ user ──────────────────────────────────────┐ no sudo/su  │
 │  │ Agent process                               │              │
-│  │  - Sees: sess-<placeholder> as API key      │              │
+│  │  - Sees: sess-<token> as API key            │              │
 │  │  - Sees: http://127.0.0.1:9001 as base URL  │              │
 │  │  - Cannot: read proxy, see /proc, escalate  │              │
 │  └─────────────────────────────────────────────┘              │
@@ -263,8 +351,14 @@ When an agent delegates to a sub-agent, the sub-agent runs in its own fresh sand
 | Firecracker VM | Process/filesystem isolation from host | E2B infrastructure |
 | Network deny-all + allowlist | Limits exfiltration surface | E2B hypervisor (kernel-level) |
 | Reverse proxy + session tokens | API key secrecy at runtime | Linux user isolation + hidepid=2 |
-| Encrypted vault + machine binding | API key secrecy at rest | AES-128 + PBKDF2 + hardware ID |
+| Known provider domain pinning | Prevents key redirection attacks | Hardcoded `_PROVIDER_DEFAULTS` |
+| Cross-provider env var guard | Prevents unknown providers stealing keys | Runtime check in `_start_proxy` |
+| Encrypted vault + machine binding | API key secrecy at rest | AES-128 + PBKDF2 + keychain |
 | Key scoping | Minimal key disclosure per agent | Manifest filtering in CLI |
 | Permission display + approval | Informed user consent | CLI approval gate |
-| Sandbox hardening | Privilege escalation prevention | chmod, deluser, hidepid=2 |
+| Manifest validation | Input sanitization | Pydantic validators + regex |
+| Sandbox hardening (fail-closed) | Privilege escalation prevention | chmod, deluser, hidepid=2 |
+| State persistence allowlist | Cross-session poisoning prevention | Allowlist of 4 directories |
+| Env var allowlist | Host credential leakage prevention | Allowlist of 10 safe vars |
 | Delegation isolation | Cross-agent privilege boundaries | Separate VMs per sub-agent |
+| Tar extraction filter | Path traversal prevention | Python 3.12 `filter="data"` |

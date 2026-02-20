@@ -21,6 +21,15 @@ import sys
 import threading
 
 
+# Response headers safe to forward to the agent
+_SAFE_RESPONSE_HEADERS = {
+    "content-type", "content-length", "content-encoding",
+    "date", "server",
+    "x-request-id", "x-ratelimit-limit", "x-ratelimit-remaining",
+    "x-ratelimit-reset", "retry-after", "cache-control",
+}
+
+
 class ProxyHandler(http.server.BaseHTTPRequestHandler):
     """Forwards HTTP requests to an HTTPS upstream, injecting the real API key."""
 
@@ -32,8 +41,38 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         pass
 
     def _proxy(self):
-        # Read request body
+        # SECURITY: Validate session token if configured
+        if self.server.session_token is not None:
+            auth = self.headers.get("Authorization", "")
+            api_key = self.headers.get("x-api-key", "")
+            token_found = (
+                auth == f"Bearer {self.server.session_token}"
+                or api_key == self.server.session_token
+            )
+            if not token_found:
+                self.send_error(403, "Unauthorized")
+                return
+
+        # Close connection after each request to prevent pipelining attacks
+        self.close_connection = True
+
+        # SECURITY: Reject CRLF in path to prevent header injection
+        if '\r' in self.path or '\n' in self.path:
+            self.send_error(400, "Invalid request path")
+            return
+
+        # SECURITY: Reject chunked transfer-encoding to prevent smuggling
+        te = self.headers.get("Transfer-Encoding", "")
+        if te and te.lower() != "identity":
+            self.send_error(400, "Chunked transfer not supported")
+            return
+
+        # Read request body (cap at 100MB to prevent DoS)
+        _MAX_BODY = 100 * 1024 * 1024
         content_length = int(self.headers.get("Content-Length", 0))
+        if content_length < 0 or content_length > _MAX_BODY:
+            self.send_error(413, "Request body too large")
+            return
         body = self.rfile.read(content_length) if content_length else None
 
         # Build headers for upstream, stripping hop-by-hop and auth headers
@@ -59,22 +98,18 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             conn = http.client.HTTPSConnection(self.server.target_host, context=ctx)
             conn.request(self.command, self.path, body=body, headers=headers)
             resp = conn.getresponse()
-        except Exception as e:
-            self.send_error(502, f"Upstream error: {e}")
+        except Exception:
+            # SECURITY: Never include exception details — may leak key material
+            self.send_error(502, "Upstream connection failed")
             return
 
         # Send response status
         self.send_response_only(resp.status)
 
-        # Forward response headers
+        # SECURITY: Only forward safe response headers to prevent key leakage
         for key, value in resp.getheaders():
-            lk = key.lower()
-            # Skip hop-by-hop headers — we manage connection ourselves
-            if lk in ("connection", "keep-alive", "transfer-encoding"):
-                continue
-            self.send_header(key, value)
-        # Close connection after each response for simplicity.
-        # LLM API calls are infrequent enough that keep-alive isn't needed.
+            if key.lower() in _SAFE_RESPONSE_HEADERS:
+                self.send_header(key, value)
         self.send_header("Connection", "close")
         self.end_headers()
 
@@ -105,12 +140,22 @@ class ThreadedProxyServer(http.server.ThreadingHTTPServer):
     """HTTPServer with route config attached."""
 
     daemon_threads = True
+    # SECURITY: Per-connection read timeout to prevent thread exhaustion DoS
+    timeout = 60
 
-    def __init__(self, port, target_host, real_key, auth_style, **_):
+    def __init__(self, port, target_host, real_key, auth_style,
+                 session_token="", **_):
         self.target_host = target_host
         self.real_key = real_key
         self.auth_style = auth_style
+        self.session_token = session_token
         super().__init__(("127.0.0.1", port), ProxyHandler)
+
+    def get_request(self):
+        """Set socket timeout on accepted connections."""
+        conn, addr = super().get_request()
+        conn.settimeout(60)
+        return conn, addr
 
 
 def main():
@@ -120,10 +165,13 @@ def main():
         sys.exit(1)
     config = json.loads(config_line)
 
+    session_token = config.get("session_token", "")
+
     servers = []
     threads = []
 
     for route in config["routes"]:
+        route["session_token"] = session_token
         server = ThreadedProxyServer(**route)
         t = threading.Thread(target=server.serve_forever, daemon=True)
         t.start()
