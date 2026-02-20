@@ -6,11 +6,11 @@ The problem that kept bugging me: there's no good way to share AI agents. You ca
 
 So I built one where trust isn't required.
 
-**GitHub repo → running agent in under 30 seconds.** You point Primordial at a repo — or browse available agents with `primordial search` — it spins up an isolated sandbox, handles your API keys securely, shows you exactly what permissions the agent needs, and you're chatting with it. That's it.
+**GitHub repo → running agent in under 30 seconds.** Browse available agents with `primordial search` — it spins up an isolated sandbox, handles your API keys securely, shows you exactly what permissions the agent needs, and you're chatting with it. That's it.
 
 Every agent runs in its own microVM. Your API keys never touch the agent's code — they're protected by a security layer that keeps them invisible to the agent process. You approve every permission before anything runs. And as you use more agents, your encrypted key vault grows — the first time you add your Anthropic or OpenAI key, every future agent that needs it just works. No re-entering credentials. The more you use it, the faster setup gets.
 
-For developers, the bar to publish an agent is intentionally low. No framework, no SDK. Your agent just reads and writes JSON lines over stdin/stdout. Python, Node, Rust, bash — anything works. Add an `agent.yaml` that declares which API keys and network domains your agent needs, push to GitHub, tag it, and it shows up in the marketplace.
+For developers, the bar to publish an agent is intentionally low. No framework, no SDK. Your agent just reads and writes JSON lines over stdin/stdout. Python, Node, Rust, bash — anything works. Add an `agent.yaml` that declares which API keys and network domains your agent needs, push to GitHub, tag it with `primordial-agent`, and it shows up in the marketplace.
 
 **The use case I'm most excited about: agent delegation.**
 
@@ -19,29 +19,6 @@ Think about [OpenClaw](https://openclaw.ai/) — the open-source AI agent that's
 Primordial extends that workflow. Instead of only delegating to general-purpose coding agents, imagine OpenClaw pulling in purpose-built specialists from a shared marketplace mid-task. Need to scrape and summarize a competitor's changelog? Delegate to a web research agent. Need to generate a migration plan from your Postgres schema? Spin up a database specialist. Want to draft a PR description from a diff and post it to Slack? Chain a code review agent into a messaging agent. Each sub-agent runs in its own sandbox with its own permissions — fully isolated. And it plugs in the same way — stdin/stdout, just like the Claude Code instances OpenClaw already manages.
 
 Agents that compose other agents. Not one monolith trying to do everything — a network of specialists, each doing one thing well, each sandboxed independently.
-
-**Quick Start:**
-
-```bash
-pip install primordial-agentstore
-primordial search
-```
-
----
-
-## Features
-
-- **Sandbox Isolation** — Every agent runs in a Firecracker microVM (~150ms startup)
-- **Language-Agnostic** — Any language that reads stdin and writes stdout works
-- **Primordial Protocol** — Simple NDJSON message protocol. No framework lock-in.
-- **GitHub Agents** — Run agents directly from GitHub URLs with automatic caching
-- **Encrypted Key Vault** — API keys encrypted at rest with Fernet (AES-128-CBC + HMAC-SHA256)
-- **Custom Providers** — Use any API with configurable auth styles
-- **Agent Delegation** — Agents spawn sub-agents via pipe mode
-- **Persistent State** — Agent filesystem survives across sessions
-- **Permission Approval** — Users approve every permission before launch
-
----
 
 ## Quick Start
 
@@ -94,13 +71,5 @@ AgentStore/
 ```
 
 ---
-
-## Development
-
-```bash
-pip install -e ./packages/client
-pytest
-ruff check .
-```
 
 Set `E2B_API_KEY` for sandbox runtime ([e2b.dev](https://e2b.dev)).
