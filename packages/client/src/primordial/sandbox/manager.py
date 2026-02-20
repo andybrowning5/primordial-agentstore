@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import queue
+import secrets
 import tarfile
 import threading
 from pathlib import Path
@@ -17,6 +18,20 @@ logger = logging.getLogger(__name__)
 from e2b import Sandbox
 
 from primordial.models import AgentManifest
+
+_PROXY_SCRIPT = Path(__file__).parent / "proxy_script.py"
+_PROXY_PATH_IN_SANDBOX = "/opt/_primordial_proxy.py"
+
+# Well-known provider defaults for the in-sandbox reverse proxy.
+_PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
+    "anthropic": {"domain": "api.anthropic.com", "base_url_env": "ANTHROPIC_BASE_URL", "auth_style": "x-api-key"},
+    "openai":    {"domain": "api.openai.com",    "base_url_env": "OPENAI_BASE_URL",    "auth_style": "bearer"},
+    "google":    {"domain": "generativelanguage.googleapis.com", "base_url_env": "GOOGLE_BASE_URL", "auth_style": "bearer"},
+    "groq":      {"domain": "api.groq.com",      "base_url_env": "GROQ_BASE_URL",      "auth_style": "bearer"},
+    "mistral":   {"domain": "api.mistral.ai",    "base_url_env": "MISTRAL_BASE_URL",   "auth_style": "bearer"},
+    "deepseek":  {"domain": "api.deepseek.com",  "base_url_env": "DEEPSEEK_BASE_URL",  "auth_style": "bearer"},
+    "brave":     {"domain": "api.search.brave.com", "base_url_env": "BRAVE_BASE_URL",  "auth_style": "bearer"},
+}
 
 AGENT_HOME_IN_SANDBOX = "/home/user"
 AGENT_DIR_IN_SANDBOX = "/home/user/agent"
@@ -75,6 +90,13 @@ class SandboxManager:
                 if domain not in allowed:
                     allowed.append(domain)
 
+        # Auto-allow API domains for proxied key requirements
+        for key_req in manifest.keys:
+            defaults = _PROVIDER_DEFAULTS.get(key_req.provider.lower(), {})
+            domain = key_req.domain or defaults.get("domain")
+            if domain and domain not in allowed:
+                allowed.append(domain)
+
         if allowed:
             return {"network": {"deny_out": ["0.0.0.0/0"], "allow_out": allowed}}
         return {"network": {"deny_out": ["0.0.0.0/0"]}}
@@ -130,6 +152,108 @@ class SandboxManager:
         except Exception as e:
             logger.warning("Failed to save session state: %s", e)
 
+    def _start_proxy(
+        self,
+        sandbox: Sandbox,
+        manifest: AgentManifest,
+        env_vars: dict[str, str],
+    ) -> tuple[Optional[int], dict[str, str]]:
+        """Start the in-sandbox reverse proxy for API key isolation.
+
+        Returns (proxy_pid, agent_envs) where agent_envs contains
+        placeholder keys and localhost base URLs for the agent process.
+        """
+        if not manifest.keys or not _PROXY_SCRIPT.exists():
+            return None, {}
+
+        session_token = f"sess-{secrets.token_hex(16)}"
+        routes: list[dict[str, Any]] = []
+        agent_envs: dict[str, str] = {}
+        port = 9001
+
+        for key_req in manifest.keys:
+            env_name = key_req.resolved_env_var()
+            real_key = env_vars.get(env_name)
+            if not real_key:
+                continue
+
+            defaults = _PROVIDER_DEFAULTS.get(key_req.provider.lower(), {})
+            domain = key_req.domain or defaults.get("domain")
+            if not domain:
+                continue
+
+            auth_style = key_req.auth_style or defaults.get("auth_style", "bearer")
+            base_url_env = key_req.base_url_env or defaults.get(
+                "base_url_env", f"{key_req.provider.upper()}_BASE_URL"
+            )
+
+            routes.append({
+                "port": port,
+                "target_host": domain,
+                "real_key": real_key,
+                "auth_style": auth_style,
+            })
+            agent_envs[env_name] = session_token
+            agent_envs[base_url_env] = f"http://127.0.0.1:{port}"
+            port += 1
+
+        if not routes:
+            return None, {}
+
+        # Upload and start proxy as root
+        sandbox.files.write(_PROXY_PATH_IN_SANDBOX, _PROXY_SCRIPT.read_text(), user="root")
+        sandbox.commands.run(f"chmod 700 {_PROXY_PATH_IN_SANDBOX}", user="root")
+
+        proxy_handle = sandbox.commands.run(
+            f"python3 {_PROXY_PATH_IN_SANDBOX}",
+            background=True, stdin=True, user="root", timeout=0,
+        )
+        proxy_pid = proxy_handle.pid
+        sandbox.commands.send_stdin(proxy_pid, json.dumps({"routes": routes}) + "\n")
+
+        # Wait for proxy to bind
+        first_port = routes[0]["port"]
+        sandbox.commands.run(
+            f"python3 -c \""
+            f"import socket, time\n"
+            f"for _ in range(30):\n"
+            f"    try: s=socket.create_connection(('127.0.0.1',{first_port}),1); s.close(); break\n"
+            f"    except OSError: time.sleep(0.2)\n"
+            f"\"",
+            user="root",
+        )
+
+        # Harden: prevent agent from escalating or reading proxy secrets
+        sandbox.commands.run(
+            "chmod o-rx /usr/bin/sudo /usr/bin/su /usr/sbin/su 2>/dev/null; "
+            "deluser user sudo 2>/dev/null; "
+            "mount -o remount,hidepid=2 /proc 2>/dev/null; "
+            "true",
+            user="root",
+        )
+
+        return proxy_pid, agent_envs
+
+    def _build_run_command(
+        self,
+        sandbox: Sandbox,
+        manifest: AgentManifest,
+        agent_envs: dict[str, str],
+    ) -> str:
+        """Build the command to start the agent, injecting proxy env vars via wrapper script."""
+        if not agent_envs:
+            return f"cd {AGENT_DIR_IN_SANDBOX} && {manifest.runtime.run_command}"
+
+        export_lines = "\n".join(f"export {k}='{v}'" for k, v in agent_envs.items())
+        wrapper = (
+            f"#!/bin/bash\n"
+            f"{export_lines}\n"
+            f"cd {AGENT_DIR_IN_SANDBOX} && exec {manifest.runtime.run_command}\n"
+        )
+        sandbox.files.write("/tmp/_run_agent.sh", wrapper)
+        sandbox.commands.run("chmod +x /tmp/_run_agent.sh")
+        return "bash /tmp/_run_agent.sh"
+
     def run_agent(
         self,
         agent_dir: Path,
@@ -176,12 +300,19 @@ class SandboxManager:
                     error_detail = (result.stderr or result.stdout or "")[:500]
                     raise SandboxError(f"Setup command failed: {error_detail}")
 
+            # --- Start in-sandbox reverse proxy for API key isolation ---
+            proxy_pid, agent_envs = None, {}
+            if manifest.keys:
+                _status("Starting security proxy...")
+                proxy_pid, agent_envs = self._start_proxy(sandbox, manifest, env_vars)
+
             _status("Starting agent...")
             messages: queue.Queue[dict[str, Any]] = queue.Queue()
             stderr_lines: list[str] = []
 
+            run_cmd = self._build_run_command(sandbox, manifest, agent_envs)
             cmd_handle = sandbox.commands.run(
-                f"cd {AGENT_DIR_IN_SANDBOX} && {manifest.runtime.run_command}",
+                run_cmd,
                 background=True,
                 stdin=True,
                 timeout=0,  # No connection timeout — agent sessions are long-lived
@@ -210,6 +341,7 @@ class SandboxManager:
                 on_stderr=_on_stderr,
                 manager=self,
                 state_dir=state_dir,
+                proxy_pid=proxy_pid,
             )
         except Exception:
             try:
@@ -232,6 +364,7 @@ class AgentSession:
         stderr_lines: Optional[list[str]] = None,
         on_stdout: Optional[Any] = None,
         on_stderr: Optional[Any] = None,
+        proxy_pid: Optional[int] = None,
     ):
         self._sandbox = sandbox
         self._cmd_handle = cmd_handle
@@ -241,6 +374,7 @@ class AgentSession:
         self._stderr_lines = stderr_lines or []
         self._on_stdout = on_stdout
         self._on_stderr = on_stderr
+        self._proxy_pid = proxy_pid
         self._alive = True
 
         # Drive the event loop in a background thread — this is what
@@ -308,6 +442,11 @@ class AgentSession:
                     self._manager._save_state(self._sandbox, self._state_dir)
                 except Exception as e:
                     logger.warning("Failed to save state on shutdown: %s", e)
+            if self._proxy_pid:
+                try:
+                    self._sandbox.commands.run(f"kill {self._proxy_pid}", user="root")
+                except Exception:
+                    pass
             try:
                 self._sandbox.kill()
             except Exception:

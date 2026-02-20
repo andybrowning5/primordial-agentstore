@@ -62,6 +62,9 @@ class KeyRequirement(BaseModel):
     provider: str
     env_var: Optional[str] = None  # auto-derived as <PROVIDER>_API_KEY if omitted
     required: bool = True
+    domain: Optional[str] = None        # API domain, e.g. "api.stripe.com"
+    base_url_env: Optional[str] = None  # env var for base URL override
+    auth_style: Optional[str] = None    # "bearer" or "x-api-key"
 
     def resolved_env_var(self) -> str:
         return self.env_var or f"{self.provider.upper()}_API_KEY"
