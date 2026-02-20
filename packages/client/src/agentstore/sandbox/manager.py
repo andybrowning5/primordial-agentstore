@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import os
 import queue
 import tarfile
 import threading
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
+
+logger = logging.getLogger(__name__)
 
 from e2b import Sandbox
 
@@ -17,6 +20,7 @@ from agentstore.models import AgentManifest
 
 AGENT_HOME_IN_SANDBOX = "/home/user"
 AGENT_DIR_IN_SANDBOX = "/home/user/agent"
+WORKSPACE_DIR_IN_SANDBOX = "/home/user/workspace"
 SKILL_FILE = Path(__file__).parent / "skill.md"
 SKILL_DEST = "/home/user/skill.md"
 _STATE_EXCLUDE_DIRS = [
@@ -121,11 +125,10 @@ class SandboxManager:
         )
         try:
             tar_bytes = sandbox.files.read(tmp_path, format="bytes")
-            tar_stream = tarfile.open(fileobj=io.BytesIO(tar_bytes))
-            tar_stream.extractall(path=str(state_dir))
-            tar_stream.close()
-        except Exception:
-            pass
+            with tarfile.open(fileobj=io.BytesIO(tar_bytes)) as tar_stream:
+                tar_stream.extractall(path=str(state_dir), filter="data")
+        except Exception as e:
+            logger.warning("Failed to save session state: %s", e)
 
     def run_agent(
         self,
@@ -134,7 +137,7 @@ class SandboxManager:
         workspace: Path,
         env_vars: dict[str, str],
         state_dir: Optional[Path] = None,
-        on_status: Optional[Any] = None,
+        on_status: Optional[Callable[[str], None]] = None,
     ) -> AgentSession:
         """Start an agent session in an E2B sandbox."""
         self._ensure_e2b_api_key(env_vars)
@@ -154,6 +157,12 @@ class SandboxManager:
         try:
             _status("Uploading agent code...")
             self._upload_directory(sandbox, agent_dir, AGENT_DIR_IN_SANDBOX)
+
+            if workspace.is_dir():
+                _status("Uploading workspace...")
+                self._upload_directory(sandbox, workspace, WORKSPACE_DIR_IN_SANDBOX)
+            else:
+                sandbox.commands.run(f"mkdir -p {WORKSPACE_DIR_IN_SANDBOX}")
 
             self._upload_skill(sandbox)
 
@@ -275,10 +284,19 @@ class AgentSession:
             return None
 
     def wait_ready(self, timeout: float = 120.0) -> bool:
-        msg = self.receive(timeout=timeout)
-        if msg and msg.get("type") == "ready":
-            return True
-        return False
+        """Wait for the agent to send a ready signal, skipping non-ready messages."""
+        import time
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            msg = self.receive(timeout=remaining)
+            if msg is None:
+                return False
+            if msg.get("type") == "ready":
+                return True
+            # Non-ready messages (logs, early errors) — keep draining
 
     def shutdown(self) -> None:
         try:
@@ -292,8 +310,8 @@ class AgentSession:
             if self._state_dir:
                 try:
                     self._manager._save_state(self._sandbox, self._state_dir)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Failed to save state on shutdown: %s", e)
             try:
                 self._sandbox.kill()
             except Exception:

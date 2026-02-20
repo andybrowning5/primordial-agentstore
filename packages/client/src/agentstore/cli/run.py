@@ -1,7 +1,9 @@
 """CLI command for running agents."""
 
 import json
+import os
 import select
+import subprocess
 import sys
 import uuid
 from datetime import datetime
@@ -24,7 +26,6 @@ console = Console()
 
 def _detect_host_tz() -> str | None:
     """Detect the host machine's IANA timezone (e.g. 'America/New_York')."""
-    import os, subprocess
     if tz := os.environ.get("TZ"):
         return tz
     try:
@@ -61,7 +62,7 @@ def _pick_session(config, agent_name: str) -> Path:
 
     choice = click.prompt("Select session", type=int, default=0)
 
-    if choice == 0 or choice > len(sessions):
+    if choice < 1 or choice > len(sessions):
         return config.session_state_dir(agent_name, _new_session_name())
 
     return config.session_state_dir(agent_name, sessions[choice - 1])
@@ -128,20 +129,21 @@ def run(
     else:
         state_dir = _pick_session(config, manifest.name)
 
+    # Validate required API keys from manifest and prompt for missing ones
+    vault = KeyVault(config.keys_file)
+
     # Show permissions and ask for approval
+    stored_providers = {e["provider"] for e in vault.list_keys()}
     console.print(f"\n[bold]{manifest.display_name}[/bold] [dim]v{manifest.version}[/dim]")
     console.print(f"[dim]{manifest.description}[/dim]")
     console.print(f"[dim]Session: {state_dir.name}[/dim]\n")
     console.print("[bold]Permissions[/bold]\n")
-    for line in format_permissions_for_display(manifest):
+    for line in format_permissions_for_display(manifest, stored_providers=stored_providers):
         console.print(f"  {line}")
     console.print()
     if not yes and not click.confirm("Approve and run?"):
         console.print("[dim]Aborted.[/dim]")
         raise SystemExit(0)
-
-    # Validate required API keys from manifest and prompt for missing ones
-    vault = KeyVault(config.keys_file)
 
     if manifest.keys:
         missing_required = []
@@ -188,7 +190,14 @@ def run(
             console.print(f"[dim]Or run:[/dim] agentstore setup")
             raise SystemExit(1)
 
-    env_vars = vault.get_env_vars()  # inject all stored keys
+    # Only inject keys the manifest declares — never leak unrelated keys
+    if manifest.keys:
+        allowed_providers = [kr.provider for kr in manifest.keys]
+    else:
+        allowed_providers = [manifest.runtime.default_model.provider]
+    # E2B key is always needed for sandbox creation
+    allowed_providers.append("e2b")
+    env_vars = vault.get_env_vars(providers=allowed_providers)
 
     # Inject host timezone so agents see the user's local time
     if "TZ" not in env_vars:

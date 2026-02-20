@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 
-WORKSPACE = Path("/home/agent/workspace")
+WORKSPACE = Path("/home/user/workspace")
 
 
 def send(msg):

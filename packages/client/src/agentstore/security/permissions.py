@@ -4,12 +4,18 @@ from __future__ import annotations
 
 from agentstore.models import AgentManifest
 
-from agentstore.config import get_config
-from agentstore.security.key_vault import KeyVault
 
+def format_permissions_for_display(
+    manifest: AgentManifest,
+    stored_providers: set[str] | None = None,
+) -> list[str]:
+    """Format agent permissions as human-readable lines for approval prompt.
 
-def format_permissions_for_display(manifest: AgentManifest) -> list[str]:
-    """Format agent permissions as human-readable lines for approval prompt."""
+    Args:
+        manifest: The agent manifest to display permissions for.
+        stored_providers: Set of provider names that have stored keys.
+            If None, key status is not shown.
+    """
     lines = []
 
     if manifest.permissions.network_unrestricted:
@@ -21,7 +27,7 @@ def format_permissions_for_display(manifest: AgentManifest) -> list[str]:
     else:
         lines.append("Network access: None (sandbox isolated)")
 
-    lines.append(f"Workspace access:")
+    lines.append("Workspace access:")
     lines.append(f"  [bright_black]- {manifest.permissions.filesystem.workspace}[/bright_black]")
 
     if manifest.permissions.delegation.enabled:
@@ -31,14 +37,14 @@ def format_permissions_for_display(manifest: AgentManifest) -> list[str]:
 
     if manifest.keys:
         lines.append("API keys:")
-        config = get_config()
-        vault = KeyVault(config.keys_file)
         for key_req in manifest.keys:
             label = "required" if key_req.required else "optional"
             env = key_req.resolved_env_var()
-            stored = vault.get_key(key_req.provider)
-            status = "[green]stored[/green]" if stored else "[red]missing[/red]"
-            lines.append(f"  [bright_black]- {key_req.provider} ({env}): {label} — {status}[/bright_black]")
+            if stored_providers is not None:
+                status = "[green]stored[/green]" if key_req.provider in stored_providers else "[red]missing[/red]"
+                lines.append(f"  [bright_black]- {key_req.provider} ({env}): {label} — {status}[/bright_black]")
+            else:
+                lines.append(f"  [bright_black]- {key_req.provider} ({env}): {label}[/bright_black]")
 
     r = manifest.runtime.resources
     lines.append("Resources:")
