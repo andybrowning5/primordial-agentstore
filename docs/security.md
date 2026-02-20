@@ -121,9 +121,8 @@ Duplicate `env_var` or `base_url_env` values across manifest key entries are rej
 | Groq | api.groq.com | `Authorization: Bearer` |
 | Mistral | api.mistral.ai | `Authorization: Bearer` |
 | DeepSeek | api.deepseek.com | `Authorization: Bearer` |
-| Brave | api.search.brave.com | `Authorization: Bearer` |
 
-Custom providers can specify `domain`, `base_url_env`, and `auth_style` in the manifest's `keys:` section.
+Custom providers can specify `domain`, `base_url_env`, and `auth_style` (any HTTP header name) in the manifest's `keys:` section. See [Custom Providers](custom-providers.md).
 
 ## 4. Key Vault — Encrypted At Rest
 
@@ -211,7 +210,7 @@ Agent manifests are validated at parse time with strict field validators:
 
 **Domain names:** Must be valid FQDN with at least one dot and at least one letter. Rejects IP literals, single-label hosts, and double-dot hostnames.
 
-**Auth style:** Must be `"bearer"` or `"x-api-key"`.
+**Auth style:** Any valid HTTP header name (`^[a-z][a-z0-9-]*$`).
 
 **Sandbox template:** Must be `"base"` (allowlist of one).
 
