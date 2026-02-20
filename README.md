@@ -29,20 +29,6 @@ primordial search
 
 ---
 
-## Features
-
-- **Sandbox Isolation** — Every agent runs in a Firecracker microVM (~150ms startup)
-- **Language-Agnostic** — Any language that reads stdin and writes stdout works
-- **Primordial Protocol** — Simple NDJSON message protocol. No framework lock-in.
-- **GitHub Agents** — Run agents directly from GitHub URLs with automatic caching
-- **Encrypted Key Vault** — API keys encrypted at rest with Fernet (AES-128-CBC + HMAC-SHA256)
-- **Custom Providers** — Use any API with configurable auth styles
-- **Agent Delegation** — Agents spawn sub-agents via pipe mode
-- **Persistent State** — Agent filesystem survives across sessions
-- **Permission Approval** — Users approve every permission before launch
-
----
-
 ## Prerequisites
 
 | Requirement | Details |
@@ -50,13 +36,6 @@ primordial search
 | **Python** | 3.11+ |
 | **pip** | Latest recommended |
 | **OS** | macOS, Linux (Windows via WSL2) |
-| **E2B API Key** | Required for sandbox runtime — sign up at [e2b.dev](https://e2b.dev) |
-
-The CLI will prompt you for your E2B key the first time you run an agent. To set it manually:
-
-```bash
-export E2B_API_KEY="your-key-here"
-```
 
 ---
 
@@ -110,6 +89,3 @@ AgentStore/
 └── CHANGELOG.md                   # Release notes
 ```
 
----
-
-Set `E2B_API_KEY` for sandbox runtime ([e2b.dev](https://e2b.dev)).

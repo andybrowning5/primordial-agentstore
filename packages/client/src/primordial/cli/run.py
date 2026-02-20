@@ -171,8 +171,8 @@ def run(
     if not vault.get_key("e2b"):
         console.print(
             "\n[bold yellow]E2B API key required[/bold yellow]\n"
-            "[dim]Primordial runs agents in E2B sandboxes. "
-            "Get a key at https://e2b.dev/dashboard[/dim]\n"
+            "[dim]E2B is the sandbox provider that Primordial uses to run agents "
+            "in isolated microVMs. Sign up and grab a key at https://e2b.dev/dashboard[/dim]\n"
         )
         e2b_key = click.prompt("  Paste E2B_API_KEY", hide_input=True)
         if e2b_key.strip():
