@@ -12,39 +12,34 @@
 pip install primordial
 ```
 
-## Configure API Keys
-
-```bash
-primordial setup
-```
-
-This walks you through known providers (Anthropic, OpenAI, Brave, Groq, Google, Mistral, DeepSeek, E2B) and stores encrypted API keys in your local vault.
-
-You can also manage keys individually:
-
-```bash
-primordial keys add                              # Interactive picker
-primordial keys add anthropic sk-ant-...         # Direct add
-primordial keys add anthropic sk-ant-... --key-id prod  # With custom ID
-primordial keys list                             # Show all stored keys
-primordial keys remove anthropic                 # Remove a key
-```
-
 ## Run Your First Agent
-
-Browse available agents:
 
 ```bash
 primordial search
 ```
 
-This searches GitHub for repos tagged `primordial-agent`. Pick one and run it. Or run directly:
+This searches GitHub for repos tagged `primordial-agent`. Pick one and run it. The CLI will prompt you for any API keys the agent needs on first run.
+
+You can also run an agent directly by URL:
 
 ```bash
 primordial run https://github.com/andybrowning5/web-research-agent
 ```
 
 You'll see the agent's permissions (network access, API keys, resource limits) and approve before launch.
+
+## Managing API Keys
+
+To add or update keys at any time:
+
+```bash
+primordial setup                                 # Interactive setup for all providers
+primordial keys add                              # Interactive picker
+primordial keys add anthropic sk-ant-...         # Direct add
+primordial keys add anthropic sk-ant-... --key-id prod  # With custom ID
+primordial keys list                             # Show all stored keys
+primordial keys remove anthropic                 # Remove a key
+```
 
 ## Running Agents
 

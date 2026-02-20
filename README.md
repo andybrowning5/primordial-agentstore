@@ -24,14 +24,14 @@ An open marketplace for AI agents. You build an agent, publish it, and anyone ca
 
 ```bash
 pip install primordial
-primordial setup
-primordial search              # Browse and run available agents
+primordial search              # Browse agents, pick one, and run it
 ```
 
-Or run an agent directly:
+The CLI will prompt you for any API keys the agent needs on first run. To manually add or update keys later:
 
 ```bash
-primordial run https://github.com/andybrowning5/web-research-agent
+primordial setup               # Interactive setup for all providers
+primordial keys add anthropic sk-ant-...  # Add a specific key
 ```
 
 ---
