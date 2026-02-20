@@ -20,6 +20,11 @@ Primordial extends that workflow. Instead of only delegating to general-purpose 
 
 Agents that compose other agents. Not one monolith trying to do everything — a network of specialists, each doing one thing well, each sandboxed independently.
 
+```bash
+pip install primordial-agentstore
+primordial search
+```
+
 ---
 
 ## Features
