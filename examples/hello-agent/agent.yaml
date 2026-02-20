@@ -1,7 +1,11 @@
 name: "hello-agent"
 display_name: "Hello Agent"
 version: "0.1.0"
-description: "A simple demo agent that greets users and summarizes workspace contents."
+description: >
+  Simple demo agent for testing. Send it any message and it will greet you
+  and summarize the contents of the mounted workspace directory. Useful for
+  verifying that AgentStore sandboxing, file access, and the NDJSON protocol
+  are working correctly. Not intended for production use.
 category: "demo"
 tags: ["demo", "hello", "starter"]
 
@@ -11,8 +15,8 @@ author:
 
 runtime:
   language: "python"
-  python_version: ">=3.11"
-  entry_point: "src/agent:create_agent"
+  setup_command: "pip install -r requirements.txt"
+  run_command: "python -u src/agent.py"
   dependencies: "requirements.txt"
   default_model:
     provider: "anthropic"
@@ -20,8 +24,6 @@ runtime:
   resources:
     max_memory: "1GB"
     max_cpu: 1
-    max_duration: 60
-    max_session_duration: 600
 
 permissions:
   network:

@@ -104,11 +104,9 @@ class SandboxManager:
                 on_status(msg)
 
         _status("Creating sandbox...")
-        timeout = manifest.runtime.resources.max_session_duration
         sandbox = Sandbox.create(
             template=manifest.runtime.e2b_template,
             envs=env_vars,
-            timeout=timeout,
         )
 
         try:

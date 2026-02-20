@@ -4,6 +4,7 @@ import json
 import select
 import sys
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 import click
@@ -20,18 +21,44 @@ from agentstore.cli.helix import HelixSpinner
 console = Console()
 
 
+def _pick_session(config, agent_name: str) -> Path:
+    """Prompt user to create a new session or resume an existing one."""
+    sessions = config.list_sessions(agent_name)
+
+    if not sessions:
+        # First time — create default session silently
+        session_name = datetime.now().strftime("%Y%m%d-%H%M%S")
+        return config.session_state_dir(agent_name, session_name)
+
+    console.print("\n[bold]Sessions:[/bold]")
+    console.print(f"  [cyan]0)[/cyan] New session")
+    for i, name in enumerate(sessions, 1):
+        console.print(f"  [cyan]{i})[/cyan] {name}")
+    console.print()
+
+    choice = click.prompt("Select session", type=int, default=0)
+
+    if choice == 0 or choice > len(sessions):
+        session_name = datetime.now().strftime("%Y%m%d-%H%M%S")
+        return config.session_state_dir(agent_name, session_name)
+
+    return config.session_state_dir(agent_name, sessions[choice - 1])
+
+
 @click.command()
 @click.argument("agent_path")
 @click.option("--agent-read", is_flag=True, help="Ooze Protocol pipe mode (NDJSON stdin/stdout)")
 @click.option("--ref", default=None, help="Git ref (branch, tag, commit) for GitHub agents")
 @click.option("--refresh", is_flag=True, help="Force re-fetch of GitHub agent (ignore cache)")
 @click.option("--yes", "-y", is_flag=True, help="Skip approval prompt")
+@click.option("--session", "session_name", default=None, help="Session name to resume (skips prompt)")
 def run(
     agent_path: str,
     agent_read: bool,
     ref: str | None,
     refresh: bool,
     yes: bool,
+    session_name: str | None,
 ):
     """Run an agent in a Primordial sandbox.
 
@@ -68,13 +95,21 @@ def run(
         console.print(f"[red]Invalid agent:[/red] {e}")
         raise SystemExit(1)
 
-    # Compute state directory
-    state_dir = config.agent_state_dir(manifest.name)
+    # Session selection
+    if session_name:
+        state_dir = config.session_state_dir(manifest.name, session_name)
+    elif agent_read:
+        # Pipe mode — auto-create session
+        state_dir = config.session_state_dir(
+            manifest.name, datetime.now().strftime("%Y%m%d-%H%M%S")
+        )
+    else:
+        state_dir = _pick_session(config, manifest.name)
 
     # Show permissions and ask for approval
     console.print(f"\n[bold]Agent: {manifest.display_name}[/bold] v{manifest.version}")
     console.print(f"[dim]{manifest.description}[/dim]")
-    console.print(f"[dim]State: {state_dir}[/dim]\n")
+    console.print(f"[dim]Session: {state_dir.name}[/dim]\n")
     console.print("[yellow]This agent requests the following permissions:[/yellow]\n")
     for line in format_permissions_for_display(manifest):
         console.print(f"  {line}")
@@ -227,7 +262,7 @@ def _run_chat(
 
             # Read responses until we get a done=true response
             while True:
-                msg = session.receive(timeout=manifest.runtime.resources.max_duration)
+                msg = session.receive(timeout=300)
                 if msg is None:
                     console.print("[yellow]Agent response timed out.[/yellow]")
                     break
@@ -302,7 +337,7 @@ def _run_json(
                 session.send_message(content, message_id)
 
                 while True:
-                    msg = session.receive(timeout=manifest.runtime.resources.max_duration)
+                    msg = session.receive(timeout=300)
                     if msg is None:
                         _json_line({"type": "error", "error": "timeout", "message_id": message_id})
                         break

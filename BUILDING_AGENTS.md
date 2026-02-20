@@ -83,23 +83,16 @@ runtime:
   resources:
     max_memory: 2GB
     max_cpu: 2
-    max_duration: 300             # Max seconds per request
-    max_session_duration: 3600    # Max session lifetime
 
 keys:                             # API keys injected as env vars in the sandbox
   - provider: anthropic
     env_var: ANTHROPIC_API_KEY
     required: true
-  - provider: zep
-    env_var: ZEP_API_KEY
-    required: false
 
 permissions:
   network:                        # Each domain must be declared with a reason
     - domain: api.anthropic.com
       reason: LLM inference
-    - domain: api.getzep.com
-      reason: Long-term memory storage
   network_unrestricted: false     # true = full internet (requires user approval)
   filesystem:
     workspace: readwrite          # none | readonly | readwrite
@@ -111,7 +104,7 @@ permissions:
 
 ## Python SDK
 
-The SDK handles the Ooze Protocol for you. Subclass `Agent` and implement three methods:
+The SDK handles the Ooze Protocol for you. Subclass `Agent` and implement `handle_message`:
 
 ```python
 from agentstore_sdk import Agent
@@ -155,206 +148,72 @@ self.send_error("Something went wrong", message_id)
 
 ---
 
-## State & Persistence
+## Persistence
 
-Your agent gets a persistent state directory at `/home/user/state/` inside the sandbox. Everything written here survives across sessions — restart the agent tomorrow and your data is still there.
+Your agent's entire home directory (`/home/user/`) is saved between sessions. Write files, SQLite databases, `.md` notes, config files — whatever you want. It'll all be there next time the user resumes.
 
-There are three ways to persist data, from simplest to most flexible:
+Users can maintain **multiple sessions** per agent. When launching, they choose to start fresh or resume a previous session. Each session gets its own isolated filesystem snapshot.
 
-### 1. Config — Settings that rarely change
-
-Think API tokens, user preferences, feature flags. Set once, read forever.
+There's nothing to learn — just write files. The platform handles the rest.
 
 ```python
-def setup(self):
-    # Check if we've already registered with an external service
-    self.api_token = self.config.get("api_token", None)
+from pathlib import Path
 
-    if not self.api_token:
-        self.api_token = register_with_service()
-        self.config.set("api_token", self.api_token)
-```
-
-Config writes flush to disk immediately. Use it for small values you set once and read many times.
-
-### 2. State — Structured data that evolves
-
-Think conversation history, task lists, cached results. The SDK gives you `save_state` and `load_state` for JSON-serializable data.
-
-**Example: Maintaining memory with `memory.md` files**
-
-```python
-def setup(self):
-    # Load existing memories from previous sessions
-    self.memories = self.load_state("memories", default=[])
-
-def handle_message(self, content: str, message_id: str):
-    # Your agent does work...
-    response = self.think(content)
-
-    # Save important context as a memory
-    if self.is_worth_remembering(content, response):
-        self.memories.append({
-            "user_said": content,
-            "summary": self.summarize(response),
-            "timestamp": datetime.now().isoformat(),
-        })
-        self.save_state("memories", self.memories)
-
-    # You can also write a memory.md file for human-readable context
-    memory_path = self.state_dir / "memory.md"
-    memory_path.write_text(self.format_memories_as_markdown(self.memories))
-
-    self.send_response(response, message_id, done=True)
-```
-
-**Example: Long-term memory with Zep**
-
-[Zep](https://www.getzep.com/) gives your agent persistent, searchable memory across sessions — facts, summaries, and conversation history managed automatically.
-
-```python
-from zep_cloud.client import Zep
-
-class MemoryAgent(Agent):
+class MyAgent(Agent):
 
     def setup(self):
-        # Zep API key is injected via the keys manifest field
-        self.zep = Zep(api_key=os.environ["ZEP_API_KEY"])
-
-        # Load or create a user session — this persists across restarts
-        self.user_id = self.config.get("user_id", "default-user")
-        self.session_id = self.config.get("session_id", None)
-
-        if not self.session_id:
-            self.session_id = f"session-{uuid.uuid4().hex[:8]}"
-            self.config.set("session_id", self.session_id)
-            self.zep.memory.add_session(session_id=self.session_id, user_id=self.user_id)
+        # Check if we already registered with an external service
+        id_file = Path("/home/user/zep_user_id.txt")
+        if id_file.exists():
+            self.user_id = id_file.read_text().strip()
+        else:
+            self.user_id = register_with_service()
+            id_file.write_text(self.user_id)
 
     def handle_message(self, content: str, message_id: str):
-        # Search Zep for relevant memories before responding
-        memories = self.zep.memory.search(
-            self.session_id,
-            text=content,
-            limit=5,
-        )
-        context = "\n".join(m.message.content for m in memories.results)
+        # Write notes, logs, whatever — it persists
+        log = Path("/home/user/conversation.log")
+        with log.open("a") as f:
+            f.write(f"user: {content}\n")
 
-        # Generate response using memories as context
-        response = self.call_llm(content, context=context)
+        response = self.think(content)
 
-        # Store the exchange in Zep — it extracts facts and summaries automatically
-        self.zep.memory.add(self.session_id, messages=[
-            {"role": "user", "content": content},
-            {"role": "assistant", "content": response},
-        ])
+        with log.open("a") as f:
+            f.write(f"agent: {response}\n")
 
         self.send_response(response, message_id, done=True)
 ```
 
-The manifest for this agent would declare the Zep key and network access:
-
-```yaml
-keys:
-  - provider: zep
-    env_var: ZEP_API_KEY
-    required: true
-
-permissions:
-  network:
-    - domain: api.getzep.com
-      reason: Long-term memory storage and retrieval
-```
-
-### 3. Filesystem — Raw files
-
-Write anything to `self.state_dir` (mapped to `/home/user/state/` in the sandbox). SQLite databases, downloaded files, caches — whatever your agent needs.
-
-```python
-import sqlite3
-
-def setup(self):
-    db_path = self.state_dir / "agent.db"
-    self.db = sqlite3.connect(db_path)
-    self.db.execute("CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, content TEXT)")
-```
-
-### Where things live in the sandbox
+### What persists
 
 ```
 /home/user/
+├── agent/         # Your agent code (read-only, not persisted)
 ├── workspace/     # User's project directory (mounted from host)
-├── agent/         # Your agent code (copied in, read-only)
-└── state/         # Persistent — survives across sessions
-    ├── config.json    # self.config (managed by SDK)
-    ├── memories.json  # self.save_state("memories", ...)
-    ├── memory.md      # Any file you write here
-    └── agent.db       # Databases, caches, whatever
-```
-
----
-
-## Node.js Agent
-
-No SDK needed — just speak the Ooze Protocol directly:
-
-```javascript
-const readline = require("readline");
-const rl = readline.createInterface({ input: process.stdin });
-
-function send(obj) {
-  process.stdout.write(JSON.stringify(obj) + "\n");
-}
-
-send({ type: "ready" });
-
-rl.on("line", async (line) => {
-  const msg = JSON.parse(line);
-  if (msg.type === "message") {
-    send({
-      type: "response",
-      content: `You said: ${msg.content}`,
-      message_id: msg.message_id,
-      done: true,
-    });
-  } else if (msg.type === "shutdown") {
-    process.exit(0);
-  }
-});
-```
-
-```yaml
-runtime:
-  language: node
-  setup_command: npm install
-  run_command: node index.js
+└── *everything else persists between sessions*
 ```
 
 ---
 
 ## Wrapping CLI Tools
 
-Any CLI tool becomes an agent with a thin bridge script:
+Any CLI tool becomes an agent with the SDK:
 
 ```python
-import json, subprocess, sys
+import subprocess
+from agentstore_sdk import Agent
 
-def send(obj):
-    sys.stdout.write(json.dumps(obj) + "\n")
-    sys.stdout.flush()
+class CLIAgent(Agent):
 
-send({"type": "ready"})
-
-for line in sys.stdin:
-    msg = json.loads(line.strip())
-    if msg["type"] == "shutdown":
-        break
-    if msg["type"] == "message":
+    def handle_message(self, content: str, message_id: str):
         result = subprocess.run(
-            ["some-cli-tool", "--message", msg["content"]],
+            ["some-cli-tool", "--message", content],
             capture_output=True, text=True, timeout=280,
         )
-        send({"type": "response", "content": result.stdout.strip(),
-              "message_id": msg["message_id"], "done": True})
+        self.send_response(result.stdout.strip(), message_id)
+
+if __name__ == "__main__":
+    CLIAgent().run_loop()
 ```
 
 ---
@@ -413,7 +272,7 @@ Your agent runs inside an E2B Firecracker microVM (~150ms startup):
 
 - **No network by default** — every domain must be declared in the manifest with a reason
 - **No filesystem access** beyond the agent's own directories unless declared
-- **Resource limits** (memory, CPU, duration) enforced by the sandbox
+- **Resource limits** (memory, CPU) enforced by the sandbox
 - **User approval** required before permissions are granted
 - **API keys** encrypted at rest with Fernet (AES-128-CBC + HMAC-SHA256), injected as env vars at runtime
 
@@ -441,5 +300,5 @@ Tips:
 |---------|-------|-----|
 | Agent never becomes ready | Missing `{"type": "ready"}` | Use `run_loop()` — the SDK handles this |
 | User sees no response | `send_response` not called or `done` not `true` | Always end with `self.send_response(..., done=True)` |
-| State lost between sessions | Writing to wrong directory | Use `self.save_state()` or write to `self.state_dir` |
+| State lost between sessions | Writing outside `/home/user/` | Write to `/home/user/` — everything there persists |
 | Import errors on startup | Dependencies not installed | Check `setup_command` in manifest |

@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import json as json_module
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Optional
 
 from agentstore_sdk.io import (
     receive_messages,
@@ -17,60 +15,23 @@ from agentstore_sdk.io import (
 )
 
 
-class _AgentBase(ABC):
-    """State management helpers."""
-
-    @property
-    def state_dir(self) -> Path:
-        """Directory for persistent state across runs."""
-        path = Path(os.environ.get("AGENT_STATE_DIR", "/home/agent/state"))
-        path.mkdir(parents=True, exist_ok=True)
-        return path
-
-    def save_state(self, key: str, data: Any) -> None:
-        """Save data as JSON under a named key."""
-        path = self.state_dir / f"{key}.json"
-        path.write_text(json_module.dumps(data, indent=2))
-
-    def load_state(self, key: str, default: Any = None) -> Any:
-        """Load previously saved state. Returns default if not found."""
-        path = self.state_dir / f"{key}.json"
-        if not path.exists():
-            return default
-        return json_module.loads(path.read_text())
-
-    def list_state_keys(self) -> list[str]:
-        """List all saved state keys."""
-        return [
-            p.stem for p in self.state_dir.glob("*.json")
-        ]
-
-    def delete_state(self, key: str) -> None:
-        """Delete a saved state key."""
-        path = self.state_dir / f"{key}.json"
-        if path.exists():
-            path.unlink()
-
-
-class Agent(_AgentBase):
+class Agent(ABC):
     """Base class for Agent Store agents.
 
     Subclasses implement setup(), handle_message(), and teardown().
     The platform calls run_loop() which drives the NDJSON stdin/stdout
     protocol automatically.
 
-    Example:
-        class MyAgent(Agent):
-            def setup(self) -> None:
-                self.history = []
-
-            def handle_message(self, content: str, message_id: str) -> None:
-                self.history.append(content)
-                self.send_response(f"You said: {content}", message_id)
-
-            def teardown(self) -> None:
-                pass
+    Your agent's filesystem at /home/user/ is persisted between sessions.
+    Write files, databases, or anything else — it'll be there next time.
     """
+
+    @property
+    def state_dir(self) -> Path:
+        """Persistent directory that survives across sessions (/home/user/state/)."""
+        path = Path(os.environ.get("AGENT_STATE_DIR", "/home/user/state"))
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
     def setup(self) -> None:
         """Called once when the session starts. Override for initialization."""
@@ -108,7 +69,7 @@ class Agent(_AgentBase):
                     message_id = msg.get("message_id", "unknown")
                     try:
                         self.handle_message(content, message_id)
-                    except Exception as exc:
+                    except BaseException as exc:
                         send_error(str(exc), message_id)
                 elif msg_type == "shutdown":
                     break

@@ -23,18 +23,14 @@ class ModelConfig(BaseModel):
 class ResourceLimits(BaseModel):
     max_memory: str = "2GB"
     max_cpu: int = 2
-    max_duration: int = 300
-    max_output_size: str = "10MB"
-    max_session_duration: int = 3600
 
 
 class RuntimeConfig(BaseModel):
     language: str = "python"
-    entry_point: Optional[str] = None
     dependencies: Optional[str] = None
     setup_command: Optional[str] = None
     run_command: Optional[str] = None
-    sandbox_template: str = "claude"
+    e2b_template: str = "base"
     default_model: ModelConfig = Field(default_factory=ModelConfig)
     resources: ResourceLimits = Field(default_factory=ResourceLimits)
 
@@ -55,8 +51,20 @@ class DelegationPermission(BaseModel):
 
 class Permissions(BaseModel):
     network: list[NetworkPermission] = Field(default_factory=list)
+    network_unrestricted: bool = False
     filesystem: FilesystemPermission = Field(default_factory=FilesystemPermission)
     delegation: DelegationPermission = Field(default_factory=DelegationPermission)
+
+
+class KeyRequirement(BaseModel):
+    """Declares an API key that an agent needs."""
+
+    provider: str
+    env_var: Optional[str] = None  # auto-derived as <PROVIDER>_API_KEY if omitted
+    required: bool = True
+
+    def resolved_env_var(self) -> str:
+        return self.env_var or f"{self.provider.upper()}_API_KEY"
 
 
 class AgentManifest(BaseModel):
@@ -71,3 +79,4 @@ class AgentManifest(BaseModel):
     author: AuthorInfo
     runtime: RuntimeConfig
     permissions: Permissions = Field(default_factory=Permissions)
+    keys: list[KeyRequirement] = Field(default_factory=list)
