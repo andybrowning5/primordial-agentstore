@@ -39,28 +39,27 @@ primordial search
 
 ---
 
-## Quick Start
-
-```bash
-pip install primordial-agentstore
-primordial search              # Browse agents, pick one, and run it
-```
-
-The CLI will prompt you for any API keys the agent needs on first run. To manually add or update keys later:
-
-```bash
-primordial setup               # Interactive setup for all providers
-primordial keys add anthropic sk-ant-...  # Add a specific key
-```
-
----
-## Demo Video: 
+## Demo
 
 
 https://github.com/user-attachments/assets/ba5a0700-fdfe-4fc4-b1c3-de9bdb8120bb
 
+---
+
+## CLI Commands
+
+```bash
+primordial search              # Browse and run agents from the marketplace
+primordial run <agent>         # Run an agent directly by GitHub URL or path
+primordial setup               # Configure API keys interactively
+primordial keys add <provider> # Add a specific API key
+primordial keys list           # List stored keys
+primordial sessions <agent>    # Manage chat sessions for an agent
+primordial cache list|clear    # View or clear cached agent repos
+```
 
 ---
+
 ## Documentation
 
 See **[docs/](docs/)** for all guides:
