@@ -103,7 +103,7 @@ Agent process (user)                    Proxy (root)                     Upstrea
 
 Duplicate `env_var` or `base_url_env` values across manifest key entries are rejected with `SandboxError`, preventing route hijacking.
 
-Every provider declares its `domain` and `auth_style` explicitly in the manifest. The proxy pins requests to the declared domain, keys stay invisible to the agent, and all the same protections apply uniformly. See [Custom Providers](custom-providers.md).
+Every provider declares its `domain` and `auth_style` explicitly in the manifest. The proxy pins requests to the declared domain, keys stay invisible to the agent, and all the same protections apply uniformly. See [Setting Up APIs](api-setup.md).
 
 ## 4. Key Vault — Encrypted At Rest
 

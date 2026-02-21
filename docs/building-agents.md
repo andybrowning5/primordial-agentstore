@@ -147,6 +147,6 @@ Tips:
 ## Next Steps
 
 - [Manifest reference](agent-manifest.md) — every field and validation rule
-- [Custom providers](custom-providers.md) — using non-built-in APIs
+- [Setting up APIs](api-setup.md) — configuring API keys and proxy routes
 - [Agent delegation](agent-delegation.md) — spawning sub-agents
 - [Publishing](publishing.md) — share your agent with others

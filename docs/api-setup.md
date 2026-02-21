@@ -1,4 +1,4 @@
-# Providers
+# Setting Up APIs
 
 Every API key in your manifest declares its connection details: `domain`, `auth_style`, and optionally `base_url_env`.
 
@@ -34,6 +34,30 @@ keys:
 | `domain` | The upstream API host the proxy connects to via HTTPS |
 | `auth_style` | Header name the proxy uses to send the real key upstream (default: `bearer`) |
 | `base_url_env` | Env var your code reads for the base URL (points to localhost proxy, default: `<PROVIDER>_BASE_URL`) |
+
+## Base URL Env Var
+
+The proxy needs your agent to send requests to `localhost` instead of the real API. It does this by setting an environment variable with the localhost URL. By default, this env var is `<PROVIDER>_BASE_URL` — so for `provider: anthropic`, it sets `ANTHROPIC_BASE_URL=http://127.0.0.1:9001`.
+
+**Most SDKs already check this variable by convention.** The Anthropic SDK reads `ANTHROPIC_BASE_URL`, the OpenAI SDK reads `OPENAI_BASE_URL`, etc. So you don't need to declare `base_url_env` at all — it just works:
+
+```yaml
+keys:
+  - provider: anthropic
+    domain: api.anthropic.com
+    auth_style: x-api-key
+    # base_url_env defaults to ANTHROPIC_BASE_URL — the SDK reads this automatically
+```
+
+**Only set `base_url_env` when the default doesn't match what your code expects.** For example, if you're using a lesser-known API and your code reads a specific env var:
+
+```yaml
+keys:
+  - provider: stripe
+    domain: api.stripe.com
+    auth_style: bearer
+    base_url_env: STRIPE_API_BASE   # your code reads this instead of STRIPE_BASE_URL
+```
 
 ## Auth Styles
 

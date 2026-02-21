@@ -98,7 +98,7 @@ Each entry declares an API key the agent needs. Keys are injected as environment
 | `auth_style` | string | no | `"bearer"` | How the proxy sends the key upstream |
 | `base_url_env` | string | no | `<PROVIDER>_BASE_URL` | Env var for the proxy's localhost URL |
 
-Every provider declares its `domain` and `auth_style` explicitly. See [Custom Providers](custom-providers.md) for examples.
+Every provider declares its `domain` and `auth_style` explicitly. See [Setting Up APIs](api-setup.md) for examples.
 
 ### `permissions`
 

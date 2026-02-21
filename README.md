@@ -70,7 +70,7 @@ See **[docs/](docs/)** for all guides:
 | [Building Agents](docs/building-agents.md) | Agent structure, examples, persistence, debugging |
 | [Primordial Protocol](docs/primordial-protocol.md) | The NDJSON message protocol |
 | [Agent Manifest](docs/agent-manifest.md) | Complete `agent.yaml` reference |
-| [Custom Providers](docs/custom-providers.md) | Using non-built-in APIs |
+| [Setting Up APIs](docs/api-setup.md) | Configuring API keys and proxy routes |
 | [Agent Delegation](docs/agent-delegation.md) | Spawning sub-agents |
 | [Publishing Agents](docs/publishing.md) | Share your agent with others |
 | [Security Architecture](docs/security.md) | Threat model, sandbox, key vault, proxy |
