@@ -264,16 +264,17 @@ if __name__ == "__main__":
 
 ---
 
-## LLM Agent Template (with tool use)
+## LLM Agent Template (with Deep Agents)
+
+Uses [LangChain Deep Agents](https://github.com/langchain-ai/deepagents) — an agent harness with built-in planning, filesystem, and sub-agent spawning.
 
 ```python
-"""Primordial agent with LLM tool use loop."""
+"""Primordial agent using LangChain Deep Agents."""
 import json
-import os
 import sys
 
-from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import HumanMessage, SystemMessage
+from deepagents import create_deep_agent
+from langchain.chat_models import init_chat_model
 from langchain_core.tools import tool
 
 
@@ -297,38 +298,27 @@ def process(query: str, message_id: str) -> str:
     send({"type": "activity", "tool": "thinking",
           "description": "Thinking...", "message_id": message_id})
 
-    llm = ChatAnthropic(model="claude-sonnet-4-5-20250929", max_tokens=4096)
-    tools = [my_tool]
-    llm_with_tools = llm.bind_tools(tools)
+    agent = create_deep_agent(
+        model=init_chat_model("anthropic:claude-sonnet-4-5-20250929"),
+        tools=[my_tool],
+        system_prompt="You are a helpful agent. Use tools when needed.",
+    )
 
-    messages = [
-        SystemMessage(content="You are a helpful agent. Use tools when needed."),
-        HumanMessage(content=query),
-    ]
+    result = agent.invoke(
+        {"messages": [{"role": "user", "content": query}]}
+    )
 
-    tool_map = {t.name: t for t in tools}
-    for _ in range(8):  # max iterations
-        response = llm_with_tools.invoke(messages)
-        messages.append(response)
-
-        if not response.tool_calls:
-            break
-
-        for tc in response.tool_calls:
-            send({"type": "activity", "tool": tc["name"],
-                  "description": f"Using {tc['name']}...",
-                  "message_id": message_id})
-            result = tool_map[tc["name"]].invoke(tc["args"])
-            messages.append({"role": "tool", "content": result,
-                             "tool_call_id": tc["id"]})
-
-    content = response.content
-    if isinstance(content, list):
-        return "\n".join(
-            block if isinstance(block, str) else block.get("text", "")
-            for block in content
-        )
-    return content
+    # Extract the final AI response
+    for msg in reversed(result.get("messages", [])):
+        if getattr(msg, "type", None) == "ai" and getattr(msg, "content", None):
+            content = msg.content
+            if isinstance(content, list):
+                return "\n".join(
+                    block if isinstance(block, str) else block.get("text", "")
+                    for block in content
+                )
+            return content
+    return ""
 
 
 def main():
@@ -365,10 +355,11 @@ if __name__ == "__main__":
     main()
 ```
 
-**requirements.txt for LLM agents:**
+**requirements.txt for Deep Agents:**
 ```
+deepagents>=0.2
+langchain>=0.3
 langchain-anthropic>=0.3
-langchain-core>=0.3
 httpx>=0.27
 ```
 
