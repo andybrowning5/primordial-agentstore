@@ -78,9 +78,6 @@ _PROTECTED_ENV_VARS = {
     "PATH", "HOME", "USER", "SHELL", "LANG", "LC_ALL", "LC_CTYPE",
     "TERM", "TZ", "PYTHONPATH", "NODE_PATH", "LD_PRELOAD",
     "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES",
-    # Provider base URL env vars — prevent manifest from hijacking proxy routes
-    "ANTHROPIC_BASE_URL", "OPENAI_BASE_URL", "GOOGLE_BASE_URL",
-    "GROQ_BASE_URL", "MISTRAL_BASE_URL", "DEEPSEEK_BASE_URL",
 }
 
 # Only these templates are allowed for sandbox creation
@@ -93,9 +90,9 @@ class KeyRequirement(BaseModel):
     provider: str
     env_var: Optional[str] = None  # auto-derived as <PROVIDER>_API_KEY if omitted
     required: bool = True
-    domain: Optional[str] = None        # API domain, e.g. "api.stripe.com"
-    base_url_env: Optional[str] = None  # env var for base URL override
-    auth_style: Optional[str] = None    # "bearer" or "x-api-key"
+    domain: str                          # API domain, e.g. "api.anthropic.com"
+    auth_style: str = "bearer"           # "bearer" or "x-api-key"
+    base_url_env: Optional[str] = None   # env var for base URL override
 
     @field_validator("provider")
     @classmethod
@@ -115,12 +112,11 @@ class KeyRequirement(BaseModel):
 
     @field_validator("domain")
     @classmethod
-    def validate_domain(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None:
-            if not _DOMAIN_RE.match(v):
-                raise ValueError(f"Invalid domain: {v!r} (must be a valid FQDN with at least one dot)")
-            if not _DOMAIN_HAS_LETTER.search(v):
-                raise ValueError(f"Invalid domain: {v!r} (IP literals not allowed)")
+    def validate_domain(cls, v: str) -> str:
+        if not _DOMAIN_RE.match(v):
+            raise ValueError(f"Invalid domain: {v!r} (must be a valid FQDN with at least one dot)")
+        if not _DOMAIN_HAS_LETTER.search(v):
+            raise ValueError(f"Invalid domain: {v!r} (IP literals not allowed)")
         return v
 
     @field_validator("base_url_env")
@@ -134,12 +130,10 @@ class KeyRequirement(BaseModel):
 
     @field_validator("auth_style")
     @classmethod
-    def validate_auth_style(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None:
-            v = v.lower()
-            # Must look like a header name: lowercase letters, numbers, hyphens
-            if not re.match(r"^[a-z][a-z0-9-]*$", v):
-                raise ValueError(f"Invalid auth_style: {v!r} (must be a valid header name)")
+    def validate_auth_style(cls, v: str) -> str:
+        v = v.lower()
+        if not re.match(r"^[a-z][a-z0-9-]*$", v):
+            raise ValueError(f"Invalid auth_style: {v!r} (must be a valid header name)")
         return v
 
     def resolved_env_var(self) -> str:

@@ -51,7 +51,7 @@ Network policy is enforced at the hypervisor level by E2B's infrastructure, not 
 **Auto-allowed domains:**
 
 - **Package registries** — when a `setup_command` is declared, `pypi.org`, `files.pythonhosted.org`, `registry.npmjs.org`, `registry.yarnpkg.com`, and `nodejs.org` are auto-allowed so `pip install` and `npm install` work.
-- **Known API provider domains** — for each `keys:` entry with a known provider, the provider's hardcoded API domain is auto-allowed (e.g. `api.anthropic.com` for `anthropic`). Custom domains from unknown providers are NOT auto-allowed.
+- **API provider domains** — for each `keys:` entry, the declared `domain` is auto-allowed in the network firewall.
 
 **Domain validation:**
 
@@ -99,30 +99,11 @@ Agent process (user)                    Proxy (root)                     Upstrea
 - 60-second socket timeout — prevents thread exhaustion via slow connections
 - Proxy script root-owned, `chmod 700` — unreadable by agent process
 
-**Known provider domain enforcement:**
-
-For known providers (Anthropic, OpenAI, Google, Groq, Mistral, DeepSeek), the proxy always uses the hardcoded domain from `_PROVIDER_DEFAULTS`, ignoring any `domain` override in the manifest. This prevents a malicious manifest from redirecting real API keys to attacker-controlled servers.
-
-**Cross-provider theft prevention:**
-
-Unknown providers cannot declare `env_var: ANTHROPIC_API_KEY` or other known provider env var names. This is enforced at runtime in `_start_proxy` to prevent an unknown provider from stealing a known provider's real key.
-
 **Collision detection:**
 
 Duplicate `env_var` or `base_url_env` values across manifest key entries are rejected with `SandboxError`, preventing route hijacking.
 
-**Supported providers (auto-configured):**
-
-| Provider | Domain | Auth Style |
-|----------|--------|-----------|
-| Anthropic | api.anthropic.com | `x-api-key` header |
-| OpenAI | api.openai.com | `Authorization: Bearer` |
-| Google | generativelanguage.googleapis.com | `Authorization: Bearer` |
-| Groq | api.groq.com | `Authorization: Bearer` |
-| Mistral | api.mistral.ai | `Authorization: Bearer` |
-| DeepSeek | api.deepseek.com | `Authorization: Bearer` |
-
-These are just the built-in defaults. **Any API can be used safely through the proxy** — developers declare `domain`, `base_url_env`, and `auth_style` in the manifest's `keys:` section, and the proxy handles it identically: keys stay invisible to the agent, requests are pinned to the declared domain, and all the same protections apply. See [Custom Providers](custom-providers.md).
+Every provider declares its `domain` and `auth_style` explicitly in the manifest. The proxy pins requests to the declared domain, keys stay invisible to the agent, and all the same protections apply uniformly. See [Custom Providers](custom-providers.md).
 
 ## 4. Key Vault — Encrypted At Rest
 
@@ -206,7 +187,7 @@ Agent manifests are validated at parse time with strict field validators:
 
 **Provider names:** `^[a-z][a-z0-9-]*$` — lowercase letters, numbers, hyphens only. No underscores (prevents `resolved_env_var()` collisions).
 
-**Env var names:** `^[A-Z][A-Z0-9_]*$` — checked against `_PROTECTED_ENV_VARS` to prevent clobbering system variables (`PATH`, `LD_PRELOAD`, etc.) or known provider variables (`ANTHROPIC_BASE_URL`, etc.).
+**Env var names:** `^[A-Z][A-Z0-9_]*$` — checked against `_PROTECTED_ENV_VARS` to prevent clobbering system variables (`PATH`, `LD_PRELOAD`, etc.).
 
 **Domain names:** Must be valid FQDN with at least one dot and at least one letter. Rejects IP literals, single-label hosts, and double-dot hostnames.
 
@@ -215,9 +196,8 @@ Agent manifests are validated at parse time with strict field validators:
 **Sandbox template:** Must be `"base"` (allowlist of one).
 
 **Runtime checks in `_start_proxy`:**
-- Auto-generated `base_url_env` rechecked against protected vars (for unknown providers only)
+- Auto-generated `base_url_env` checked against protected vars
 - Duplicate `env_var` and `base_url_env` detection across all key entries
-- Unknown providers blocked from using known provider env var names
 
 ## 7. State Persistence Security
 
@@ -269,6 +249,8 @@ permissions:
 
 keys:
   - provider: anthropic
+    domain: api.anthropic.com
+    auth_style: x-api-key
     required: true
 ```
 
@@ -350,8 +332,7 @@ When an agent delegates to a sub-agent, the sub-agent runs in its own fresh sand
 | Firecracker VM | Process/filesystem isolation from host | E2B infrastructure |
 | Network deny-all + allowlist | Limits exfiltration surface | E2B hypervisor (kernel-level) |
 | Reverse proxy + session tokens | API key secrecy at runtime | Linux user isolation + hidepid=2 |
-| Known provider domain pinning | Prevents key redirection attacks | Hardcoded `_PROVIDER_DEFAULTS` |
-| Cross-provider env var guard | Prevents unknown providers stealing keys | Runtime check in `_start_proxy` |
+| Manifest-declared domain pinning | Prevents key redirection attacks | Proxy enforces declared domain |
 | Encrypted vault + machine binding | API key secrecy at rest | AES-128 + PBKDF2 + keychain |
 | Key scoping | Minimal key disclosure per agent | Manifest filtering in CLI |
 | Permission display + approval | Informed user consent | CLI approval gate |

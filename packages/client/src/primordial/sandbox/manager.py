@@ -22,16 +22,6 @@ from primordial.models import AgentManifest, _PROTECTED_ENV_VARS
 _PROXY_SCRIPT = Path(__file__).parent / "proxy_script.py"
 _PROXY_PATH_IN_SANDBOX = "/opt/_primordial_proxy.py"
 
-# Well-known provider defaults for the in-sandbox reverse proxy.
-_PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
-    "anthropic": {"domain": "api.anthropic.com", "base_url_env": "ANTHROPIC_BASE_URL", "auth_style": "x-api-key"},
-    "openai":    {"domain": "api.openai.com",    "base_url_env": "OPENAI_BASE_URL",    "auth_style": "bearer"},
-    "google":    {"domain": "generativelanguage.googleapis.com", "base_url_env": "GOOGLE_BASE_URL", "auth_style": "bearer"},
-    "groq":      {"domain": "api.groq.com",      "base_url_env": "GROQ_BASE_URL",      "auth_style": "bearer"},
-    "mistral":   {"domain": "api.mistral.ai",    "base_url_env": "MISTRAL_BASE_URL",   "auth_style": "bearer"},
-    "deepseek":  {"domain": "api.deepseek.com",  "base_url_env": "DEEPSEEK_BASE_URL",  "auth_style": "bearer"},
-}
-
 AGENT_HOME_IN_SANDBOX = "/home/user"
 AGENT_DIR_IN_SANDBOX = "/home/user/agent"
 WORKSPACE_DIR_IN_SANDBOX = "/home/user/workspace"
@@ -96,14 +86,10 @@ class SandboxManager:
                 if domain not in allowed:
                     allowed.append(domain)
 
-        # Auto-allow API domains ONLY for known providers.
-        # Custom domains from manifests are NOT auto-allowed to prevent
-        # network firewall bypass via malicious domain declarations.
+        # Auto-allow API domains declared in key requirements.
         for key_req in manifest.keys:
-            defaults = _PROVIDER_DEFAULTS.get(key_req.provider.lower(), {})
-            known_domain = defaults.get("domain")
-            if known_domain and known_domain not in allowed:
-                allowed.append(known_domain)
+            if key_req.domain and key_req.domain not in allowed:
+                allowed.append(key_req.domain)
 
         if allowed:
             return {"network": {"deny_out": ["0.0.0.0/0"], "allow_out": allowed}}
@@ -221,49 +207,19 @@ class SandboxManager:
         agent_envs: dict[str, str] = {}
         port = 9001
 
-        # Build set of known provider env var names for cross-provider theft detection
-        _known_provider_env_vars = {
-            f"{p.upper().replace('-', '_')}_API_KEY" for p in _PROVIDER_DEFAULTS
-        }
-
         for key_req in manifest.keys:
             env_name = key_req.resolved_env_var()
             real_key = env_vars.get(env_name)
             if not real_key:
                 continue
 
-            defaults = _PROVIDER_DEFAULTS.get(key_req.provider.lower(), {})
+            domain = key_req.domain
+            auth_style = key_req.auth_style
+            base_url_env = key_req.base_url_env or f"{key_req.provider.upper().replace('-', '_')}_BASE_URL"
 
-            # SECURITY: Prevent unknown providers from claiming known provider
-            # env var names (e.g., provider: "evil" with env_var: "ANTHROPIC_API_KEY"
-            # would steal the real Anthropic key and route it to attacker.com).
-            if not defaults and env_name in _known_provider_env_vars:
+            if base_url_env in _PROTECTED_ENV_VARS:
                 raise SandboxError(
-                    f"Unknown provider {key_req.provider!r} cannot use "
-                    f"known provider env var {env_name!r}"
-                )
-            known_domain = defaults.get("domain")
-            # SECURITY: For known providers, ALWAYS use the known domain.
-            # This prevents manifests from redirecting real API keys to
-            # attacker-controlled servers via custom domain declarations.
-            if known_domain:
-                domain = known_domain  # ignore manifest domain override
-            else:
-                domain = key_req.domain
-            if not domain:
-                continue
-
-            auth_style = key_req.auth_style or defaults.get("auth_style", "bearer")
-            base_url_env = key_req.base_url_env or defaults.get(
-                "base_url_env", f"{key_req.provider.upper().replace('-', '_')}_BASE_URL"
-            )
-
-            # SECURITY: Recheck auto-generated base_url_env against protected vars,
-            # but only for unknown providers. Known providers use their own
-            # base_url_env names which are legitimately in the protected set.
-            if not defaults and base_url_env in _PROTECTED_ENV_VARS:
-                raise SandboxError(
-                    f"Auto-generated base_url_env {base_url_env!r} conflicts with "
+                    f"base_url_env {base_url_env!r} conflicts with "
                     f"a protected environment variable"
                 )
 

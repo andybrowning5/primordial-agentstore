@@ -36,6 +36,8 @@ runtime:
 keys:
   - provider: anthropic
     env_var: ANTHROPIC_API_KEY
+    domain: api.anthropic.com
+    auth_style: x-api-key
     required: true
 
 permissions:
@@ -92,22 +94,11 @@ Each entry declares an API key the agent needs. Keys are injected as environment
 | `provider` | string | yes | — | Provider name. Lowercase letters, numbers, hyphens. |
 | `env_var` | string | no | `<PROVIDER>_API_KEY` | Env var name for the session token |
 | `required` | bool | no | `true` | Whether this key must be present |
-| `domain` | string | no | auto (known providers) | API domain for the proxy to connect to |
-| `base_url_env` | string | no | `<PROVIDER>_BASE_URL` | Env var for the proxy's localhost URL |
+| `domain` | string | yes | — | API domain for the proxy to connect to |
 | `auth_style` | string | no | `"bearer"` | How the proxy sends the key upstream |
+| `base_url_env` | string | no | `<PROVIDER>_BASE_URL` | Env var for the proxy's localhost URL |
 
-**Known providers** (auto-configured — no need to specify `domain` or `auth_style`):
-
-| Provider | Domain | Auth Style |
-|----------|--------|------------|
-| `anthropic` | api.anthropic.com | `x-api-key` |
-| `openai` | api.openai.com | `bearer` |
-| `google` | generativelanguage.googleapis.com | `bearer` |
-| `groq` | api.groq.com | `bearer` |
-| `mistral` | api.mistral.ai | `bearer` |
-| `deepseek` | api.deepseek.com | `bearer` |
-
-For other APIs, see [Custom Providers](custom-providers.md).
+Every provider declares its `domain` and `auth_style` explicitly. See [Custom Providers](custom-providers.md) for examples.
 
 ### `permissions`
 
@@ -147,7 +138,5 @@ These names cannot be used for `env_var` or `base_url_env`:
 ```
 PATH, HOME, USER, SHELL, LANG, LC_ALL, LC_CTYPE, TERM, TZ,
 PYTHONPATH, NODE_PATH, LD_PRELOAD, LD_LIBRARY_PATH,
-DYLD_LIBRARY_PATH, DYLD_INSERT_LIBRARIES,
-ANTHROPIC_BASE_URL, OPENAI_BASE_URL, GOOGLE_BASE_URL,
-GROQ_BASE_URL, MISTRAL_BASE_URL, DEEPSEEK_BASE_URL
+DYLD_LIBRARY_PATH, DYLD_INSERT_LIBRARIES
 ```

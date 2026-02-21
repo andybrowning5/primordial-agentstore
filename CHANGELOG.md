@@ -5,8 +5,7 @@
 ### Security
 
 - **In-sandbox reverse proxy hardening** — session token authentication (128-bit), CRLF injection blocking, Transfer-Encoding rejection, response header allowlist, 100MB body cap, 60s socket timeout, connection close after each request
-- **Known provider domain pinning** — proxy always uses hardcoded domains for known providers (Anthropic, OpenAI, etc.), ignoring manifest overrides to prevent key redirection attacks
-- **Cross-provider env var theft prevention** — unknown providers cannot claim known provider env var names (e.g., `ANTHROPIC_API_KEY`)
+- **Manifest-declared domain pinning** — proxy enforces the domain declared in each key requirement
 - **Environment variable allowlist** — only 10 known-safe env vars forwarded to sandbox (replaces denylist approach)
 - **State persistence allowlist** — only `workspace/`, `data/`, `output/`, `state/` directories persisted across sessions (replaces denylist approach)
 - **Sandbox hardening fail-closed** — if `hidepid=2` cannot be applied and API keys are in use, sandbox creation aborts instead of continuing with `/proc` exposed

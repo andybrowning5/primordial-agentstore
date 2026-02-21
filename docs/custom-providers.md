@@ -1,6 +1,6 @@
-# Custom Providers
+# Providers
 
-Primordial auto-configures known LLM providers (Anthropic, OpenAI, Google, Groq, Mistral, DeepSeek). For any other API, you declare the connection details in your manifest.
+Every API key in your manifest declares its connection details: `domain`, `auth_style`, and optionally `base_url_env`.
 
 ## How It Works
 
@@ -11,25 +11,29 @@ When your agent declares a key requirement, Primordial sets up a **reverse proxy
 
 The proxy intercepts requests, swaps the session token for the real key, and forwards to the upstream API. Your agent never sees the real key.
 
-## Declaring a Custom Provider
+## Declaring a Provider
 
-Add `domain`, `base_url_env`, and `auth_style` to your key entry:
+Add `domain` and `auth_style` to your key entry:
 
 ```yaml
 keys:
+  - provider: anthropic
+    domain: api.anthropic.com
+    auth_style: x-api-key
+    required: true
   - provider: brave
     env_var: BRAVE_API_KEY
-    required: true
     domain: api.search.brave.com
     base_url_env: BRAVE_BASE_URL
     auth_style: x-subscription-token
+    required: true
 ```
 
 | Field | What It Does |
 |-------|-------------|
 | `domain` | The upstream API host the proxy connects to via HTTPS |
-| `base_url_env` | Env var your code reads for the base URL (points to localhost proxy) |
-| `auth_style` | Header name the proxy uses to send the real key upstream |
+| `auth_style` | Header name the proxy uses to send the real key upstream (default: `bearer`) |
+| `base_url_env` | Env var your code reads for the base URL (points to localhost proxy, default: `<PROVIDER>_BASE_URL`) |
 
 ## Auth Styles
 
@@ -65,14 +69,15 @@ runtime:
 
 keys:
   - provider: anthropic
-    env_var: ANTHROPIC_API_KEY
+    domain: api.anthropic.com
+    auth_style: x-api-key
     required: true
   - provider: brave
     env_var: BRAVE_API_KEY
-    required: true
     domain: api.search.brave.com
     base_url_env: BRAVE_BASE_URL
     auth_style: x-subscription-token
+    required: true
 
 permissions:
   network:
@@ -103,15 +108,14 @@ resp = httpx.get(
 
 ## What Happens at Runtime
 
-1. Primordial reads your manifest and sees `provider: brave` with custom config
-2. Starts a proxy on `http://127.0.0.1:9002` (port assigned automatically)
-3. Sets `BRAVE_API_KEY=sess-abc123...` (session token) and `BRAVE_BASE_URL=http://127.0.0.1:9002`
-4. Your agent sends requests to `http://127.0.0.1:9002/res/v1/web/search` with the session token
-5. The proxy validates the session token, strips it, injects the real Brave API key as `X-Subscription-Token`, and forwards to `https://api.search.brave.com`
+1. Primordial reads your manifest and sees the key requirements with their domains
+2. Starts a proxy on `http://127.0.0.1:9001` (port assigned automatically)
+3. Sets `ANTHROPIC_API_KEY=sess-abc123...` (session token) and `ANTHROPIC_BASE_URL=http://127.0.0.1:9001`
+4. Your agent sends requests to the localhost URL with the session token
+5. The proxy validates the session token, strips it, injects the real key in the declared `auth_style` header, and forwards to the declared `domain`
 
 ## Important Notes
 
 - **Use the base URL env var** — don't hardcode the API URL. The proxy redirects traffic through localhost.
 - **Send the session token** in the header matching your `auth_style`. The proxy validates it there.
 - **Network permissions** — you still need to declare the domain in `permissions.network` so the firewall allows the proxy to reach upstream.
-- **Known providers** (Anthropic, OpenAI, etc.) ignore custom `domain` overrides for security. Only unknown providers use the manifest-declared domain.

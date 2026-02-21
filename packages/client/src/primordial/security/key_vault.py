@@ -264,21 +264,12 @@ class KeyVault:
 
     def get_env_vars(self, providers: Optional[list[str]] = None) -> dict[str, str]:
         """Get API keys as environment variables for sandbox injection."""
-        env_map = {
-            "anthropic": "ANTHROPIC_API_KEY",
-            "openai": "OPENAI_API_KEY",
-            "brave": "BRAVE_API_KEY",
-            "groq": "GROQ_API_KEY",
-            "google": "GOOGLE_API_KEY",
-            "mistral": "MISTRAL_API_KEY",
-            "deepseek": "DEEPSEEK_API_KEY",
-        }
         result = {}
         data = self._load()
         for entry in data.entries:
             if providers and entry.provider not in providers:
                 continue
-            env_var = env_map.get(entry.provider, f"{entry.provider.upper()}_API_KEY")
+            env_var = f"{entry.provider.upper().replace('-', '_')}_API_KEY"
             key = self.get_key(entry.provider, entry.key_id)
             if key:
                 result[env_var] = key
