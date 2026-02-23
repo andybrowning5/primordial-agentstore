@@ -23,8 +23,6 @@ _PROXY_SCRIPT = Path(__file__).parent / "proxy_script.py"
 _PROXY_PATH_IN_SANDBOX = "/opt/_primordial_proxy.py"
 _DELEGATION_PROXY_SCRIPT = Path(__file__).parent / "delegation_proxy.py"
 _DELEGATION_PROXY_PATH = "/opt/_primordial_delegation.py"
-_DELEGATION_CLIENT_SCRIPT = Path(__file__).parent / "delegation_client.py"
-_DELEGATION_CLIENT_DEST = "primordial_delegate.py"  # relative to agent dir
 
 AGENT_HOME_IN_SANDBOX = "/home/user"
 AGENT_DIR_IN_SANDBOX = "/home/user/agent"
@@ -310,8 +308,8 @@ class SandboxManager:
     ) -> Optional["DelegationHandler"]:
         """Start the delegation proxy if delegation is enabled.
 
-        Uploads the delegation proxy (root) and client library (user-readable),
-        starts the proxy process, and launches the host-side delegation loop.
+        Uploads the delegation proxy (root-owned), starts the proxy process,
+        and launches the host-side delegation loop.
         """
         if not manifest.permissions.delegation.enabled:
             return None
@@ -326,11 +324,6 @@ class SandboxManager:
             user="root",
         )
         sandbox.commands.run(f"chmod 700 {_DELEGATION_PROXY_PATH}", user="root")
-
-        # Upload client library (agent can import)
-        if _DELEGATION_CLIENT_SCRIPT.exists():
-            client_dest = f"{AGENT_DIR_IN_SANDBOX}/{_DELEGATION_CLIENT_DEST}"
-            sandbox.files.write(client_dest, _DELEGATION_CLIENT_SCRIPT.read_text())
 
         # Start delegation proxy as root
         deleg_handle = sandbox.commands.run(
@@ -438,10 +431,6 @@ class SandboxManager:
                     error_detail = (result.stderr or result.stdout or "")[:500]
                     raise SandboxError(f"Setup command failed: {error_detail}")
 
-            # Ensure agent dir is on PYTHONPATH so delegation client is importable
-            if manifest.permissions.delegation.enabled:
-                agent_envs["PYTHONPATH"] = AGENT_DIR_IN_SANDBOX
-
             _status("Starting agent...")
             messages: queue.Queue[dict[str, Any]] = queue.Queue()
             stderr_lines: list[str] = []
@@ -515,6 +504,7 @@ class AgentSession:
         self._proxy_pid = proxy_pid
         self._delegation_handler = delegation_handler
         self._alive = True
+        self._first_message = True
 
         # Drive the event loop in a background thread — this is what
         # delivers stdout/stderr data from the E2B command handle.
@@ -540,7 +530,16 @@ class AgentSession:
     def stderr(self) -> str:
         return "".join(self._stderr_lines)
 
+    _DELEGATION_HINT = (
+        "[You have agent delegation capabilities. "
+        "Read /home/user/skill.md for the NDJSON socket protocol "
+        "to search, spawn, and message other agents.]"
+    )
+
     def send_message(self, content: str, message_id: str) -> None:
+        if self._first_message and self._delegation_handler:
+            content = f"{self._DELEGATION_HINT}\n\n{content}"
+            self._first_message = False
         msg = json.dumps({
             "type": "message", "content": content, "message_id": message_id,
         })
