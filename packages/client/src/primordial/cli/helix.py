@@ -34,12 +34,10 @@ def _strand_char(dx: float, z: float) -> str:
 
 
 def _cell_chars(r: int, total: int) -> tuple[str, str]:
-    """Pick left/right characters for an organic cell membrane."""
-    if r == 1:
-        return ("(", ")")
-    if r == total - 2:
-        return ("(", ")")
-    return ("(", ")")
+    """Pick left/right characters for the checklist box."""
+    if r == 0 or r == total - 1:
+        return ("┌", "┐") if r == 0 else ("└", "┘")
+    return ("│", "│")
 
 
 def _helix_frame(phase: float, morph: float = 0.0) -> list[Text]:
@@ -94,20 +92,19 @@ def _helix_frame(phase: float, morph: float = 0.0) -> list[Text]:
                 ch[lx] = lc
             if 0 <= rx < width:
                 ch[rx] = rc
-            # Face interior
-            mid = (lx + rx) // 2
-            if r == 2:
-                # Eyes
-                le = lx + (rx - lx) // 3
-                re = rx - (rx - lx) // 3
-                if 0 <= le < width:
-                    ch[le] = "o"
-                if 0 <= re < width:
-                    ch[re] = "o"
-            elif r == 3:
-                # Mouth
-                if 0 <= mid < width:
-                    ch[mid] = "‿"
+            if r == 0 or r == ROWS - 1:
+                # Top/bottom border
+                for cx in range(lx + 1, min(rx, width)):
+                    ch[cx] = "─"
+            else:
+                # Checklist rows
+                mark_x = lx + 2
+                line_start = mark_x + 2
+                line_end = rx - 1
+                if 0 <= mark_x < width:
+                    ch[mark_x] = "✓" if r <= 3 else "·"
+                for cx in range(line_start, min(line_end, width)):
+                    ch[cx] = "─"
         else:
             if 0 <= lx < width:
                 ch[lx] = _strand_char(ldx, lz)
@@ -116,17 +113,15 @@ def _helix_frame(phase: float, morph: float = 0.0) -> list[Text]:
 
         ln = Text("".join(ch))
 
-        if morph > 0.9:
-            if r == 2:
-                le = lx + (rx - lx) // 3
-                re = rx - (rx - lx) // 3
-                for ep in (le, re):
-                    if 0 <= ep < width:
-                        ln.stylize("bold bright_cyan", ep, ep + 1)
-            elif r == 3:
-                mid = (lx + rx) // 2
-                if 0 <= mid < width:
-                    ln.stylize("bold bright_cyan", mid, mid + 1)
+        if morph > 0.9 and 1 <= r <= ROWS - 2:
+            mark_x = lx + 2
+            line_start = mark_x + 2
+            line_end = rx - 1
+            if 0 <= mark_x < width:
+                style = "bold bright_green" if r <= 3 else "dim cyan"
+                ln.stylize(style, mark_x, mark_x + 1)
+            if line_start < min(line_end, width):
+                ln.stylize("dim", line_start, min(line_end, width))
 
         for pos, z, c in [(lx, lz, "green"), (rx, rz, "cyan")]:
             if 0 <= pos < width:
