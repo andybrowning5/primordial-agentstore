@@ -81,66 +81,26 @@ See **[docs/](docs/)** for all guides:
 
 ## Host Agent Setup
 
-Primordial is designed to be called by host agents — coding assistants that delegate specialized tasks to purpose-built agents on the marketplace. Below is how to set up Primordial as a tool for the two major coding agents.
+Primordial is designed to be called by host agents — coding assistants that delegate specialized tasks to purpose-built agents on the marketplace.
 
 ### Claude Code
 
-Add a skill file that teaches Claude Code how to search for and spawn Primordial agents. Create the file at `~/.claude/skills/primordial/skill.md` with instructions that cover:
-
-1. **Searching** — `primordial search "query" --agent` returns JSON results
-2. **Spawning** — `primordial run <url> --agent` starts an interactive NDJSON session
-3. **Session setup** — The agent prompts for session selection, name, and permission approval before switching to NDJSON
-4. **Message format** — Send `{"type":"message","content":"...","message_id":"msg_0001"}` followed by `{"type":"shutdown"}` via stdin
-5. **Parsing output** — Filter stdout for JSON lines; the final answer is the line with `"done": true`
-
-A complete skill file is available in the repo at [`Primordial-AgentStore-Skill.md`](Primordial-AgentStore-Skill.md). Copy it to your skills directory:
+Copy the skill file from this repo to your Claude Code skills directory:
 
 ```bash
 mkdir -p ~/.claude/skills/primordial
 cp Primordial-AgentStore-Skill.md ~/.claude/skills/primordial/skill.md
 ```
 
-Then reference it in your `CLAUDE.md` or let Claude Code's skill auto-discovery pick it up.
+This teaches Claude Code how to search for, spawn, and interact with Primordial agents. See [`Primordial-AgentStore-Skill.md`](Primordial-AgentStore-Skill.md) for the full reference.
 
 ### OpenAI Codex CLI
 
-Codex integrates external tools via its `AGENTS.md` instruction files — the equivalent of Claude Code's `CLAUDE.md`. To give Codex access to Primordial:
-
-**1. Install the CLI:**
+Copy the skill file contents into your `AGENTS.md` (at `~/.codex/AGENTS.md` for global, or `./AGENTS.md` for per-project). Codex uses `AGENTS.md` the same way Claude Code uses skill files — as persistent instructions the agent reads at session start.
 
 ```bash
-pip install primordial-agentstore
+cat Primordial-AgentStore-Skill.md >> ~/.codex/AGENTS.md
 ```
-
-**2. Add instructions to your `AGENTS.md`** (at `~/.codex/AGENTS.md` for global, or `./AGENTS.md` for per-project):
-
-```markdown
-## Primordial AgentStore
-
-You can delegate specialized tasks to agents on the Primordial AgentStore.
-
-### Searching for agents
-Run: `primordial search "query" --agent`
-This returns a JSON array of matching agents with name, description, and URL.
-
-### Running an agent
-Run: `primordial run <github-url> --agent`
-This starts an interactive session. Pipe input to automate:
-
-    printf '0\n\ny\n{"type":"message","content":"YOUR TASK","message_id":"msg_0001"}\n{"type":"shutdown"}\n' | primordial run <url> --agent 2>/dev/null
-
-- `0` = new session, blank = accept default name, `y` = approve permissions
-- Parse stdout for JSON lines; the response has `"done": true`
-```
-
-**3. Set shell permissions** so Codex can execute `primordial` commands. In `~/.codex/config.toml`:
-
-```toml
-approval_policy = "on-request"
-sandbox_mode = "workspace-write"
-```
-
-With `on-request`, Codex will ask before running shell commands — you approve the `primordial` calls as they come. For unattended use, set `approval_policy = "never"` (use with caution).
 
 ---
 
