@@ -353,35 +353,44 @@ def _show_sub_spawn(console: Console, session, sid: str, first_status: str) -> N
     phase_start = time.monotonic()
 
     def _render(frame: int) -> Group:
-        elapsed = time.monotonic() - start_time
         helix_lines = _mini_helix_frame(frame * 0.2)
 
         parts: list = []
-        # Header with mini helix beside the label
+        # Header
         header = Text()
         header.append("      ")
         header.append("Spawning sub-agent", style="bold yellow")
         parts.append(header)
 
-        # Helix + status lines side by side
+        # Build status lines: completed + current with live timer
         phase_elapsed = time.monotonic() - phase_start
         sp = _MINI_SPINNER[frame % len(_MINI_SPINNER)]
-        for i in range(_MINI_ROWS):
+
+        status_lines: list[Text] = []
+        for c in completed:
+            status_lines.append(c)
+        cur = Text()
+        cur.append(f"{sp} ", style="cyan")
+        cur.append(current_status, style="dim")
+        cur.append(f" ({phase_elapsed:.1f}s)", style="dim bold")
+        status_lines.append(cur)
+
+        # Show last N status lines to keep compact
+        max_visible = max(_MINI_ROWS, 4)
+        visible = status_lines[-max_visible:]
+
+        # Render helix rows alongside status lines
+        num_rows = max(_MINI_ROWS, len(visible))
+        for i in range(num_rows):
             row = Text()
             row.append("      ")
             if i < len(helix_lines):
                 row.append_text(helix_lines[i])
             else:
                 row.append(" " * _MINI_WIDTH)
-            # Show completed + current status beside helix
-            ci = i + len(completed) - max(0, len(completed) - _MINI_ROWS + 1)
-            if i < len(completed):
+            if i < len(visible):
                 row.append("  ")
-                row.append_text(completed[i])
-            elif i == len(completed):
-                row.append(f"  {sp} ", style="cyan")
-                row.append(current_status, style="dim")
-                row.append(f" ({phase_elapsed:.1f}s)", style="dim bold")
+                row.append_text(visible[i])
             parts.append(row)
 
         return Group(*parts)
