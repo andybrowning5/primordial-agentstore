@@ -392,7 +392,10 @@ def _run_chat(
                     thinking.stop()
                     tool = msg.get("tool", "?")
                     desc = msg.get("description", "")
-                    console.print(f"  [dim]› {tool}: {desc}[/dim]")
+                    if tool.startswith("sub:"):
+                        console.print(f"      [cyan]› {desc}[/cyan]")
+                    else:
+                        console.print(f"  [dim]› {tool}: {desc}[/dim]")
                     thinking = console.status("[dim]Thinking...[/dim]", spinner="flip")
                     thinking.start()
                 elif msg_type == "error":
