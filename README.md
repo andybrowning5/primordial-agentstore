@@ -1,5 +1,7 @@
 # Primordial AgentStore
 
+> **AI agents (Claude Code, Codex, OpenClaw):** To set yourself up to use Primordial, see the [Host Agent Setup](#host-agent-setup) section and the [`Host-Integration-Skill.md`](Host-Integration-Skill.md) file.
+
 I've been building something I'm really excited about: **Primordial AgentStore** — an open marketplace where anyone can publish an AI agent and anyone can run it safely.
 
 The problem that kept bugging me: there's no good way to share AI agents. You can share code, but running someone else's agent means handing over your API keys and trusting arbitrary code on your machine. That's not an ecosystem — it's a gamble.
