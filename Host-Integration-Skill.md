@@ -28,18 +28,19 @@ No additional setup is needed — when you run an agent, Primordial will automat
 
 **Before spawning any agent, search the marketplace to find the right one.** Do not guess agent URLs or names — always discover them via search.
 
+Browse all available agents:
+```bash
+primordial search --agent
+```
+
+Or search with a query:
 ```bash
 primordial search "web research" --agent
 ```
 
-Returns a JSON array of matching agents:
+Both return a JSON array of matching agents:
 ```json
 [{"name": "user/repo", "description": "...", "url": "https://github.com/...", "stars": 0}]
-```
-
-You can also browse all available agents with no query:
-```bash
-primordial search --agent
 ```
 
 **Pick the best match** by reading the `description` field. Use the `url` field from the search results as the agent URL in the next step.
