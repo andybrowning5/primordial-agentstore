@@ -102,6 +102,31 @@ Copy the skill file contents into your `AGENTS.md` (at `~/.codex/AGENTS.md` for 
 cat Primordial-AgentStore-Skill.md >> ~/.codex/AGENTS.md
 ```
 
+### OpenClaw
+
+OpenClaw uses a skills system — `SKILL.md` files in its workspace that get injected into the agent's system prompt. Create a Primordial skill:
+
+```bash
+mkdir -p ~/.openclaw/workspace/skills/primordial
+cp Primordial-AgentStore-Skill.md ~/.openclaw/workspace/skills/primordial/SKILL.md
+```
+
+OpenClaw's agent will then call Primordial via its `exec` tool (e.g. `exec({ command: "primordial run <url> --agent" })`) whenever a task matches. If you're running sandboxed agents, make sure `primordial` is available inside the Docker container by adding it to your `agents.defaults.sandbox.docker.setupCommand` in `~/.openclaw/openclaw.json`:
+
+```json5
+{
+  agents: {
+    defaults: {
+      sandbox: {
+        docker: {
+          setupCommand: "pip install primordial-agentstore"
+        }
+      }
+    }
+  }
+}
+```
+
 ---
 
 ## Project Structure
