@@ -739,7 +739,7 @@ class DelegationHandler:
     def _fetch_agents(self, query: str | None = None) -> list[dict]:
         """Fetch agents from GitHub API."""
         import httpx
-        topic_query = "topic:primordial-agent"
+        topic_query = "topic:primordial-agent-test"
         q = f"{topic_query} {query}" if query else topic_query
         resp = httpx.get(
             "https://api.github.com/search/repositories",
