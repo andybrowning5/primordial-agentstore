@@ -271,6 +271,8 @@ def run(
 
     if agent_read:
         _run_json(manager, agent_dir, manifest, workspace, env_vars, state_dir)
+    elif manifest.runtime.mode == "terminal":
+        _run_terminal(manager, agent_dir, manifest, workspace, env_vars, state_dir)
     else:
         _run_chat(manager, agent_dir, manifest, workspace, env_vars, state_dir)
 
@@ -376,7 +378,7 @@ def _show_sub_spawn(console: Console, session, sid: str, first_status: str) -> N
         status_lines.append(cur)
 
         # Show last N status lines to keep compact
-        max_visible = max(_MINI_ROWS, 4)
+        max_visible = _MINI_ROWS
         visible = status_lines[-max_visible:]
 
         # Render helix rows alongside status lines
@@ -430,6 +432,93 @@ def _show_sub_spawn(console: Console, session, sid: str, first_status: str) -> N
     console.print(
         f"      [yellow]› {label}:[/yellow] [dim]spawned in {elapsed:.1f}s[/dim]"
     )
+
+
+def _run_terminal(
+    manager: SandboxManager,
+    agent_dir: Path,
+    manifest,
+    workspace: str,
+    env_vars: dict,
+    state_dir: Path | None = None,
+) -> None:
+    """Run an agent in terminal passthrough mode (raw PTY)."""
+    import signal
+    import termios
+    import tty
+
+    agent_subtitle = f"Starting {manifest.display_name} v{manifest.version}"
+
+    # Get local terminal size
+    try:
+        term_size = os.get_terminal_size()
+        cols, rows = term_size.columns, term_size.lines
+    except OSError:
+        cols, rows = 80, 24
+
+    # Write raw PTY output directly to local stdout
+    def on_data(data) -> None:
+        if isinstance(data, (bytes, bytearray)):
+            os.write(sys.stdout.fileno(), data)
+        else:
+            os.write(sys.stdout.fileno(), data.encode() if isinstance(data, str) else bytes(data))
+
+    with HelixSpinner(console, subtitle=agent_subtitle) as spinner:
+        try:
+            session = manager.run_agent_terminal(
+                agent_dir=agent_dir,
+                manifest=manifest,
+                workspace=Path(workspace).resolve(),
+                env_vars=env_vars,
+                cols=cols,
+                rows=rows,
+                on_data=on_data,
+                state_dir=state_dir,
+                on_status=spinner.set_phase,
+            )
+        except Exception as e:
+            console.print(f"\n[red]Failed to start agent:[/red] {e}")
+            raise SystemExit(1)
+
+    # Save and set raw terminal mode
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+
+    # Handle terminal resize
+    def handle_winch(signum, frame):
+        try:
+            size = os.get_terminal_size()
+            session.resize(size.columns, size.lines)
+        except Exception:
+            pass
+
+    old_sigwinch = signal.getsignal(signal.SIGWINCH)
+    signal.signal(signal.SIGWINCH, handle_winch)
+
+    try:
+        tty.setraw(fd)
+
+        while session.is_alive:
+            # Check for local input
+            ready, _, _ = select.select([sys.stdin], [], [], 0.05)
+            if ready:
+                data = os.read(fd, 4096)
+                if not data:
+                    break
+                session.send_input(data)
+
+    except (KeyboardInterrupt, EOFError):
+        pass
+    finally:
+        # Restore terminal
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        signal.signal(signal.SIGWINCH, old_sigwinch)
+
+        # Print newline so prompt doesn't overlap
+        print()
+        console.print("[dim]Session ended.[/dim]")
+
+        session.shutdown()
 
 
 def _run_chat(

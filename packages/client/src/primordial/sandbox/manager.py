@@ -16,6 +16,7 @@ from typing import Any, Callable, Optional
 logger = logging.getLogger(__name__)
 
 from e2b import Sandbox
+from e2b.sandbox.commands.command_handle import PtySize
 
 from primordial.models import AgentManifest, _PROTECTED_ENV_VARS
 
@@ -466,6 +467,126 @@ class SandboxManager:
                 pass
             raise
 
+    def run_agent_terminal(
+        self,
+        agent_dir: Path,
+        manifest: AgentManifest,
+        workspace: Path,
+        env_vars: dict[str, str],
+        cols: int = 80,
+        rows: int = 24,
+        on_data: Optional[Callable[[bytes], None]] = None,
+        state_dir: Optional[Path] = None,
+        on_status: Optional[Callable[[str], None]] = None,
+    ) -> "TerminalSession":
+        """Start an agent in terminal passthrough mode using E2B PTY.
+
+        Instead of NDJSON protocol, the agent's stdin/stdout are connected
+        directly to a pseudo-terminal for raw interactive use.
+        """
+        self._ensure_e2b_api_key(env_vars)
+
+        def _status(msg: str) -> None:
+            if on_status:
+                on_status(msg)
+
+        _status("Creating sandbox...")
+        network_kwargs = self._build_network_kwargs(manifest)
+
+        _SAFE_ENV_ALLOWLIST = {
+            "PATH", "HOME", "USER", "SHELL", "LANG", "LC_ALL",
+            "LC_CTYPE", "TERM", "TZ", "PYTHONPATH", "NODE_PATH",
+        }
+        safe_envs = {
+            k: v for k, v in env_vars.items()
+            if k in _SAFE_ENV_ALLOWLIST
+        }
+        sandbox = Sandbox.create(
+            template=manifest.runtime.e2b_template,
+            envs=safe_envs,
+            **network_kwargs,
+        )
+
+        try:
+            _status("Uploading agent code...")
+            self._upload_directory(sandbox, agent_dir, AGENT_DIR_IN_SANDBOX)
+            sandbox.commands.run(f"mkdir -p {WORKSPACE_DIR_IN_SANDBOX}")
+
+            if state_dir:
+                _status("Restoring state...")
+                self._restore_state(sandbox, state_dir)
+
+            _status("Hardening sandbox...")
+            self._apply_hardening(sandbox, needs_proxy=bool(manifest.keys))
+
+            proxy_pid, agent_envs = None, {}
+            if manifest.keys:
+                _status("Starting security proxy...")
+                proxy_pid, agent_envs = self._start_proxy(sandbox, manifest, env_vars)
+
+            delegation_handler = None
+            if manifest.permissions.delegation.enabled:
+                _status("Starting delegation proxy...")
+                delegation_handler = self._start_delegation_proxy(
+                    sandbox, manifest, env_vars,
+                )
+
+            if manifest.runtime.setup_command:
+                _status("Running setup command...")
+                result = sandbox.commands.run(
+                    f"cd {AGENT_DIR_IN_SANDBOX} && {manifest.runtime.setup_command}",
+                    timeout=600,
+                    user="user",
+                )
+                if result.exit_code != 0:
+                    error_detail = (result.stderr or result.stdout or "")[:500]
+                    raise SandboxError(f"Setup command failed: {error_detail}")
+
+            _status("Starting terminal...")
+
+            # Build env vars for the PTY shell
+            pty_envs = {
+                **agent_envs,
+                "IS_DEMO": "true",
+                "DISABLE_AUTOUPDATER": "1",
+                "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+            }
+
+            # Create PTY (starts bash -i -l)
+            pty_handle = sandbox.pty.create(
+                size=PtySize(rows=rows, cols=cols),
+                user="user",
+                cwd=AGENT_DIR_IN_SANDBOX,
+                envs=pty_envs,
+                timeout=0,
+            )
+
+            # Drive PTY output in a background thread
+            session = TerminalSession(
+                sandbox=sandbox,
+                pty_handle=pty_handle,
+                manager=self,
+                state_dir=state_dir,
+                proxy_pid=proxy_pid,
+                delegation_handler=delegation_handler,
+                on_data=on_data,
+            )
+
+            # Type the run command into bash
+            run_cmd = manifest.runtime.run_command or "bash"
+            sandbox.pty.send_stdin(
+                pty_handle.pid,
+                f"exec {run_cmd}\n".encode(),
+            )
+
+            return session
+        except Exception:
+            try:
+                sandbox.kill()
+            except Exception:
+                pass
+            raise
+
 
 class AgentSession:
     """Wraps a running agent process in an E2B sandbox with NDJSON communication."""
@@ -565,6 +686,83 @@ class AgentSession:
             if self._state_dir:
                 try:
                     # Save delegation session mapping for resume
+                    if self._delegation_handler:
+                        self._delegation_handler.save_session_mapping(self._state_dir)
+                    self._manager._save_state(self._sandbox, self._state_dir)
+                except Exception as e:
+                    logger.warning("Failed to save state on shutdown: %s", e)
+            if self._proxy_pid:
+                try:
+                    self._sandbox.commands.run(f"kill {self._proxy_pid}", user="root")
+                except Exception:
+                    pass
+            try:
+                self._sandbox.kill()
+            except Exception:
+                pass
+
+
+class TerminalSession:
+    """Wraps a PTY session in an E2B sandbox for raw terminal passthrough."""
+
+    def __init__(
+        self,
+        sandbox: Sandbox,
+        pty_handle: Any,
+        manager: SandboxManager,
+        state_dir: Optional[Path] = None,
+        proxy_pid: Optional[int] = None,
+        delegation_handler: Optional["DelegationHandler"] = None,
+        on_data: Optional[Callable[[bytes], None]] = None,
+    ):
+        self._sandbox = sandbox
+        self._pty = pty_handle
+        self._manager = manager
+        self._state_dir = state_dir
+        self._proxy_pid = proxy_pid
+        self._delegation_handler = delegation_handler
+        self._on_data = on_data
+        self._alive = True
+
+        # Drive PTY events in background, forwarding output via on_data
+        self._wait_thread = threading.Thread(target=self._drive_pty, daemon=True)
+        self._wait_thread.start()
+
+    def _drive_pty(self) -> None:
+        try:
+            self._pty.wait(
+                on_pty=self._on_data,
+            )
+        except Exception:
+            pass
+        finally:
+            self._alive = False
+
+    @property
+    def is_alive(self) -> bool:
+        return self._alive
+
+    def send_input(self, data: bytes) -> None:
+        self._sandbox.pty.send_stdin(self._pty.pid, data)
+
+    def resize(self, cols: int, rows: int) -> None:
+        try:
+            self._sandbox.pty.resize(self._pty.pid, size=PtySize(rows=rows, cols=cols))
+        except Exception:
+            pass
+
+    def shutdown(self) -> None:
+        try:
+            if self._delegation_handler:
+                try:
+                    self._delegation_handler.shutdown()
+                except Exception as e:
+                    logger.warning("Failed to shutdown delegation handler: %s", e)
+        except Exception:
+            pass
+        finally:
+            if self._state_dir:
+                try:
                     if self._delegation_handler:
                         self._delegation_handler.save_session_mapping(self._state_dir)
                     self._manager._save_state(self._sandbox, self._state_dir)

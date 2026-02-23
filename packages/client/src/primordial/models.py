@@ -31,6 +31,7 @@ class RuntimeConfig(BaseModel):
     dependencies: Optional[str] = None
     setup_command: Optional[str] = None
     run_command: Optional[str] = None
+    mode: str = "agent"  # "agent" (NDJSON protocol) or "terminal" (raw PTY passthrough)
     e2b_template: str = "base"
     default_model: ModelConfig = Field(default_factory=ModelConfig)
     resources: ResourceLimits = Field(default_factory=ResourceLimits)
