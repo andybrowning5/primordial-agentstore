@@ -51,10 +51,9 @@ def _helix_frame(phase: float, morph: float = 0.0) -> list[Text]:
         hx2 = CENTER + math.sin(t + math.pi) * HALF
         hz1 = math.cos(t)
 
-        # Circle (ellipse) target: rows trace an oval outline
-        angle = r * math.pi / max(ROWS - 1, 1)
-        cx1 = CENTER + math.sin(angle) * HALF
-        cx2 = CENTER - math.sin(angle) * HALF
+        # Square target: fixed-width rectangle
+        cx1 = CENTER + HALF
+        cx2 = CENTER - HALF
 
         # Lerp toward circle
         x1 = int(round(hx1 + (cx1 - hx1) * morph))
