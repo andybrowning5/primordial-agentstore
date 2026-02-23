@@ -273,6 +273,69 @@ def run(
         _run_chat(manager, agent_dir, manifest, workspace, env_vars, state_dir)
 
 
+_MINI_HELIX_FRAMES = [
+    "  ╭─╮  ",
+    "  ├┬╯  ",
+    "  ╵╰╴  ",
+    "  ╭─╮  ",
+    "  ├─┤  ",
+    "  ╵ ╵  ",
+]
+
+
+def _show_sub_spawn(console: Console, session, sid: str, first_status: str) -> None:
+    """Show a mini spawn animation while sub-agent setup events stream in.
+
+    Consumes sub:setup activity events from the session until a non-setup
+    event arrives (which is put back for the caller to handle).
+    """
+    import math
+    import time
+    from rich.live import Live
+    from rich.text import Text
+
+    statuses = [first_status]
+    start_time = time.monotonic()
+
+    def _render() -> Text:
+        elapsed = time.monotonic() - start_time
+        # Mini helix frame
+        idx = int(elapsed * 4) % len(_MINI_HELIX_FRAMES)
+        frame = _MINI_HELIX_FRAMES[idx]
+        current = statuses[-1] if statuses else ""
+        t = Text()
+        t.append(f"      ", style="")
+        t.append(frame, style="bold bright_cyan")
+        t.append(f" {current}", style="yellow")
+        return t
+
+    with Live(_render(), console=console, refresh_per_second=8, transient=True) as live:
+        while True:
+            msg = session.receive(timeout=0.15)
+            if msg is None:
+                live.update(_render())
+                continue
+
+            msg_type = msg.get("type")
+            tool = msg.get("tool", "")
+
+            if msg_type == "activity" and tool == "sub:setup":
+                desc = msg.get("description", "")
+                statuses.append(desc)
+                live.update(_render())
+            else:
+                # Non-setup event — put it back on the queue and exit
+                session._messages.put(msg)
+                break
+
+    # Print the final summary
+    elapsed = time.monotonic() - start_time
+    label = sid if sid else "sub-agent"
+    console.print(
+        f"      [yellow]› {label}:[/yellow] [dim]spawned in {elapsed:.1f}s[/dim]"
+    )
+
+
 def _run_chat(
     manager: SandboxManager,
     agent_dir: Path,
@@ -398,8 +461,9 @@ def _run_chat(
                         console.print(f"      [green]› {label}:[/green] [dim]{desc}[/dim]")
                     elif tool == "sub:setup":
                         sid = msg.get("session_id", "")
-                        prefix = f"{sid} +" if sid else "+"
-                        console.print(f"      [yellow]{prefix}[/yellow] [dim]{desc}[/dim]")
+                        # Show mini spawn animation with live-updating status
+                        _show_sub_spawn(console, session, sid, desc)
+                        # After spawn completes, resume the thinking spinner
                     elif tool.startswith("sub:"):
                         sub_tool = tool[4:]
                         sid = msg.get("session_id", "")

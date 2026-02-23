@@ -840,7 +840,7 @@ class DelegationHandler:
 
             if is_github_url(agent_url):
                 github_ref = parse_github_url(agent_url)
-                resolver = GitHubResolver()
+                resolver = GitHubResolver(quiet=True)
                 agent_dir = resolver.resolve(github_ref, force_refresh=False)
             else:
                 agent_dir = Path(agent_url)
@@ -871,7 +871,7 @@ class DelegationHandler:
                 "session_id": session_id,
                 "agent_name": display,
                 "agent_version": version,
-                "status": f"{display} v{version}" if version else display,
+                "status": f"Spawning {display} v{version}" if version else f"Spawning {display}",
                 "request_id": req_id,
             })
 
