@@ -852,7 +852,7 @@ class DelegationHandler:
             session_name = f"sub-{secrets.token_hex(4)}"
 
             # Determine state dir for sub-agent
-            from primordial.cli.config import get_config
+            from primordial.config import get_config
             config = get_config()
             sub_state_dir = config.session_state_dir(sub_manifest.name, session_name)
 
