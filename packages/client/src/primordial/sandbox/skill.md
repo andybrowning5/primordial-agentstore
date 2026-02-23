@@ -1,185 +1,66 @@
-# Primordial Delegation Protocol
+# Primordial Delegation
 
-You are running inside a Primordial sandbox. If delegation is enabled in your manifest, you can spawn and interact with sub-agents by connecting to a Unix domain socket and exchanging NDJSON (newline-delimited JSON).
+You are running inside a Primordial sandbox with delegation enabled. You can search for, spawn, and interact with other agents using the `delegate` CLI.
 
-## Connection
+## Quick Start
 
-Connect to the Unix socket at `/tmp/_primordial_delegate.sock`. Send one JSON object per line. Read responses line by line. All commands and responses are single-line JSON terminated by `\n`.
+```bash
+# Search for agents
+delegate search "web research"
+
+# Spawn an agent (prints session_id, status goes to stderr)
+SESSION_ID=$(delegate run https://github.com/owner/repo)
+
+# Send a message (activity goes to stderr, final response to stdout)
+delegate message $SESSION_ID "research Max Verstappen"
+
+# Check what the sub-agent has been doing
+delegate monitor $SESSION_ID
+
+# Shut it down
+delegate stop $SESSION_ID
+```
 
 ## Commands
 
-### `search` — Find agents by query
-
-**Request:**
+### `delegate search <query>`
+Find agents by capability. Prints a JSON array of matching agents to stdout.
 ```json
-{"type": "search", "query": "web research"}
+[{"name": "owner/repo", "description": "...", "url": "https://github.com/...", "stars": 42}]
 ```
 
-**Response** (single):
-```json
-{"type": "search_result", "agents": [{"name": "owner/repo", "description": "...", "url": "https://github.com/owner/repo", "stars": 42}]}
-```
+### `delegate search-all`
+List all available agents sorted by popularity. Same output format as search.
 
-Returns up to 5 agents ranked by relevance.
+### `delegate run <agent_url>`
+Spawn a sub-agent in its own sandbox. Setup progress prints to stderr. On success, prints the `session_id` to stdout. Use this session_id for all subsequent commands.
 
-### `search_all` — List all agents
+### `delegate message <session_id> <message>`
+Send a message to a running sub-agent. Activity events (tool usage) print to stderr. The sub-agent's final response prints to stdout.
 
-**Request:**
-```json
-{"type": "search_all"}
-```
+### `delegate monitor <session_id>`
+View the sub-agent's recent output history — messages sent, tools used, responses received.
 
-**Response** (single): Same format as `search`. Returns up to 100 agents sorted by stars descending.
-
-### `run` — Spawn a sub-agent (streaming)
-
-**Request:**
-```json
-{"type": "run", "agent_url": "https://github.com/owner/repo"}
-```
-
-**Response** (streaming — read lines until you get `session` or `error`):
-
-Setup progress events:
-```json
-{"type": "setup_status", "session_id": "deleg-1", "agent_name": "My Agent", "agent_version": "1.0.0", "status": "Spawning My Agent v1.0.0"}
-```
-
-Final ready event:
-```json
-{"type": "session", "session_id": "deleg-1"}
-```
-
-Save the `session_id` — you need it for all subsequent commands targeting this agent.
-
-### `message` — Send a message to a sub-agent (streaming)
-
-**Request:**
-```json
-{"type": "message", "session_id": "deleg-1", "content": "Analyze this dataset"}
-```
-
-**Response** (streaming — read lines until `"done": true`):
-
-Activity updates (zero or more):
-```json
-{"type": "stream_event", "event": {"type": "activity", "tool": "bash", "description": "Running analysis..."}, "done": false}
-```
-
-Final response:
-```json
-{"type": "stream_event", "event": {"type": "response", "content": "Here are the results...", "message_id": "msg-abc", "done": true}, "done": true}
-```
-
-### `monitor` — View sub-agent output history
-
-**Request:**
-```json
-{"type": "monitor", "session_id": "deleg-1"}
-```
-
-**Response** (single):
-```json
-{"type": "monitor_result", "lines": [">>> user message", "  [tool] description", "<<< response text..."]}
-```
-
-### `stop` — Shut down a sub-agent
-
-**Request:**
-```json
-{"type": "stop", "session_id": "deleg-1"}
-```
-
-**Response** (single):
-```json
-{"type": "stopped", "session_id": "deleg-1"}
-```
-
-## Streaming vs. Single-Response
-
-| Command | Mode | Stream ends when |
-|---|---|---|
-| `search` | Single | Immediately |
-| `search_all` | Single | Immediately |
-| `run` | Streaming | `session` or `error` received |
-| `message` | Streaming | `"done": true` on outer object |
-| `monitor` | Single | Immediately |
-| `stop` | Single | Immediately |
-
-For streaming commands, keep reading lines in a loop until the terminal condition. For single-response commands, read exactly one line.
-
-## Errors
-
-Any command can return an error:
-```json
-{"type": "error", "error": "Agent not in allowed_agents list"}
-```
+### `delegate stop <session_id>`
+Shut down a sub-agent and release its sandbox.
 
 ## Example Workflow
 
-Complete Python example using only the standard library:
+```bash
+# Find a research agent
+AGENTS=$(delegate search "web research")
+# Pick the URL from the first result
+URL=$(echo "$AGENTS" | python3 -c "import json,sys; print(json.load(sys.stdin)[0]['url'])")
 
-```python
-import socket
-import json
+# Start it
+SID=$(delegate run "$URL")
 
+# Ask it to do research
+RESULT=$(delegate message "$SID" "Research the history of Formula 1")
+echo "$RESULT"
 
-def connect():
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    sock.connect("/tmp/_primordial_delegate.sock")
-    return sock
-
-
-def send(sock, obj):
-    sock.sendall((json.dumps(obj) + "\n").encode())
-
-
-def read_line(sock, buf=b""):
-    while b"\n" not in buf:
-        chunk = sock.recv(4096)
-        if not chunk:
-            raise ConnectionError("Socket closed")
-        buf += chunk
-    line, buf = buf.split(b"\n", 1)
-    return json.loads(line), buf
-
-
-def read_until(sock, stop_fn):
-    buf = b""
-    while True:
-        msg, buf = read_line(sock, buf)
-        yield msg
-        if stop_fn(msg):
-            return
-
-
-sock = connect()
-
-# Search for an agent
-send(sock, {"type": "search", "query": "web research"})
-result, _ = read_line(sock)
-agent_url = result["agents"][0]["url"]
-
-# Spawn it
-send(sock, {"type": "run", "agent_url": agent_url})
-for msg in read_until(sock, lambda m: m["type"] != "setup_status"):
-    if msg["type"] == "session":
-        session_id = msg["session_id"]
-    elif msg["type"] == "error":
-        raise RuntimeError(msg["error"])
-
-# Send a task
-send(sock, {"type": "message", "session_id": session_id, "content": "Summarize recent AI news"})
-for msg in read_until(sock, lambda m: m.get("done", False)):
-    if msg.get("event", {}).get("type") == "activity":
-        print(f"  [{msg['event']['tool']}] {msg['event']['description']}")
-    elif msg.get("done"):
-        print(msg["event"]["content"])
-
-# Clean up
-send(sock, {"type": "stop", "session_id": session_id})
-stopped, _ = read_line(sock)
-sock.close()
+# Done
+delegate stop "$SID"
 ```
 
 ## Emitting Activity Events
@@ -190,7 +71,7 @@ To let your parent agent see your progress in real-time, write activity events t
 {"type": "activity", "tool": "bash", "description": "Installing dependencies", "message_id": "msg-1"}
 ```
 
-The `message_id` should match the message you're currently responding to. These events appear in the parent's `message` stream as `stream_event` wrappers.
+The `message_id` should match the message you're currently responding to.
 
 ## Manifest Configuration
 
@@ -209,4 +90,17 @@ permissions:
 
 - Each sub-agent runs in its own isolated sandbox.
 - API keys are resolved automatically — you don't need to pass them.
-- The commands `setup`, `keys`, `config`, and `cache` are blocked on the delegation socket.
+- The commands `setup`, `keys`, `config`, and `cache` are blocked.
+
+## Raw Protocol Reference
+
+For advanced use cases (custom socket connections), the `delegate` CLI communicates with a Unix domain socket at `/tmp/_primordial_delegate.sock` using NDJSON. Send one JSON object per line, read responses line by line.
+
+| Command | Request | Streaming |
+|---|---|---|
+| search | `{"type":"search","query":"..."}` | No |
+| search_all | `{"type":"search_all"}` | No |
+| run | `{"type":"run","agent_url":"..."}` | Yes — until `session` or `error` |
+| message | `{"type":"message","session_id":"...","content":"..."}` | Yes — until `done:true` |
+| monitor | `{"type":"monitor","session_id":"..."}` | No |
+| stop | `{"type":"stop","session_id":"..."}` | No |

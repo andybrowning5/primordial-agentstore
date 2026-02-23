@@ -23,6 +23,8 @@ _PROXY_SCRIPT = Path(__file__).parent / "proxy_script.py"
 _PROXY_PATH_IN_SANDBOX = "/opt/_primordial_proxy.py"
 _DELEGATION_PROXY_SCRIPT = Path(__file__).parent / "delegation_proxy.py"
 _DELEGATION_PROXY_PATH = "/opt/_primordial_delegation.py"
+_DELEGATE_CLI_SCRIPT = Path(__file__).parent / "delegate_cli.py"
+_DELEGATE_CLI_PATH = "/usr/local/bin/delegate"
 
 AGENT_HOME_IN_SANDBOX = "/home/user"
 AGENT_DIR_IN_SANDBOX = "/home/user/agent"
@@ -331,6 +333,14 @@ class SandboxManager:
         )
         sandbox.commands.run(f"chmod 700 {_DELEGATION_PROXY_PATH}", user="root")
 
+        # Upload delegate CLI (user-executable)
+        if _DELEGATE_CLI_SCRIPT.exists():
+            sandbox.files.write(
+                _DELEGATE_CLI_PATH,
+                _DELEGATE_CLI_SCRIPT.read_text(),
+            )
+            sandbox.commands.run(f"chmod 755 {_DELEGATE_CLI_PATH}", user="root")
+
         # Start delegation proxy as root
         deleg_handle = sandbox.commands.run(
             f"python3 {_DELEGATION_PROXY_PATH}",
@@ -538,8 +548,8 @@ class AgentSession:
 
     _DELEGATION_HINT = (
         "[You have agent delegation capabilities. "
-        f"Read skill.md (in your workspace or {SKILL_DEST}) for the NDJSON "
-        "socket protocol to search, spawn, and message other agents.]"
+        "Use the `delegate` CLI to search for and spawn sub-agents. "
+        "Run `delegate --help` for usage, or read skill.md for details.]"
     )
 
     def send_message(self, content: str, message_id: str) -> None:
