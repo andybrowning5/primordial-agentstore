@@ -13,6 +13,7 @@ from pathlib import Path
 import click
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.text import Text
 
 from primordial.config import get_config
 from primordial.github import GitHubResolver, GitHubResolverError, is_github_url, parse_github_url
@@ -292,7 +293,6 @@ def _mini_strand_char(dx: float, z: float) -> str:
 
 def _mini_helix_frame(phase: float) -> list[Text]:
     """Render one frame of a mini double helix (3 rows)."""
-    from rich.text import Text
     lines = []
     for r in range(_MINI_ROWS):
         t = r * 0.7 + phase
@@ -346,7 +346,6 @@ def _show_sub_spawn(console: Console, session, sid: str, first_status: str) -> N
     import time
     from rich.console import Group
     from rich.live import Live
-    from rich.text import Text
 
     current_status = first_status
     completed: list[Text] = []
