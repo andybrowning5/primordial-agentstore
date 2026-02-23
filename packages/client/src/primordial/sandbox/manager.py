@@ -438,6 +438,10 @@ class SandboxManager:
                     error_detail = (result.stderr or result.stdout or "")[:500]
                     raise SandboxError(f"Setup command failed: {error_detail}")
 
+            # Ensure agent dir is on PYTHONPATH so delegation client is importable
+            if manifest.permissions.delegation.enabled:
+                agent_envs["PYTHONPATH"] = AGENT_DIR_IN_SANDBOX
+
             _status("Starting agent...")
             messages: queue.Queue[dict[str, Any]] = queue.Queue()
             stderr_lines: list[str] = []
