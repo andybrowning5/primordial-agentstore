@@ -1,5 +1,7 @@
 """CLI command for searching primordial-agent repos on GitHub."""
 
+import json as json_mod
+
 import click
 import httpx
 from rich.console import Console
@@ -25,8 +27,27 @@ def _fetch_results(query: str | None) -> list[dict]:
 
 @click.command()
 @click.argument("query", required=False, default=None)
-def search(query: str | None):
+@click.option("--json", "as_json", is_flag=True, help="Output results as JSON.")
+def search(query: str | None, as_json: bool = False):
     """Search for Primordial agents on GitHub."""
+    if as_json:
+        try:
+            repos = _fetch_results(query)
+        except httpx.HTTPError as e:
+            click.echo(json_mod.dumps({"error": str(e)}))
+            raise SystemExit(1)
+        compact = [
+            {
+                "name": r["full_name"],
+                "description": r.get("description") or "",
+                "url": r["html_url"],
+                "stars": r.get("stargazers_count", 0),
+            }
+            for r in repos
+        ]
+        click.echo(json_mod.dumps(compact))
+        return
+
     with console.status("[bold green]Searching GitHub..."):
         try:
             repos = _fetch_results(query)
