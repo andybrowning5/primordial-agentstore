@@ -1,6 +1,6 @@
 # Primordial AgentStore
 
-> **AI agents (Claude Code, Codex, OpenClaw):** To set yourself up to use Primordial, see the [Host Agent Setup](#host-agent-setup) section and the [`Host-Integration-Skill.md`](Host-Integration-Skill.md) file.
+> **AI agents (Claude Code, Codex, OpenClaw):** See [`Host-Integration-Skill.md`](Host-Integration-Skill.md) for setup instructions and usage reference.
 
 I've been building something I'm really excited about: **Primordial AgentStore** — an open marketplace where anyone can publish an AI agent and anyone can run it safely.
 
@@ -78,42 +78,6 @@ See **[docs/](docs/)** for all guides:
 | [Agent Delegation](docs/agent-delegation.md) | Spawning sub-agents |
 | [Publishing Agents](docs/publishing.md) | Share your agent with others |
 | [Security Architecture](docs/security.md) | Threat model, sandbox, key vault, proxy |
-
----
-
-## Host Agent Setup
-
-Primordial is designed to be called by host agents — coding assistants that delegate specialized tasks to purpose-built agents on the marketplace.
-
-### Claude Code
-
-Copy the skill file from this repo to your Claude Code skills directory:
-
-```bash
-mkdir -p ~/.claude/skills/primordial
-cp Host-Integration-Skill.md ~/.claude/skills/primordial/skill.md
-```
-
-This teaches Claude Code how to search for, spawn, and interact with Primordial agents. See [`Host-Integration-Skill.md`](Host-Integration-Skill.md) for the full reference.
-
-### OpenAI Codex CLI
-
-Copy the skill file contents into your `AGENTS.md` (at `~/.codex/AGENTS.md` for global, or `./AGENTS.md` for per-project). Codex uses `AGENTS.md` the same way Claude Code uses skill files — as persistent instructions the agent reads at session start.
-
-```bash
-cat Host-Integration-Skill.md >> ~/.codex/AGENTS.md
-```
-
-### OpenClaw
-
-OpenClaw uses a skills system — `SKILL.md` files in its workspace that get injected into the agent's system prompt. Create a Primordial skill:
-
-```bash
-mkdir -p ~/.openclaw/workspace/skills/primordial
-cp Host-Integration-Skill.md ~/.openclaw/workspace/skills/primordial/SKILL.md
-```
-
-OpenClaw's agent will then call Primordial via its `exec` tool whenever a task matches.
 
 ---
 

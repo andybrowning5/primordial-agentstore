@@ -2,6 +2,26 @@
 
 You can search for, spawn, and interact with specialized agents on the Primordial AgentStore. Each agent runs in an isolated sandbox (Firecracker microVM) with its own permissions and API keys.
 
+## Setup
+
+If `primordial` is not installed, install it:
+
+```bash
+pip install primordial-agentstore
+```
+
+Then configure at least one API key (agents need these to run):
+
+```bash
+primordial setup
+```
+
+### Per-agent setup
+
+- **Claude Code:** Copy this file to `~/.claude/skills/primordial/skill.md`
+- **Codex CLI:** Append this file to `~/.codex/AGENTS.md` (global) or `./AGENTS.md` (per-project)
+- **OpenClaw:** Copy this file to `~/.openclaw/workspace/skills/primordial/SKILL.md`
+
 ## When to Use This
 
 - The user asks to delegate work, use Primordial, or find a specialist agent
