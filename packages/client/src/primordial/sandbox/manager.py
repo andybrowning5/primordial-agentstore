@@ -856,12 +856,19 @@ class DelegationHandler:
             config = get_config()
             sub_state_dir = config.session_state_dir(sub_manifest.name, session_name)
 
+            # Resolve sub-agent's API keys from the vault
+            from primordial.security.key_vault import KeyVault
+            vault = KeyVault()
+            sub_providers = [kr.provider for kr in sub_manifest.keys] if sub_manifest.keys else []
+            sub_providers.append("e2b")  # Always needed for sandbox creation
+            sub_env_vars = vault.get_env_vars(providers=sub_providers)
+
             # Create sub-agent sandbox
             sub_session = self._manager.run_agent(
                 agent_dir=agent_dir,
                 manifest=sub_manifest,
                 workspace=Path("."),
-                env_vars=self._env_vars,
+                env_vars=sub_env_vars,
                 state_dir=sub_state_dir,
             )
 
