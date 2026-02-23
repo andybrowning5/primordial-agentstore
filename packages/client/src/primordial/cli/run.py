@@ -398,7 +398,9 @@ def _run_chat(
                         console.print(f"      [green]› {label}:[/green] [dim]{desc}[/dim]")
                     elif tool.startswith("sub:"):
                         sub_tool = tool[4:]
-                        console.print(f"      [cyan]› {sub_tool}:[/cyan] [dim]{desc}[/dim]")
+                        sid = msg.get("session_id", "")
+                        prefix = f"{sid} › {sub_tool}" if sid else sub_tool
+                        console.print(f"      [cyan]› {prefix}:[/cyan] [dim]{desc}[/dim]")
                     else:
                         console.print(f"  [dim]› {tool}: {desc}[/dim]")
                     thinking = console.status("[dim]Thinking...[/dim]", spinner="flip")
