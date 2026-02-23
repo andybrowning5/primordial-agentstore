@@ -456,8 +456,12 @@ def _run_terminal(
     except OSError:
         cols, rows = 80, 24
 
-    # Write raw PTY output directly to local stdout
+    # Gate output — suppress during spinner, forward after
+    output_enabled = False
+
     def on_data(data) -> None:
+        if not output_enabled:
+            return
         if isinstance(data, (bytes, bytearray)):
             os.write(sys.stdout.fileno(), data)
         else:
@@ -479,6 +483,11 @@ def _run_terminal(
         except Exception as e:
             console.print(f"\n[red]Failed to start agent:[/red] {e}")
             raise SystemExit(1)
+
+    # Spinner is now cleared — enable PTY output
+    import time
+    time.sleep(0.3)  # Brief pause to let initial bash noise pass
+    output_enabled = True
 
     # Save and set raw terminal mode
     fd = sys.stdin.fileno()

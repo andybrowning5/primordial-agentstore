@@ -544,7 +544,7 @@ class SandboxManager:
 
             _status("Starting terminal...")
 
-            # Build env vars for the PTY shell
+            # Build env vars — include proxy vars + terminal-mode extras
             pty_envs = {
                 **agent_envs,
                 "IS_DEMO": "true",
@@ -552,12 +552,18 @@ class SandboxManager:
                 "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
             }
 
+            # Build the full command with inline env vars for reliable propagation
+            run_cmd = manifest.runtime.run_command or "bash"
+            env_prefix = " ".join(
+                f"{k}={_shell_escape(v)}" for k, v in pty_envs.items()
+            )
+            full_cmd = f"{env_prefix} exec {run_cmd}"
+
             # Create PTY (starts bash -i -l)
             pty_handle = sandbox.pty.create(
                 size=PtySize(rows=rows, cols=cols),
                 user="user",
                 cwd=AGENT_DIR_IN_SANDBOX,
-                envs=pty_envs,
                 timeout=0,
             )
 
@@ -572,11 +578,10 @@ class SandboxManager:
                 on_data=on_data,
             )
 
-            # Type the run command into bash
-            run_cmd = manifest.runtime.run_command or "bash"
+            # Type the run command into bash with env vars
             sandbox.pty.send_stdin(
                 pty_handle.pid,
-                f"exec {run_cmd}\n".encode(),
+                f"{full_cmd}\n".encode(),
             )
 
             return session
