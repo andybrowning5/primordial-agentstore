@@ -21,6 +21,10 @@ from primordial.models import AgentManifest, _PROTECTED_ENV_VARS
 
 _PROXY_SCRIPT = Path(__file__).parent / "proxy_script.py"
 _PROXY_PATH_IN_SANDBOX = "/opt/_primordial_proxy.py"
+_DELEGATION_PROXY_SCRIPT = Path(__file__).parent / "delegation_proxy.py"
+_DELEGATION_PROXY_PATH = "/opt/_primordial_delegation.py"
+_DELEGATION_CLIENT_SCRIPT = Path(__file__).parent / "delegation_client.py"
+_DELEGATION_CLIENT_DEST = "primordial_delegate.py"  # relative to agent dir
 
 AGENT_HOME_IN_SANDBOX = "/home/user"
 AGENT_DIR_IN_SANDBOX = "/home/user/agent"
@@ -298,6 +302,61 @@ class SandboxManager:
         )
         return f"cd {AGENT_DIR_IN_SANDBOX} && {env_prefix} exec {manifest.runtime.run_command}"
 
+    def _start_delegation_proxy(
+        self,
+        sandbox: Sandbox,
+        manifest: AgentManifest,
+        env_vars: dict[str, str],
+    ) -> Optional["DelegationHandler"]:
+        """Start the delegation proxy if delegation is enabled.
+
+        Uploads the delegation proxy (root) and client library (user-readable),
+        starts the proxy process, and launches the host-side delegation loop.
+        """
+        if not manifest.permissions.delegation.enabled:
+            return None
+        if not _DELEGATION_PROXY_SCRIPT.exists():
+            logger.warning("Delegation proxy script not found, skipping")
+            return None
+
+        # Upload proxy (root-owned, agent can't read)
+        sandbox.files.write(
+            _DELEGATION_PROXY_PATH,
+            _DELEGATION_PROXY_SCRIPT.read_text(),
+            user="root",
+        )
+        sandbox.commands.run(f"chmod 700 {_DELEGATION_PROXY_PATH}", user="root")
+
+        # Upload client library (agent can import)
+        if _DELEGATION_CLIENT_SCRIPT.exists():
+            client_dest = f"{AGENT_DIR_IN_SANDBOX}/{_DELEGATION_CLIENT_DEST}"
+            sandbox.files.write(client_dest, _DELEGATION_CLIENT_SCRIPT.read_text())
+
+        # Start delegation proxy as root
+        deleg_handle = sandbox.commands.run(
+            f"python3 {_DELEGATION_PROXY_PATH}",
+            background=True,
+            stdin=True,
+            user="root",
+            timeout=0,
+        )
+
+        # Create and start the host-side handler
+        handler = DelegationHandler(
+            sandbox=sandbox,
+            deleg_handle=deleg_handle,
+            manifest=manifest,
+            env_vars=env_vars,
+            manager=self,
+        )
+        handler.start()
+
+        # Wait for delegation proxy to signal ready
+        if not handler.wait_ready(timeout=10):
+            logger.warning("Delegation proxy did not signal ready in time")
+
+        return handler
+
     def run_agent(
         self,
         agent_dir: Path,
@@ -360,6 +419,14 @@ class SandboxManager:
                 _status("Starting security proxy...")
                 proxy_pid, agent_envs = self._start_proxy(sandbox, manifest, env_vars)
 
+            # --- Start delegation proxy for agent-to-agent delegation ---
+            delegation_handler = None
+            if manifest.permissions.delegation.enabled:
+                _status("Starting delegation proxy...")
+                delegation_handler = self._start_delegation_proxy(
+                    sandbox, manifest, env_vars,
+                )
+
             if manifest.runtime.setup_command:
                 _status("Running setup command...")
                 result = sandbox.commands.run(
@@ -407,6 +474,7 @@ class SandboxManager:
                 manager=self,
                 state_dir=state_dir,
                 proxy_pid=proxy_pid,
+                delegation_handler=delegation_handler,
             )
         except Exception:
             try:
@@ -430,6 +498,7 @@ class AgentSession:
         on_stdout: Optional[Any] = None,
         on_stderr: Optional[Any] = None,
         proxy_pid: Optional[int] = None,
+        delegation_handler: Optional["DelegationHandler"] = None,
     ):
         self._sandbox = sandbox
         self._cmd_handle = cmd_handle
@@ -440,6 +509,7 @@ class AgentSession:
         self._on_stdout = on_stdout
         self._on_stderr = on_stderr
         self._proxy_pid = proxy_pid
+        self._delegation_handler = delegation_handler
         self._alive = True
 
         # Drive the event loop in a background thread — this is what
@@ -495,6 +565,13 @@ class AgentSession:
 
     def shutdown(self) -> None:
         try:
+            # Shutdown delegation handler first (saves sub-agent state)
+            if self._delegation_handler:
+                try:
+                    self._delegation_handler.shutdown()
+                except Exception as e:
+                    logger.warning("Failed to shutdown delegation handler: %s", e)
+
             if self.is_alive:
                 shutdown_msg = json.dumps({"type": "shutdown"})
                 self._sandbox.commands.send_stdin(self._cmd_handle.pid, shutdown_msg + "\n")
@@ -504,6 +581,9 @@ class AgentSession:
         finally:
             if self._state_dir:
                 try:
+                    # Save delegation session mapping for resume
+                    if self._delegation_handler:
+                        self._delegation_handler.save_session_mapping(self._state_dir)
                     self._manager._save_state(self._sandbox, self._state_dir)
                 except Exception as e:
                     logger.warning("Failed to save state on shutdown: %s", e)
@@ -516,3 +596,445 @@ class AgentSession:
                 self._sandbox.kill()
             except Exception:
                 pass
+
+
+class DelegationHandler:
+    """Host-side handler for agent delegation requests.
+
+    Reads NDJSON commands from the delegation proxy's stdout, processes them
+    (search, run, message, monitor, stop), and writes responses back via stdin.
+    Each sub-agent runs in its own fresh E2B sandbox.
+    """
+
+    _MAX_OUTPUT_LINES = 1000
+
+    def __init__(
+        self,
+        sandbox: Sandbox,
+        deleg_handle: Any,
+        manifest: AgentManifest,
+        env_vars: dict[str, str],
+        manager: SandboxManager,
+    ):
+        self._sandbox = sandbox
+        self._deleg_handle = deleg_handle
+        self._manifest = manifest
+        self._env_vars = env_vars
+        self._manager = manager
+        self._sessions: dict[str, AgentSession] = {}
+        self._output_buffers: dict[str, list[str]] = {}
+        self._session_meta: dict[str, dict] = {}  # session_id -> {agent_url, session_name}
+        self._messages: queue.Queue[dict[str, Any]] = queue.Queue()
+        self._ready = threading.Event()
+        self._stop = threading.Event()
+        self._session_counter = 0
+        self._lock = threading.Lock()
+
+        # FastEmbed model (lazy-loaded)
+        self._embed_model = None
+
+    def start(self) -> None:
+        """Start the delegation handler threads."""
+        self._reader_thread = threading.Thread(
+            target=self._read_proxy_stdout, daemon=True,
+        )
+        self._handler_thread = threading.Thread(
+            target=self._handle_commands, daemon=True,
+        )
+        self._reader_thread.start()
+        self._handler_thread.start()
+
+    def wait_ready(self, timeout: float = 10.0) -> bool:
+        """Wait for the delegation proxy to signal ready."""
+        return self._ready.wait(timeout=timeout)
+
+    def _read_proxy_stdout(self) -> None:
+        """Read NDJSON from delegation proxy stdout and queue messages."""
+        def _on_stdout(data: str) -> None:
+            for line in data.split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    msg = json.loads(line)
+                    if msg.get("type") == "delegation_ready":
+                        self._ready.set()
+                    else:
+                        self._messages.put(msg)
+                except json.JSONDecodeError:
+                    continue
+
+        def _on_stderr(data: str) -> None:
+            logger.debug("Delegation proxy stderr: %s", data.strip())
+
+        try:
+            self._deleg_handle.wait(on_stdout=_on_stdout, on_stderr=_on_stderr)
+        except Exception:
+            pass
+
+    def _send_to_proxy(self, msg: dict) -> None:
+        """Write NDJSON response to the delegation proxy's stdin."""
+        self._sandbox.commands.send_stdin(
+            self._deleg_handle.pid,
+            json.dumps(msg) + "\n",
+        )
+
+    def _handle_commands(self) -> None:
+        """Process delegation commands from the queue."""
+        while not self._stop.is_set():
+            try:
+                msg = self._messages.get(timeout=1.0)
+            except queue.Empty:
+                continue
+
+            cmd = msg.get("type", "")
+            req_id = msg.get("request_id", "")
+
+            try:
+                if cmd == "search":
+                    self._handle_search(msg, req_id)
+                elif cmd == "search_all":
+                    self._handle_search_all(req_id)
+                elif cmd == "run":
+                    self._handle_run(msg, req_id)
+                elif cmd == "message":
+                    self._handle_message(msg, req_id)
+                elif cmd == "monitor":
+                    self._handle_monitor(msg, req_id)
+                elif cmd == "stop":
+                    self._handle_stop(msg, req_id)
+                else:
+                    self._send_to_proxy({
+                        "type": "error",
+                        "error": f"Unknown command: {cmd}",
+                        "request_id": req_id,
+                    })
+            except Exception as e:
+                logger.exception("Error handling delegation command %s", cmd)
+                self._send_to_proxy({
+                    "type": "error",
+                    "error": str(e),
+                    "request_id": req_id,
+                })
+
+    def _fetch_agents(self, query: str | None = None) -> list[dict]:
+        """Fetch agents from GitHub API."""
+        import httpx
+        topic_query = "topic:primordial-agent"
+        q = f"{topic_query} {query}" if query else topic_query
+        resp = httpx.get(
+            "https://api.github.com/search/repositories",
+            params={"q": q, "sort": "stars", "order": "desc", "per_page": 100},
+            headers={"Accept": "application/vnd.github.v3+json"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        items = resp.json().get("items", [])
+        return [
+            {
+                "name": r["full_name"],
+                "description": r.get("description") or "",
+                "url": r["html_url"],
+                "stars": r.get("stargazers_count", 0),
+            }
+            for r in items
+        ]
+
+    def _get_embed_model(self):
+        """Lazy-load the FastEmbed model."""
+        if self._embed_model is None:
+            try:
+                from fastembed import TextEmbedding
+                self._embed_model = TextEmbedding()
+            except ImportError:
+                logger.warning("fastembed not installed, falling back to keyword search")
+                return None
+        return self._embed_model
+
+    def _semantic_rank(self, query: str, agents: list[dict], top_k: int = 5) -> list[dict]:
+        """Rank agents by semantic similarity to query using FastEmbed."""
+        import numpy as np
+
+        model = self._get_embed_model()
+        if not model or not agents:
+            # Fallback: simple substring matching
+            query_lower = query.lower()
+            scored = []
+            for a in agents:
+                text = f"{a['name']} {a['description']}".lower()
+                score = sum(1 for word in query_lower.split() if word in text)
+                scored.append((score, a))
+            scored.sort(key=lambda x: -x[0])
+            return [a for _, a in scored[:top_k]]
+
+        descriptions = [
+            f"{a['name']}: {a['description']}" for a in agents
+        ]
+        query_emb = list(model.embed([query]))[0]
+        doc_embs = list(model.embed(descriptions))
+        doc_arr = np.array(doc_embs)
+        query_arr = np.array(query_emb)
+
+        # Cosine similarity
+        norms = np.linalg.norm(doc_arr, axis=1) * np.linalg.norm(query_arr)
+        norms[norms == 0] = 1.0
+        similarities = doc_arr @ query_arr / norms
+        top_indices = (-similarities).argsort()[:top_k]
+
+        return [agents[i] for i in top_indices]
+
+    def _handle_search(self, msg: dict, req_id: str) -> None:
+        """Semantic search for agents."""
+        query = msg.get("query", "")
+        agents = self._fetch_agents(query)
+        ranked = self._semantic_rank(query, agents, top_k=5)
+        self._send_to_proxy({
+            "type": "search_result",
+            "agents": ranked,
+            "request_id": req_id,
+        })
+
+    def _handle_search_all(self, req_id: str) -> None:
+        """List all agents sorted by stars."""
+        agents = self._fetch_agents()
+        self._send_to_proxy({
+            "type": "search_result",
+            "agents": agents,
+            "request_id": req_id,
+        })
+
+    def _handle_run(self, msg: dict, req_id: str) -> None:
+        """Spawn a sub-agent and return a session ID."""
+        agent_url = msg.get("agent_url", "")
+        if not agent_url:
+            self._send_to_proxy({
+                "type": "error",
+                "error": "agent_url is required",
+                "request_id": req_id,
+            })
+            return
+
+        # Validate against allowed_agents if set
+        allowed = self._manifest.permissions.delegation.allowed_agents
+        if allowed:
+            # Check if URL matches any allowed agent pattern
+            matched = any(
+                a in agent_url for a in allowed
+            )
+            if not matched:
+                self._send_to_proxy({
+                    "type": "error",
+                    "error": f"Agent not in allowed_agents list: {agent_url}",
+                    "request_id": req_id,
+                })
+                return
+
+        try:
+            # Resolve the agent (GitHub URL or local path)
+            from primordial.github import GitHubResolver, is_github_url, parse_github_url
+            from primordial.manifest import load_manifest
+
+            if is_github_url(agent_url):
+                github_ref = parse_github_url(agent_url)
+                resolver = GitHubResolver()
+                agent_dir = resolver.resolve(github_ref, force_refresh=False)
+            else:
+                agent_dir = Path(agent_url)
+            sub_manifest = load_manifest(agent_dir)
+
+            # Generate session ID
+            self._session_counter += 1
+            session_id = f"deleg-{self._session_counter}"
+            session_name = f"sub-{secrets.token_hex(4)}"
+
+            # Determine state dir for sub-agent
+            from primordial.cli.config import get_config
+            config = get_config()
+            sub_state_dir = config.session_state_dir(sub_manifest.name, session_name)
+
+            # Create sub-agent sandbox
+            sub_session = self._manager.run_agent(
+                agent_dir=agent_dir,
+                manifest=sub_manifest,
+                workspace=Path("."),
+                env_vars=self._env_vars,
+                state_dir=sub_state_dir,
+            )
+
+            if not sub_session.wait_ready(timeout=120):
+                sub_session.shutdown()
+                self._send_to_proxy({
+                    "type": "error",
+                    "error": "Sub-agent failed to start",
+                    "request_id": req_id,
+                })
+                return
+
+            with self._lock:
+                self._sessions[session_id] = sub_session
+                self._output_buffers[session_id] = []
+                self._session_meta[session_id] = {
+                    "agent_url": agent_url,
+                    "session_name": session_name,
+                }
+
+            self._send_to_proxy({
+                "type": "session",
+                "session_id": session_id,
+                "request_id": req_id,
+            })
+
+        except Exception as e:
+            self._send_to_proxy({
+                "type": "error",
+                "error": f"Failed to start agent: {e}",
+                "request_id": req_id,
+            })
+
+    def _handle_message(self, msg: dict, req_id: str) -> None:
+        """Send a message to a sub-agent and stream events back."""
+        session_id = msg.get("session_id", "")
+        content = msg.get("content", "")
+
+        with self._lock:
+            session = self._sessions.get(session_id)
+            output_buf = self._output_buffers.get(session_id)
+
+        if not session:
+            self._send_to_proxy({
+                "type": "error",
+                "error": f"Unknown session: {session_id}",
+                "request_id": req_id,
+            })
+            return
+
+        import uuid
+        message_id = f"msg-{uuid.uuid4().hex[:8]}"
+        session.send_message(content, message_id)
+
+        # Buffer the outgoing message
+        if output_buf is not None:
+            output_buf.append(f">>> {content}")
+            if len(output_buf) > self._MAX_OUTPUT_LINES:
+                output_buf[:] = output_buf[-self._MAX_OUTPUT_LINES:]
+
+        # Stream events back until done
+        while True:
+            event = session.receive(timeout=300)
+            if event is None:
+                self._send_to_proxy({
+                    "type": "stream_event",
+                    "event": {"type": "error", "error": "timeout"},
+                    "done": True,
+                    "request_id": req_id,
+                })
+                break
+
+            # Buffer the event for monitor
+            if output_buf is not None:
+                event_type = event.get("type", "")
+                if event_type == "activity":
+                    line = f"  [{event.get('tool', '')}] {event.get('description', '')}"
+                elif event_type == "response":
+                    content_text = event.get("content", "")
+                    line = f"<<< {content_text[:200]}"
+                elif event_type == "error":
+                    line = f"!!! {event.get('error', '')}"
+                else:
+                    line = json.dumps(event)
+                output_buf.append(line)
+                if len(output_buf) > self._MAX_OUTPUT_LINES:
+                    output_buf[:] = output_buf[-self._MAX_OUTPUT_LINES:]
+
+            # Forward to proxy
+            is_done = (
+                (event.get("type") == "response" and event.get("done", False))
+                or event.get("type") == "error"
+            )
+            self._send_to_proxy({
+                "type": "stream_event",
+                "event": event,
+                "done": is_done,
+                "request_id": req_id,
+            })
+
+            if is_done:
+                break
+
+            if not session.is_alive:
+                self._send_to_proxy({
+                    "type": "stream_event",
+                    "event": {"type": "error", "error": "Sub-agent exited"},
+                    "done": True,
+                    "request_id": req_id,
+                })
+                break
+
+    def _handle_monitor(self, msg: dict, req_id: str) -> None:
+        """Return the last N lines of a sub-agent's output."""
+        session_id = msg.get("session_id", "")
+        with self._lock:
+            buf = self._output_buffers.get(session_id)
+        if buf is None:
+            self._send_to_proxy({
+                "type": "error",
+                "error": f"Unknown session: {session_id}",
+                "request_id": req_id,
+            })
+            return
+        self._send_to_proxy({
+            "type": "monitor_result",
+            "lines": list(buf),
+            "request_id": req_id,
+        })
+
+    def _handle_stop(self, msg: dict, req_id: str) -> None:
+        """Shutdown a sub-agent session."""
+        session_id = msg.get("session_id", "")
+        with self._lock:
+            session = self._sessions.pop(session_id, None)
+            self._output_buffers.pop(session_id, None)
+            self._session_meta.pop(session_id, None)
+        if not session:
+            self._send_to_proxy({
+                "type": "error",
+                "error": f"Unknown session: {session_id}",
+                "request_id": req_id,
+            })
+            return
+        try:
+            session.shutdown()
+        except Exception as e:
+            logger.warning("Error shutting down sub-agent %s: %s", session_id, e)
+        self._send_to_proxy({
+            "type": "stopped",
+            "session_id": session_id,
+            "request_id": req_id,
+        })
+
+    def save_session_mapping(self, state_dir: Path) -> None:
+        """Save active sub-agent session mapping for resume."""
+        with self._lock:
+            mapping = []
+            for sid, meta in self._session_meta.items():
+                mapping.append({
+                    "session_id": sid,
+                    "agent_url": meta["agent_url"],
+                    "session_name": meta["session_name"],
+                })
+        if mapping:
+            mapping_file = state_dir / "delegation_sessions.json"
+            mapping_file.parent.mkdir(parents=True, exist_ok=True)
+            mapping_file.write_text(json.dumps(mapping))
+
+    def shutdown(self) -> None:
+        """Shutdown all sub-agent sessions and stop the handler."""
+        self._stop.set()
+        with self._lock:
+            for sid, session in list(self._sessions.items()):
+                try:
+                    session.shutdown()
+                except Exception as e:
+                    logger.warning("Error shutting down sub-agent %s: %s", sid, e)
+            self._sessions.clear()
+            self._output_buffers.clear()
