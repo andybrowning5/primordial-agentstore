@@ -858,7 +858,7 @@ class DelegationHandler:
 
             # Resolve sub-agent's API keys from the vault
             from primordial.security.key_vault import KeyVault
-            vault = KeyVault()
+            vault = KeyVault(config.keys_file)
             sub_providers = [kr.provider for kr in sub_manifest.keys] if sub_manifest.keys else []
             sub_providers.append("e2b")  # Always needed for sandbox creation
             sub_env_vars = vault.get_env_vars(providers=sub_providers)
