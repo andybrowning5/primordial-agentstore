@@ -123,10 +123,16 @@ class SandboxManager:
         sandbox.commands.run(f"mkdir -p {remote_dir} && tar xzf {tmp_name} -C {remote_dir} && rm {tmp_name}")
 
     def _upload_skill(self, sandbox: Sandbox) -> None:
-        """Upload the built-in skill.md into the sandbox."""
+        """Upload the built-in skill.md into the sandbox.
+
+        Placed in both agent dir and workspace so any agent's file tools
+        can discover it regardless of their allowed directory.
+        """
         if not SKILL_FILE.exists():
             return
-        sandbox.files.write(SKILL_DEST, SKILL_FILE.read_text())
+        content = SKILL_FILE.read_text()
+        sandbox.files.write(SKILL_DEST, content)
+        sandbox.files.write(f"{WORKSPACE_DIR_IN_SANDBOX}/skill.md", content)
 
     def _restore_state(self, sandbox: Sandbox, state_dir: Path) -> None:
         """Restore agent's home directory state from a previous run."""
@@ -532,8 +538,8 @@ class AgentSession:
 
     _DELEGATION_HINT = (
         "[You have agent delegation capabilities. "
-        f"Read {SKILL_DEST} for the NDJSON socket protocol "
-        "to search, spawn, and message other agents.]"
+        f"Read skill.md (in your workspace or {SKILL_DEST}) for the NDJSON "
+        "socket protocol to search, spawn, and message other agents.]"
     )
 
     def send_message(self, content: str, message_id: str) -> None:
