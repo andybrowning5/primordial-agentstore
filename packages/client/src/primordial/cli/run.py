@@ -393,7 +393,9 @@ def _run_chat(
                     tool = msg.get("tool", "?")
                     desc = msg.get("description", "")
                     if tool == "sub:response":
-                        console.print(f"      [green]› response:[/green] [dim]{desc}[/dim]")
+                        sid = msg.get("session_id", "")
+                        label = sid if sid else "response"
+                        console.print(f"      [green]› {label}:[/green] [dim]{desc}[/dim]")
                     elif tool.startswith("sub:"):
                         sub_tool = tool[4:]
                         console.print(f"      [cyan]› {sub_tool}:[/cyan] [dim]{desc}[/dim]")
