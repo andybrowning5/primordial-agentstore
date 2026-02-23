@@ -398,10 +398,14 @@ permissions:
 import subprocess, json
 
 proc = subprocess.Popen(
-    ["primordial", "run", "https://github.com/owner/repo",
-     "--agent-read", "--yes"],
+    ["primordial", "run", "https://github.com/owner/repo", "--agent"],
     stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
 )
+
+# The --agent flag still shows the interactive session picker and
+# permissions approval prompt on stdout/stdin (the host agent
+# participates just like a human). After approval, it switches to
+# NDJSON mode.
 
 # Wait for ready
 for line in proc.stdout:

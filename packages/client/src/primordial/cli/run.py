@@ -77,19 +77,33 @@ def _detect_host_tz() -> str | None:
     return None
 
 
-def _new_session_name() -> str:
+def _stdin_prompt(prompt: str, default: str = "") -> str:
+    """Read a line from stdin with a prompt — works without a TTY."""
+    if default:
+        sys.stdout.write(f"{prompt} [{default}]: ")
+    else:
+        sys.stdout.write(f"{prompt}: ")
+    sys.stdout.flush()
+    value = sys.stdin.readline().strip()
+    return value or default
+
+
+def _new_session_name(agent_mode: bool = False) -> str:
     """Prompt for a custom session name or generate one."""
     auto_name = datetime.now().strftime("%Y%m%d-%H%M%S")
-    name = click.prompt("Session name", default=auto_name).strip()
+    if agent_mode:
+        name = _stdin_prompt("Session name", auto_name)
+    else:
+        name = click.prompt("Session name", default=auto_name).strip()
     return name or auto_name
 
 
-def _pick_session(config, agent_name: str) -> Path:
+def _pick_session(config, agent_name: str, agent_mode: bool = False) -> Path:
     """Prompt user to create a new session or resume an existing one."""
     sessions = config.list_sessions(agent_name)
 
     if not sessions:
-        return config.session_state_dir(agent_name, _new_session_name())
+        return config.session_state_dir(agent_name, _new_session_name(agent_mode))
 
     console.print("\n[bold]Sessions[/bold]")
     console.print(f"  [dim]0)[/dim] New session")
@@ -97,27 +111,32 @@ def _pick_session(config, agent_name: str) -> Path:
         console.print(f"  [dim]{i})[/dim] {name}")
     console.print()
 
-    choice = click.prompt("Select session", type=int, default=0)
+    if agent_mode:
+        raw = _stdin_prompt("Select session", "0")
+        try:
+            choice = int(raw)
+        except ValueError:
+            choice = 0
+    else:
+        choice = click.prompt("Select session", type=int, default=0)
 
     if choice < 1 or choice > len(sessions):
-        return config.session_state_dir(agent_name, _new_session_name())
+        return config.session_state_dir(agent_name, _new_session_name(agent_mode))
 
     return config.session_state_dir(agent_name, sessions[choice - 1])
 
 
 @click.command()
 @click.argument("agent_path")
-@click.option("--agent-read", is_flag=True, help="Primordial Protocol pipe mode (NDJSON stdin/stdout)")
+@click.option("--agent", "agent_mode", is_flag=True, help="Host-agent mode (NDJSON conversation, no key prompts)")
 @click.option("--ref", default=None, help="Git ref (branch, tag, commit) for GitHub agents")
 @click.option("--refresh", is_flag=True, help="Force re-fetch of GitHub agent (ignore cache)")
-@click.option("--yes", "-y", is_flag=True, help="Skip approval prompt")
 @click.option("--session", "session_name", default=None, help="Session name to resume (skips prompt)")
 def run(
     agent_path: str,
-    agent_read: bool,
+    agent_mode: bool,
     ref: str | None,
     refresh: bool,
-    yes: bool,
     session_name: str | None,
 ):
     """Run an agent in a sandbox.
@@ -158,19 +177,21 @@ def run(
     # Session selection
     if session_name:
         state_dir = config.session_state_dir(manifest.name, session_name)
-    elif agent_read:
-        # Pipe mode — auto-create session
-        state_dir = config.session_state_dir(
-            manifest.name, datetime.now().strftime("%Y%m%d-%H%M%S")
-        )
     else:
-        state_dir = _pick_session(config, manifest.name)
+        state_dir = _pick_session(config, manifest.name, agent_mode)
 
     # Validate required API keys from manifest and prompt for missing ones
     vault = KeyVault(config.keys_file)
 
     # E2B key is always required for sandbox runtime
     if not vault.get_key("e2b"):
+        if agent_mode:
+            console.print(
+                "Missing API key: e2b (E2B_API_KEY)\n"
+                "Run: primordial keys add e2b\n"
+                "Sign up at https://e2b.dev/dashboard"
+            )
+            raise SystemExit(1)
         console.print(
             "\n[bold yellow]E2B API key required[/bold yellow]\n"
             "[dim]E2B is the sandbox provider that Primordial uses to run agents "
@@ -193,7 +214,15 @@ def run(
     for line in format_permissions_for_display(manifest, stored_providers=stored_providers):
         console.print(f"  {line}")
     console.print()
-    if not yes and not click.confirm("Approve and run?"):
+    if agent_mode:
+        # Plain stdin prompt — click.confirm requires a TTY
+        sys.stdout.write("Approve and run? [y/N]: ")
+        sys.stdout.flush()
+        answer = sys.stdin.readline().strip().lower()
+        if answer not in ("y", "yes"):
+            console.print("[dim]Aborted.[/dim]")
+            raise SystemExit(0)
+    elif not click.confirm("Approve and run?"):
         console.print("[dim]Aborted.[/dim]")
         raise SystemExit(0)
 
@@ -208,6 +237,13 @@ def run(
                     missing_optional.append(key_req)
 
         if missing_required:
+            if agent_mode:
+                console.print("Missing required API keys:")
+                for kr in missing_required:
+                    console.print(f"  - {kr.provider} ({kr.resolved_env_var()})")
+                    console.print(f"    Run: primordial keys add {kr.provider}")
+                raise SystemExit(1)
+
             console.print("[bold]Missing API keys[/bold]")
             for kr in missing_required:
                 console.print(f"  [red]✗[/red] {kr.provider} [dim]({kr.resolved_env_var()})[/dim]")
@@ -237,6 +273,10 @@ def run(
 
         api_key = vault.get_key(provider)
         if not api_key:
+            if agent_mode:
+                console.print(f"Missing required API key: {provider}")
+                console.print(f"Run: primordial keys add {provider}")
+                raise SystemExit(1)
             console.print(
                 f"\n[bold yellow]{provider.upper()} API key required[/bold yellow]\n"
                 f"[dim]This agent uses {provider} as its model provider.[/dim]\n"
@@ -269,8 +309,8 @@ def run(
     workspace = "."
     manager = SandboxManager()
 
-    if agent_read:
-        _run_json(manager, agent_dir, manifest, workspace, env_vars, state_dir)
+    if agent_mode:
+        _run_agent(manager, agent_dir, manifest, workspace, env_vars, state_dir)
     elif manifest.runtime.mode == "terminal":
         _run_terminal(manager, agent_dir, manifest, workspace, env_vars, state_dir)
     else:
@@ -677,7 +717,7 @@ def _run_chat(
         console.print("[dim]Session ended.[/dim]")
 
 
-def _run_json(
+def _run_agent(
     manager: SandboxManager,
     agent_dir: Path,
     manifest,

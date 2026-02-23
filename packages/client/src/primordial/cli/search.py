@@ -27,10 +27,10 @@ def _fetch_results(query: str | None) -> list[dict]:
 
 @click.command()
 @click.argument("query", required=False, default=None)
-@click.option("--json", "as_json", is_flag=True, help="Output results as JSON.")
-def search(query: str | None, as_json: bool = False):
+@click.option("--agent", "as_agent", is_flag=True, help="Output results as JSON for host agents.")
+def search(query: str | None, as_agent: bool = False):
     """Search for Primordial agents on GitHub."""
-    if as_json:
+    if as_agent:
         try:
             repos = _fetch_results(query)
         except httpx.HTTPError as e:
