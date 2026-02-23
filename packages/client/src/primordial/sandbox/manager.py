@@ -203,6 +203,8 @@ class SandboxManager:
         port = 9001
 
         for key_req in manifest.keys:
+            if key_req.passthrough:
+                continue  # passthrough keys bypass proxy entirely
             env_name = key_req.resolved_env_var()
             real_key = env_vars.get(env_name)
             if not real_key:
@@ -415,7 +417,7 @@ class SandboxManager:
                 _status("Running setup command...")
                 result = sandbox.commands.run(
                     f"cd {AGENT_DIR_IN_SANDBOX} && {manifest.runtime.setup_command}",
-                    timeout=600,
+                    timeout=6000,
                     user="user",
                 )
                 if result.exit_code != 0:
@@ -535,12 +537,28 @@ class SandboxManager:
                 _status("Running setup command...")
                 result = sandbox.commands.run(
                     f"cd {AGENT_DIR_IN_SANDBOX} && {manifest.runtime.setup_command}",
-                    timeout=600,
+                    timeout=6000,
                     user="user",
                 )
                 if result.exit_code != 0:
                     error_detail = (result.stderr or result.stdout or "")[:500]
                     raise SandboxError(f"Setup command failed: {error_detail}")
+
+            # Pre-configure Claude Code onboarding so it uses ANTHROPIC_API_KEY
+            # without prompting for login (only for claude-code agents)
+            if "claude" in (manifest.runtime.run_command or "").lower():
+                api_key_for_config = agent_envs.get("ANTHROPIC_API_KEY", "")
+                claude_config = json.dumps({
+                    "hasCompletedOnboarding": True,
+                    "primaryApiKey": api_key_for_config,
+                    "apiKeySource": "environment",
+                })
+                sandbox.commands.run(
+                    f"mkdir -p /home/user/.claude && "
+                    f"echo '{claude_config}' > /home/user/.claude.json && "
+                    f"chown user:user /home/user/.claude.json /home/user/.claude",
+                    user="root",
+                )
 
             _status("Starting terminal...")
 
@@ -551,6 +569,16 @@ class SandboxManager:
                 "DISABLE_AUTOUPDATER": "1",
                 "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
             }
+
+            # Pass through env vars declared in manifest with passthrough=true
+            for key_req in (manifest.keys or []):
+                if getattr(key_req, "passthrough", False):
+                    target_env = key_req.resolved_env_var()
+                    # Vault stores keys as <PROVIDER>_API_KEY
+                    vault_env = f"{key_req.provider.upper().replace('-', '_')}_API_KEY"
+                    val = env_vars.get(vault_env)
+                    if val:
+                        pty_envs[target_env] = val
 
             # Build the full command with inline env vars for reliable propagation
             run_cmd = manifest.runtime.run_command or "bash"
@@ -651,13 +679,13 @@ class AgentSession:
         })
         self._sandbox.commands.send_stdin(self._cmd_handle.pid, msg + "\n")
 
-    def receive(self, timeout: float = 60.0) -> Optional[dict[str, Any]]:
+    def receive(self, timeout: float = 600.0) -> Optional[dict[str, Any]]:
         try:
             return self._messages.get(timeout=timeout)
         except queue.Empty:
             return None
 
-    def wait_ready(self, timeout: float = 120.0) -> bool:
+    def wait_ready(self, timeout: float = 1200.0) -> bool:
         """Wait for the agent to send a ready signal, skipping non-ready messages."""
         import time
         deadline = time.monotonic() + timeout
@@ -1078,7 +1106,7 @@ class DelegationHandler:
                 on_status=_on_status,
             )
 
-            if not sub_session.wait_ready(timeout=120):
+            if not sub_session.wait_ready(timeout=1200):
                 sub_session.shutdown()
                 self._send_to_proxy({
                     "type": "error",
@@ -1137,7 +1165,7 @@ class DelegationHandler:
 
         # Stream events back until done
         while True:
-            event = session.receive(timeout=300)
+            event = session.receive(timeout=3000)
             if event is None:
                 self._send_to_proxy({
                     "type": "stream_event",

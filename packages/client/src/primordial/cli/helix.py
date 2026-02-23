@@ -40,8 +40,11 @@ def _cell_chars(r: int, total: int) -> tuple[str, str]:
     return ("│", "│")
 
 
-def _helix_frame(phase: float, morph: float = 0.0) -> list[Text]:
-    """Render one frame of the helix. morph (0-1) blends toward a circle."""
+def _helix_frame(phase: float, morph: float = 0.0, morph_style: str = "checklist") -> list[Text]:
+    """Render one frame of the helix. morph (0-1) blends toward a shape.
+
+    morph_style: "checklist" (square with checkmarks) or "smiley" (ellipse with face).
+    """
     morph = max(0.0, min(1.0, morph))
     lines = []
     for r in range(ROWS):
@@ -51,11 +54,17 @@ def _helix_frame(phase: float, morph: float = 0.0) -> list[Text]:
         hx2 = CENTER + math.sin(t + math.pi) * HALF
         hz1 = math.cos(t)
 
-        # Square target: fixed-width rectangle
-        cx1 = CENTER + HALF
-        cx2 = CENTER - HALF
+        if morph_style == "smiley":
+            # Ellipse target
+            angle = r * math.pi / max(ROWS - 1, 1)
+            cx1 = CENTER + math.sin(angle) * HALF
+            cx2 = CENTER - math.sin(angle) * HALF
+        else:
+            # Square target: fixed-width rectangle
+            cx1 = CENTER + HALF
+            cx2 = CENTER - HALF
 
-        # Lerp toward circle
+        # Lerp toward target
         x1 = int(round(hx1 + (cx1 - hx1) * morph))
         x2 = int(round(hx2 + (cx2 - hx2) * morph))
         # Depth flattens to front-facing as we morph
@@ -86,24 +95,41 @@ def _helix_frame(phase: float, morph: float = 0.0) -> list[Text]:
         rdx = dx2 if x1 < x2 else dx1
 
         if morph > 0.9:
-            lc, rc = _cell_chars(r, ROWS)
-            if 0 <= lx < width:
-                ch[lx] = lc
-            if 0 <= rx < width:
-                ch[rx] = rc
-            if r == 0 or r == ROWS - 1:
-                # Top/bottom border
-                for cx in range(lx + 1, min(rx, width)):
-                    ch[cx] = "─"
+            if morph_style == "smiley":
+                # Smiley face morph
+                if 0 <= lx < width:
+                    ch[lx] = "("
+                if 0 <= rx < width:
+                    ch[rx] = ")"
+                mid = (lx + rx) // 2
+                if r == 2:
+                    le = lx + (rx - lx) // 3
+                    re = rx - (rx - lx) // 3
+                    if 0 <= le < width:
+                        ch[le] = "o"
+                    if 0 <= re < width:
+                        ch[re] = "o"
+                elif r == 3:
+                    if 0 <= mid < width:
+                        ch[mid] = "‿"
             else:
-                # Checklist rows
-                mark_x = lx + 2
-                line_start = mark_x + 2
-                line_end = rx - 1
-                if 0 <= mark_x < width:
-                    ch[mark_x] = "✓" if r <= 3 else "·"
-                for cx in range(line_start, min(line_end, width)):
-                    ch[cx] = "─"
+                # Checklist morph
+                lc, rc = _cell_chars(r, ROWS)
+                if 0 <= lx < width:
+                    ch[lx] = lc
+                if 0 <= rx < width:
+                    ch[rx] = rc
+                if r == 0 or r == ROWS - 1:
+                    for cx in range(lx + 1, min(rx, width)):
+                        ch[cx] = "─"
+                else:
+                    mark_x = lx + 2
+                    line_start = mark_x + 2
+                    line_end = rx - 1
+                    if 0 <= mark_x < width:
+                        ch[mark_x] = "✓" if r <= 3 else "·"
+                    for cx in range(line_start, min(line_end, width)):
+                        ch[cx] = "─"
         else:
             if 0 <= lx < width:
                 ch[lx] = _strand_char(ldx, lz)
@@ -112,15 +138,27 @@ def _helix_frame(phase: float, morph: float = 0.0) -> list[Text]:
 
         ln = Text("".join(ch))
 
-        if morph > 0.9 and 1 <= r <= ROWS - 2:
-            mark_x = lx + 2
-            line_start = mark_x + 2
-            line_end = rx - 1
-            if 0 <= mark_x < width:
-                style = "bold bright_green" if r <= 3 else "dim cyan"
-                ln.stylize(style, mark_x, mark_x + 1)
-            if line_start < min(line_end, width):
-                ln.stylize("dim", line_start, min(line_end, width))
+        if morph > 0.9:
+            if morph_style == "smiley":
+                if r == 2:
+                    le = lx + (rx - lx) // 3
+                    re = rx - (rx - lx) // 3
+                    for ep in (le, re):
+                        if 0 <= ep < width:
+                            ln.stylize("bold bright_cyan", ep, ep + 1)
+                elif r == 3:
+                    mid = (lx + rx) // 2
+                    if 0 <= mid < width:
+                        ln.stylize("bold bright_cyan", mid, mid + 1)
+            elif 1 <= r <= ROWS - 2:
+                mark_x = lx + 2
+                line_start = mark_x + 2
+                line_end = rx - 1
+                if 0 <= mark_x < width:
+                    style = "bold bright_green" if r <= 3 else "dim cyan"
+                    ln.stylize(style, mark_x, mark_x + 1)
+                if line_start < min(line_end, width):
+                    ln.stylize("dim", line_start, min(line_end, width))
 
         for pos, z, c in [(lx, lz, "green"), (rx, rz, "cyan")]:
             if 0 <= pos < width:
@@ -205,7 +243,7 @@ class HelixSpinner:
         phase = self._frame_count * 0.18
         for f in range(morph_frames + hold_frames):
             morph = min(1.0, f / morph_frames)
-            helix = _helix_frame(phase + f * 0.18, morph=morph)
+            helix = _helix_frame(phase + f * 0.18, morph=morph, morph_style="smiley")
             banner = _build_banner(helix)
             parts: list = [banner, Text("")]
             parts.extend(completed)

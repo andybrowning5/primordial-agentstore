@@ -91,9 +91,10 @@ class KeyRequirement(BaseModel):
     provider: str
     env_var: Optional[str] = None  # auto-derived as <PROVIDER>_API_KEY if omitted
     required: bool = True
-    domain: str                          # API domain, e.g. "api.anthropic.com"
+    domain: str = ""                     # API domain, e.g. "api.anthropic.com"
     auth_style: str = "bearer"           # "bearer" or "x-api-key"
     base_url_env: Optional[str] = None   # env var for base URL override
+    passthrough: bool = False            # pass directly to agent env, skip proxy
 
     @field_validator("provider")
     @classmethod
@@ -114,6 +115,8 @@ class KeyRequirement(BaseModel):
     @field_validator("domain")
     @classmethod
     def validate_domain(cls, v: str) -> str:
+        if not v:
+            return v  # empty domain allowed for passthrough keys
         if not _DOMAIN_RE.match(v):
             raise ValueError(f"Invalid domain: {v!r} (must be a valid FQDN with at least one dot)")
         if not _DOMAIN_HAS_LETTER.search(v):
