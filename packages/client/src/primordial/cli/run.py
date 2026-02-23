@@ -1,6 +1,7 @@
 """CLI command for running agents."""
 
 import json
+import math
 import os
 import select
 import subprocess
@@ -273,60 +274,147 @@ def run(
         _run_chat(manager, agent_dir, manifest, workspace, env_vars, state_dir)
 
 
-_MINI_HELIX_FRAMES = [
-    "  ╭─╮  ",
-    "  ├┬╯  ",
-    "  ╵╰╴  ",
-    "  ╭─╮  ",
-    "  ├─┤  ",
-    "  ╵ ╵  ",
-]
+_MINI_ROWS = 3
+_MINI_HALF = 3
+_MINI_CENTER = 4
+_MINI_WIDTH = _MINI_CENTER * 2 + 2
+_MINI_SPINNER = "/-\\|"
+
+
+def _mini_strand_char(dx: float, z: float) -> str:
+    """Pick strand character based on visual slope and depth."""
+    if abs(dx) < 0.12:
+        return "|" if z > 0 else ":"
+    if dx > 0:
+        return "\\" if z > -0.2 else "."
+    return "/" if z > -0.2 else "."
+
+
+def _mini_helix_frame(phase: float) -> list[Text]:
+    """Render one frame of a mini double helix (3 rows)."""
+    from rich.text import Text
+    lines = []
+    for r in range(_MINI_ROWS):
+        t = r * 0.7 + phase
+        hx1 = _MINI_CENTER + math.sin(t) * _MINI_HALF
+        hx2 = _MINI_CENTER + math.sin(t + math.pi) * _MINI_HALF
+        hz1 = math.cos(t)
+
+        x1 = int(round(hx1))
+        x2 = int(round(hx2))
+
+        dx1, dx2 = hz1 * 0.55, -hz1 * 0.55
+        ch = [" "] * _MINI_WIDTH
+
+        if abs(x1 - x2) <= 1:
+            cx = min(x1, x2)
+            if 0 <= cx < _MINI_WIDTH:
+                front_dx = dx1 if hz1 > 0 else dx2
+                ch[cx] = _mini_strand_char(front_dx, 0.5)
+            ln = Text("".join(ch))
+            if 0 <= cx < _MINI_WIDTH:
+                ln.stylize("bright_green", cx, cx + 1)
+            lines.append(ln)
+            continue
+
+        lx, rx = (x1, x2) if x1 < x2 else (x2, x1)
+        lz = hz1 if x1 < x2 else -hz1
+        rz = -hz1 if x1 < x2 else hz1
+        ldx = dx1 if x1 < x2 else dx2
+        rdx = dx2 if x1 < x2 else dx1
+
+        if 0 <= lx < _MINI_WIDTH:
+            ch[lx] = _mini_strand_char(ldx, lz)
+        if 0 <= rx < _MINI_WIDTH:
+            ch[rx] = _mini_strand_char(rdx, rz)
+
+        ln = Text("".join(ch))
+        for pos, z, c in [(lx, lz, "green"), (rx, rz, "cyan")]:
+            if 0 <= pos < _MINI_WIDTH:
+                if z > 0.2:
+                    ln.stylize(f"bold bright_{c}", pos, pos + 1)
+                elif z > -0.2:
+                    ln.stylize(c, pos, pos + 1)
+                else:
+                    ln.stylize(f"dim {c}", pos, pos + 1)
+        lines.append(ln)
+    return lines
 
 
 def _show_sub_spawn(console: Console, session, sid: str, first_status: str) -> None:
-    """Show a mini spawn animation while sub-agent setup events stream in.
-
-    Consumes sub:setup activity events from the session until a non-setup
-    event arrives (which is put back for the caller to handle).
-    """
-    import math
+    """Show a mini helix animation while sub-agent setup events stream in."""
     import time
+    from rich.console import Group
     from rich.live import Live
     from rich.text import Text
 
-    statuses = [first_status]
+    current_status = first_status
+    completed: list[Text] = []
     start_time = time.monotonic()
+    phase_start = time.monotonic()
 
-    def _render() -> Text:
+    def _render(frame: int) -> Group:
         elapsed = time.monotonic() - start_time
-        # Mini helix frame
-        idx = int(elapsed * 4) % len(_MINI_HELIX_FRAMES)
-        frame = _MINI_HELIX_FRAMES[idx]
-        current = statuses[-1] if statuses else ""
-        t = Text()
-        t.append(f"      ", style="")
-        t.append(frame, style="bold bright_cyan")
-        t.append(f" {current}", style="yellow")
-        return t
+        helix_lines = _mini_helix_frame(frame * 0.2)
 
-    with Live(_render(), console=console, refresh_per_second=8, transient=True) as live:
-        while True:
-            msg = session.receive(timeout=0.15)
-            if msg is None:
-                live.update(_render())
-                continue
+        parts: list = []
+        # Header with mini helix beside the label
+        header = Text()
+        header.append("      ")
+        header.append("Spawning sub-agent", style="bold yellow")
+        parts.append(header)
 
-            msg_type = msg.get("type")
-            tool = msg.get("tool", "")
-
-            if msg_type == "activity" and tool == "sub:setup":
-                desc = msg.get("description", "")
-                statuses.append(desc)
-                live.update(_render())
+        # Helix + status lines side by side
+        phase_elapsed = time.monotonic() - phase_start
+        sp = _MINI_SPINNER[frame % len(_MINI_SPINNER)]
+        for i in range(_MINI_ROWS):
+            row = Text()
+            row.append("      ")
+            if i < len(helix_lines):
+                row.append_text(helix_lines[i])
             else:
-                # Non-setup event — put it back on the queue and exit
-                session._messages.put(msg)
-                break
+                row.append(" " * _MINI_WIDTH)
+            # Show completed + current status beside helix
+            ci = i + len(completed) - max(0, len(completed) - _MINI_ROWS + 1)
+            if i < len(completed):
+                row.append("  ")
+                row.append_text(completed[i])
+            elif i == len(completed):
+                row.append(f"  {sp} ", style="cyan")
+                row.append(current_status, style="dim")
+                row.append(f" ({phase_elapsed:.1f}s)", style="dim bold")
+            parts.append(row)
+
+        return Group(*parts)
+
+    frame = 0
+    with Live(_render(frame), console=console, refresh_per_second=12, transient=True) as live:
+        while True:
+            msg = session.receive(timeout=0.08)
+            if msg is not None:
+                msg_type = msg.get("type")
+                tool = msg.get("tool", "")
+
+                if msg_type == "activity" and tool == "sub:setup":
+                    # Finish current phase
+                    phase_elapsed = time.monotonic() - phase_start
+                    done_line = Text()
+                    done_line.append("+ ", style="green")
+                    done_line.append(current_status, style="dim")
+                    done_line.append(f" ({phase_elapsed:.1f}s)", style="dim")
+                    completed.append(done_line)
+                    # Trim to keep display compact
+                    if len(completed) > _MINI_ROWS:
+                        completed.pop(0)
+                    current_status = msg.get("description", "")
+                    phase_start = time.monotonic()
+                else:
+                    # Non-setup event — put it back and exit
+                    session._messages.put(msg)
+                    break
+
+            frame += 1
+            live.update(_render(frame))
 
     # Print the final summary
     elapsed = time.monotonic() - start_time
