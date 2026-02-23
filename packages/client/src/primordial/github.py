@@ -204,7 +204,6 @@ class GitHubResolver:
 
     # --- internal ---
 
-    @staticmethod
     def _log(self, msg: str) -> None:
         """Print a status message. Imported lazily to avoid circular deps."""
         if not self._quiet:
