@@ -51,8 +51,8 @@ def read_line(sock, buf=b""):
 def emit_activity(tool, description):
     """Emit a Primordial Protocol activity event to stdout.
 
-    The agentstore adapter picks these up and forwards them to the
-    parent TUI for real-time progress display.
+    The calling process is expected to intercept these JSON lines and
+    forward them to the agent's real stdout for TUI display.
     """
     sys.stdout.write(json.dumps({
         "type": "activity",
