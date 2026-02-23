@@ -729,7 +729,10 @@ class TerminalSession:
         self._on_data = on_data
         self._alive = True
 
-        # Drive PTY events in background, forwarding output via on_data
+        self._wait_thread: Optional[threading.Thread] = None
+
+    def start_output(self) -> None:
+        """Start forwarding PTY output. Call after setup UI is cleared."""
         self._wait_thread = threading.Thread(target=self._drive_pty, daemon=True)
         self._wait_thread.start()
 
