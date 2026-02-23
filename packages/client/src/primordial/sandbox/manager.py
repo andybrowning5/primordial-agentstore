@@ -23,14 +23,10 @@ _PROXY_SCRIPT = Path(__file__).parent / "proxy_script.py"
 _PROXY_PATH_IN_SANDBOX = "/opt/_primordial_proxy.py"
 _DELEGATION_PROXY_SCRIPT = Path(__file__).parent / "delegation_proxy.py"
 _DELEGATION_PROXY_PATH = "/opt/_primordial_delegation.py"
-_DELEGATE_CLI_SCRIPT = Path(__file__).parent / "delegate_cli.py"
-_DELEGATE_CLI_PATH = "/usr/local/bin/delegate"
 
 AGENT_HOME_IN_SANDBOX = "/home/user"
 AGENT_DIR_IN_SANDBOX = "/home/user/agent"
 WORKSPACE_DIR_IN_SANDBOX = "/home/user/workspace"
-SKILL_FILE = Path(__file__).parent / "skill.md"
-SKILL_DEST = f"{AGENT_DIR_IN_SANDBOX}/skill.md"
 # SECURITY: Allowlist for state persistence. Only these subdirectories
 # of the agent home are saved/restored between sessions. Everything else
 # (dotfiles, .config, .local, .ssh, etc.) is excluded by default.
@@ -123,18 +119,6 @@ class SandboxManager:
         tmp_name = f"/tmp/_upload_{secrets.token_hex(8)}.tar.gz"
         sandbox.files.write(tmp_name, buf)
         sandbox.commands.run(f"mkdir -p {remote_dir} && tar xzf {tmp_name} -C {remote_dir} && rm {tmp_name}")
-
-    def _upload_skill(self, sandbox: Sandbox) -> None:
-        """Upload the built-in skill.md into the sandbox.
-
-        Placed in both agent dir and workspace so any agent's file tools
-        can discover it regardless of their allowed directory.
-        """
-        if not SKILL_FILE.exists():
-            return
-        content = SKILL_FILE.read_text()
-        sandbox.files.write(SKILL_DEST, content)
-        sandbox.files.write(f"{WORKSPACE_DIR_IN_SANDBOX}/skill.md", content)
 
     def _restore_state(self, sandbox: Sandbox, state_dir: Path) -> None:
         """Restore agent's home directory state from a previous run."""
@@ -333,14 +317,6 @@ class SandboxManager:
         )
         sandbox.commands.run(f"chmod 700 {_DELEGATION_PROXY_PATH}", user="root")
 
-        # Upload delegate CLI (user-executable)
-        if _DELEGATE_CLI_SCRIPT.exists():
-            sandbox.files.write(
-                _DELEGATE_CLI_PATH,
-                _DELEGATE_CLI_SCRIPT.read_text(),
-            )
-            sandbox.commands.run(f"chmod 755 {_DELEGATE_CLI_PATH}", user="root")
-
         # Start delegation proxy as root
         deleg_handle = sandbox.commands.run(
             f"python3 {_DELEGATION_PROXY_PATH}",
@@ -407,8 +383,6 @@ class SandboxManager:
             self._upload_directory(sandbox, agent_dir, AGENT_DIR_IN_SANDBOX)
 
             sandbox.commands.run(f"mkdir -p {WORKSPACE_DIR_IN_SANDBOX}")
-
-            self._upload_skill(sandbox)
 
             if state_dir:
                 _status("Restoring state...")
@@ -520,7 +494,6 @@ class AgentSession:
         self._proxy_pid = proxy_pid
         self._delegation_handler = delegation_handler
         self._alive = True
-        self._first_message = True
 
         # Drive the event loop in a background thread — this is what
         # delivers stdout/stderr data from the E2B command handle.
@@ -546,16 +519,7 @@ class AgentSession:
     def stderr(self) -> str:
         return "".join(self._stderr_lines)
 
-    _DELEGATION_HINT = (
-        "[You have agent delegation capabilities. "
-        "Use the `delegate` CLI to search for and spawn sub-agents. "
-        "Run `delegate --help` for usage, or read skill.md for details.]"
-    )
-
     def send_message(self, content: str, message_id: str) -> None:
-        if self._first_message and self._delegation_handler:
-            content = f"{self._DELEGATION_HINT}\n\n{content}"
-            self._first_message = False
         msg = json.dumps({
             "type": "message", "content": content, "message_id": message_id,
         })
