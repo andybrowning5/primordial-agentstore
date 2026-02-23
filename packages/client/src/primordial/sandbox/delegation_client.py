@@ -87,7 +87,22 @@ def search_all() -> list[dict[str, Any]]:
     return resp.get("agents", [])
 
 
-def run_agent(agent_url: str) -> str:
+def run_agent_stream(agent_url: str) -> Iterator[dict]:
+    """Spawn a sub-agent and stream setup status events.
+
+    Yields setup_status events as the sandbox is created, then a final
+    session event with the session_id.
+
+    Args:
+        agent_url: GitHub URL of the agent to run.
+
+    Yields:
+        Event dicts: setup_status (status updates) and session (final).
+    """
+    yield from _request_stream({"type": "run", "agent_url": agent_url})
+
+
+def run_agent(agent_url: str, on_status: Any = None) -> str:
     """Spawn a sub-agent and return a session ID for multi-turn conversation.
 
     The sub-agent runs in its own isolated sandbox with its own permissions.
@@ -95,6 +110,7 @@ def run_agent(agent_url: str) -> str:
 
     Args:
         agent_url: GitHub URL of the agent to run.
+        on_status: Optional callback(dict) for setup status events.
 
     Returns:
         Session ID string for use with message_agent/monitor_agent/stop_agent.
@@ -102,10 +118,15 @@ def run_agent(agent_url: str) -> str:
     Raises:
         RuntimeError: If the agent fails to start.
     """
-    resp = _request({"type": "run", "agent_url": agent_url})
-    if resp.get("type") == "error":
-        raise RuntimeError(resp.get("error", "Failed to start agent"))
-    return resp.get("session_id", "")
+    for event in run_agent_stream(agent_url):
+        evt_type = event.get("type", "")
+        if evt_type == "setup_status" and on_status:
+            on_status(event)
+        elif evt_type == "session":
+            return event.get("session_id", "")
+        elif evt_type == "error":
+            raise RuntimeError(event.get("error", "Failed to start agent"))
+    raise RuntimeError("No session ID received")
 
 
 def message_agent(session_id: str, content: str) -> dict[str, Any]:

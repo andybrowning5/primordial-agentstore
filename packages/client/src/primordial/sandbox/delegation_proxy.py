@@ -96,11 +96,11 @@ def main():
                         conn.sendall((json.dumps(msg) + "\n").encode())
                     except (BrokenPipeError, OSError):
                         pass
-                    # For streaming (message command), keep connection open
-                    # until done:true or non-streaming response
+                    # For streaming commands, keep connection open until
+                    # the final response arrives
                     msg_type = msg.get("type", "")
                     is_stream_end = (
-                        msg_type != "stream_event"
+                        msg_type not in ("stream_event", "setup_status")
                         or msg.get("done", False)
                     )
                     if is_stream_end:
@@ -171,9 +171,9 @@ def main():
                         # Forward to host
                         _send_to_host(msg)
 
-                        # For streaming commands (message), wait for done
+                        # For streaming commands, wait for done
                         # For non-streaming, the host_reader will clean up
-                        if cmd == "message":
+                        if cmd in ("message", "run"):
                             # Block until this request is fulfilled
                             while True:
                                 with pending_lock:

@@ -863,13 +863,34 @@ class DelegationHandler:
             sub_providers.append("e2b")  # Always needed for sandbox creation
             sub_env_vars = vault.get_env_vars(providers=sub_providers)
 
-            # Create sub-agent sandbox
+            # Send agent info before setup begins
+            display = sub_manifest.display_name or sub_manifest.name
+            version = sub_manifest.version or ""
+            self._send_to_proxy({
+                "type": "setup_status",
+                "session_id": session_id,
+                "agent_name": display,
+                "agent_version": version,
+                "status": f"{display} v{version}" if version else display,
+                "request_id": req_id,
+            })
+
+            # Create sub-agent sandbox with status forwarding
+            def _on_status(status: str) -> None:
+                self._send_to_proxy({
+                    "type": "setup_status",
+                    "session_id": session_id,
+                    "status": status,
+                    "request_id": req_id,
+                })
+
             sub_session = self._manager.run_agent(
                 agent_dir=agent_dir,
                 manifest=sub_manifest,
                 workspace=Path("."),
                 env_vars=sub_env_vars,
                 state_dir=sub_state_dir,
+                on_status=_on_status,
             )
 
             if not sub_session.wait_ready(timeout=120):
