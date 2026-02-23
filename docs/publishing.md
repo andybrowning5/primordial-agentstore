@@ -82,6 +82,78 @@ Use semver in your manifest `version` field. Users see this when they run your a
 - **Minor** (0.2.0) — new features, backward compatible
 - **Major** (1.0.0) — breaking changes
 
+## Developer Checklist
+
+Complete every item before publishing. Each section links to the relevant doc for details.
+
+### Repository Setup
+
+- [ ] Code is in a **public GitHub repository**
+- [ ] `primordial-agent` **topic** added to the repo (`gh repo edit --add-topic primordial-agent`)
+- [ ] **README.md** includes: what the agent does, required API keys, usage command, example conversation
+
+### Manifest (`agent.yaml`)
+
+- [ ] File exists at **repo root**
+- [ ] `name` — lowercase + hyphens only, 3–40 chars, matches `^[a-z][a-z0-9-]*$`
+- [ ] `display_name` — human-readable name
+- [ ] `version` — valid semver (e.g., `0.1.0`)
+- [ ] `description` — clear and informative (written for humans AND AI callers)
+- [ ] `author.name` filled in (and ideally `author.github`)
+
+See [Agent Manifest](agent-manifest.md) for the full field reference.
+
+### Runtime
+
+- [ ] `runtime.run_command` set — uses `python -u` for Python (unbuffered stdout is **required**)
+- [ ] `runtime.setup_command` installs all deps (e.g., `pip install -r requirements.txt`)
+- [ ] `runtime.dependencies` points to an existing file (`requirements.txt`, `package.json`, etc.)
+- [ ] `runtime.e2b_template` is `"base"` (no other value allowed)
+- [ ] `runtime.resources` — memory/CPU limits are reasonable (defaults: 2GB / 2 CPU)
+
+### API Keys
+
+- [ ] Every API key declared in `keys` with `provider`, `domain`, and `auth_style`
+- [ ] `provider` matches `^[a-z][a-z0-9-]*$` (no underscores)
+- [ ] `domain` is a valid FQDN (not an IP address or `localhost`)
+- [ ] `auth_style` is correct for each API (`bearer`, `x-api-key`, `x-subscription-token`, or custom header)
+- [ ] `env_var` / `base_url_env` don't collide with protected system variables (`PATH`, `HOME`, `SHELL`, etc.)
+- [ ] Agent code reads `<PROVIDER>_BASE_URL` env var for all HTTP calls (required for proxy routing)
+
+See [Setting Up APIs](api-setup.md) for proxy and key vault details.
+
+### Permissions
+
+- [ ] Every outbound domain listed in `permissions.network` with a `reason`
+- [ ] `permissions.filesystem.workspace` set to minimum needed (`readonly` if possible, `none` if no file I/O)
+- [ ] `permissions.delegation.enabled` is only `true` if the agent spawns sub-agents
+- [ ] `network_unrestricted` is `false` unless absolutely necessary
+
+### Protocol Compliance
+
+- [ ] Agent sends `{"type": "ready"}` on stdout **before** reading stdin
+- [ ] Every inbound `message` gets a response with matching `message_id` and `done: true`
+- [ ] Agent handles `{"type": "shutdown"}` gracefully (cleanup and exit)
+- [ ] **All debug/log output goes to stderr** — stdout is protocol-only
+- [ ] Streaming responses use `"done": false` for intermediate chunks, `"done": true` for the final chunk
+
+See [Primordial Protocol](primordial-protocol.md) for the full message spec.
+
+### Persistence (if applicable)
+
+- [ ] Persistent data written only to allowed directories: `workspace/`, `data/`, `output/`, `state/`
+- [ ] No reliance on dotfiles, `/tmp/`, or package caches (wiped between sessions)
+
+### Testing
+
+- [ ] **Local run** passes: `primordial run ./my-agent`
+- [ ] **Remote run** passes: `primordial run https://github.com/you/my-agent`
+- [ ] **Fresh session** test passes: `primordial cache clear --all` then run again (catches missing deps)
+- [ ] **Discovery** works: `primordial search` shows your agent
+- [ ] Agent handles edge cases: empty input, malformed JSON, rapid successive messages
+
+---
+
 ## Tips
 
 - Keep `description` informative — it's shown in `primordial search` results and used by other agents for delegation decisions
