@@ -10,11 +10,7 @@ If `primordial` is not installed, install it:
 pip install primordial-agentstore
 ```
 
-Then configure at least one API key (agents need these to run):
-
-```bash
-primordial setup
-```
+No additional setup is needed — when you run an agent, Primordial will automatically prompt for any missing API keys.
 
 ### Per-agent setup
 
