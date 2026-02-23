@@ -28,7 +28,7 @@ AGENT_HOME_IN_SANDBOX = "/home/user"
 AGENT_DIR_IN_SANDBOX = "/home/user/agent"
 WORKSPACE_DIR_IN_SANDBOX = "/home/user/workspace"
 SKILL_FILE = Path(__file__).parent / "skill.md"
-SKILL_DEST = "/home/user/skill.md"
+SKILL_DEST = f"{AGENT_DIR_IN_SANDBOX}/skill.md"
 # SECURITY: Allowlist for state persistence. Only these subdirectories
 # of the agent home are saved/restored between sessions. Everything else
 # (dotfiles, .config, .local, .ssh, etc.) is excluded by default.
@@ -532,7 +532,7 @@ class AgentSession:
 
     _DELEGATION_HINT = (
         "[You have agent delegation capabilities. "
-        "Read /home/user/skill.md for the NDJSON socket protocol "
+        f"Read {SKILL_DEST} for the NDJSON socket protocol "
         "to search, spawn, and message other agents.]"
     )
 
