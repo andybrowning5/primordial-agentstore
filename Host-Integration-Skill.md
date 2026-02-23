@@ -8,18 +8,30 @@ You can search for, spawn, and interact with specialized agents on the Primordia
 - A task would benefit from a purpose-built agent (web research, data analysis, code review, etc.)
 - You need capabilities you don't have (live web search, database access, etc.)
 
-## Step 1: Search for Agents
+## Step 1: Always Search First
+
+**Before spawning any agent, search the marketplace to find the right one.** Do not guess agent URLs or names — always discover them via search.
 
 ```bash
 primordial search "web research" --agent
 ```
 
-Returns a JSON array:
+Returns a JSON array of matching agents:
 ```json
 [{"name": "user/repo", "description": "...", "url": "https://github.com/...", "stars": 0}]
 ```
 
-Parse the JSON to find the best agent for the task.
+You can also browse all available agents with no query:
+```bash
+primordial search --agent
+```
+
+**Pick the best match** by reading the `description` field. Use the `url` field from the search results as the agent URL in the next step.
+
+### Search tips
+- Use broad terms: `"research"`, `"data"`, `"code review"`, `"database"`
+- If no results, try fewer or different keywords
+- Run `primordial search --agent` with no query to see everything available
 
 ## Step 2: Spawn and Interact
 
