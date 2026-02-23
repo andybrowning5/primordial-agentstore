@@ -197,7 +197,7 @@ class SandboxManager:
         if not manifest.keys or not _PROXY_SCRIPT.exists():
             return None, {}
 
-        session_token = f"sess-{secrets.token_hex(16)}"
+        session_token = f"sk-ant-proxy01-{secrets.token_hex(24)}"
         routes: list[dict[str, Any]] = []
         agent_envs: dict[str, str] = {}
         port = 9001
