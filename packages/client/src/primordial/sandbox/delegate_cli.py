@@ -48,6 +48,20 @@ def read_line(sock, buf=b""):
     return json.loads(line), buf
 
 
+def emit_activity(tool, description):
+    """Emit a Primordial Protocol activity event to stdout.
+
+    The agentstore adapter picks these up and forwards them to the
+    parent TUI for real-time progress display.
+    """
+    sys.stdout.write(json.dumps({
+        "type": "activity",
+        "tool": f"sub:{tool}",
+        "description": description,
+    }) + "\n")
+    sys.stdout.flush()
+
+
 def die(msg):
     print(f"Error: {msg}", file=sys.stderr)
     sys.exit(1)
@@ -84,7 +98,7 @@ def cmd_run(args):
     while True:
         msg, buf = read_line(sock, buf)
         if msg.get("type") == "setup_status":
-            print(msg.get("status", ""), file=sys.stderr)
+            emit_activity("setup", msg.get("status", ""))
         elif msg.get("type") == "session":
             print(msg["session_id"])
             break
@@ -113,9 +127,14 @@ def cmd_message(args):
         if event.get("type") == "activity":
             tool = event.get("tool", "")
             desc = event.get("description", "")
-            print(f"  [{tool}] {desc}", file=sys.stderr)
+            emit_activity(tool, desc)
         elif event.get("type") == "response" and event.get("done"):
-            print(event.get("content", ""))
+            content = event.get("content", "")
+            preview = content.replace("\n", " ")[:150].strip()
+            if len(content) > 150:
+                preview += "..."
+            emit_activity("response", preview)
+            print(content)
             break
         elif event.get("type") == "error":
             die(event.get("error", "unknown error"))
