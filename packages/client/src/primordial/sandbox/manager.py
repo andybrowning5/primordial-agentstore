@@ -1106,6 +1106,7 @@ class DelegationHandler:
                     for kr in missing:
                         key = click.prompt(
                             f"  Paste {kr.provider.upper()} API key ({kr.resolved_env_var()})",
+                            hide_input=True,
                         )
                         if key.strip():
                             vault.add_key(kr.provider, key.strip())
