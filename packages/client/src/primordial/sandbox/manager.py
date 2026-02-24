@@ -375,9 +375,12 @@ class SandboxManager:
             k: v for k, v in env_vars.items()
             if k in _SAFE_ENV_ALLOWLIST
         }
+        # 30 min timeout — delegation scenarios with nested sub-agents
+        # can take several minutes just for setup.
         sandbox = Sandbox.create(
             template=manifest.runtime.e2b_template,
             envs=safe_envs,
+            timeout=1800,
             **network_kwargs,
         )
 
@@ -503,9 +506,12 @@ class SandboxManager:
             k: v for k, v in env_vars.items()
             if k in _SAFE_ENV_ALLOWLIST
         }
+        # 30 min timeout — delegation scenarios with nested sub-agents
+        # can take several minutes just for setup.
         sandbox = Sandbox.create(
             template=manifest.runtime.e2b_template,
             envs=safe_envs,
+            timeout=1800,
             **network_kwargs,
         )
 
@@ -928,16 +934,20 @@ class DelegationHandler:
                     })
             except Exception as e:
                 logger.exception("Error handling delegation command %s", cmd)
-                self._send_to_proxy({
-                    "type": "error",
-                    "error": str(e),
-                    "request_id": req_id,
-                })
+                try:
+                    self._send_to_proxy({
+                        "type": "error",
+                        "error": str(e),
+                        "request_id": req_id,
+                    })
+                except Exception:
+                    logger.warning("Cannot send error to proxy (sandbox may have timed out)")
+                    return
 
     def _fetch_agents(self, query: str | None = None) -> list[dict]:
         """Fetch agents from GitHub API."""
         import httpx
-        topic_query = "topic:primordial-agent-test"
+        topic_query = "topic:primordial-agent"
         q = f"{topic_query} {query}" if query else topic_query
         resp = httpx.get(
             "https://api.github.com/search/repositories",

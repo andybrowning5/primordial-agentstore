@@ -13,7 +13,7 @@ GITHUB_SEARCH_URL = "https://api.github.com/search/repositories"
 
 
 def _fetch_results(query: str | None) -> list[dict]:
-    topic_query = "topic:primordial-agent-test"
+    topic_query = "topic:primordial-agent"
     q = f"{topic_query} {query}" if query else topic_query
     resp = httpx.get(
         GITHUB_SEARCH_URL,
