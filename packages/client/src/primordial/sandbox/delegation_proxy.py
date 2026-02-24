@@ -104,7 +104,7 @@ def main():
     host_thread = threading.Thread(target=_host_reader, daemon=True)
     host_thread.start()
 
-    # Track request IDs
+    # Track request IDs (protected by pending_lock for thread safety)
     req_counter = 0
 
     while True:
@@ -146,12 +146,11 @@ def main():
                             )
                             continue
 
-                        # Assign request ID and register for response
-                        req_counter += 1
-                        req_id = f"req-{req_counter}"
-                        msg["request_id"] = req_id
-
+                        # Assign request ID and register for response (atomic)
                         with pending_lock:
+                            req_counter += 1
+                            req_id = f"req-{req_counter}"
+                            msg["request_id"] = req_id
                             pending[req_id] = client_conn
 
                         # Forward to host

@@ -900,11 +900,13 @@ class DelegationHandler:
             pass
 
     def _send_to_proxy(self, msg: dict) -> None:
-        """Write NDJSON response to the delegation proxy's stdin."""
-        self._sandbox.commands.send_stdin(
-            self._deleg_handle.pid,
-            json.dumps(msg) + "\n",
-        )
+        """Write NDJSON response to the delegation proxy's stdin (thread-safe)."""
+        line = json.dumps(msg) + "\n"
+        with self._lock:
+            self._sandbox.commands.send_stdin(
+                self._deleg_handle.pid,
+                line,
+            )
 
     def _handle_commands(self) -> None:
         """Process delegation commands from the queue."""
