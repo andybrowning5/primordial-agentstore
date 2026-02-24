@@ -1081,9 +1081,39 @@ class DelegationHandler:
 
             # Resolve sub-agent's API keys from the vault
             from primordial.security.key_vault import KeyVault
+            import click
             vault = KeyVault(config.keys_file)
             sub_providers = [kr.provider for kr in sub_manifest.keys] if sub_manifest.keys else []
             sub_providers.append("e2b")  # Always needed for sandbox creation
+
+            # Check for missing required keys and prompt the user
+            if sub_manifest.keys:
+                missing = [kr for kr in sub_manifest.keys if kr.required and not vault.get_key(kr.provider)]
+                if missing:
+                    from rich.console import Console
+                    console = Console()
+                    display = sub_manifest.display_name or sub_manifest.name
+                    console.print(f"\n[bold]Sub-agent [cyan]{display}[/cyan] requires API keys:[/bold]")
+                    for kr in missing:
+                        console.print(f"  [red]✗[/red] {kr.provider} [dim]({kr.resolved_env_var()})[/dim]")
+                    console.print()
+                    for kr in missing:
+                        key = click.prompt(
+                            f"  Enter {kr.provider.upper()} API key ({kr.resolved_env_var()})",
+                            hide_input=True,
+                        )
+                        if key.strip():
+                            vault.add_key(kr.provider, key.strip())
+                            console.print(f"  [dim]Stored {kr.provider}.[/dim]")
+                        else:
+                            self._send_to_proxy({
+                                "type": "error",
+                                "error": f"Missing required API key: {kr.provider}",
+                                "request_id": req_id,
+                            })
+                            return
+                    console.print()
+
             sub_env_vars = vault.get_env_vars(providers=sub_providers)
 
             # Send agent info before setup begins
