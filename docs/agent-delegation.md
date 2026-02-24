@@ -2,6 +2,74 @@
 
 Agents can discover, spawn, and interact with other agents on the Primordial AgentStore. Each sub-agent runs in its own isolated sandbox with its own permissions and API keys.
 
+## How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  HOST MACHINE                                                       │
+│                                                                     │
+│  ┌──────────────┐         ┌──────────────────────────────────────┐  │
+│  │  Key Vault   │         │  Primordial Client (host process)    │  │
+│  │ (encrypted)  │         │                                      │  │
+│  │              │         │  • Resolves API keys from vault       │  │
+│  │  anthropic ──┼────────▶│  • Manages sandbox lifecycles         │  │
+│  │  openai   ──┼────────▶│  • Routes NDJSON between sandboxes    │  │
+│  │  e2b      ──┼────────▶│  • Handles search (GitHub + FastEmbed)│  │
+│  │  ...        │         │                                      │  │
+│  └──────────────┘         └──────┬──────────────┬────────────────┘  │
+│                                  │              │                    │
+│                    ┌─────────────┘              └──────────┐        │
+│                    ▼                                       ▼        │
+│  ┌─────────────────────────────────┐ ┌─────────────────────────────┐│
+│  │  SANDBOX A (Firecracker microVM)│ │ SANDBOX B (Firecracker)     ││
+│  │  Parent Agent                   │ │ Sub-Agent                   ││
+│  │                                 │ │                             ││
+│  │  ┌───────────────────────────┐  │ │ ┌─────────────────────────┐ ││
+│  │  │ Agent Process (user)      │  │ │ │ Agent Process (user)    │ ││
+│  │  │                           │  │ │ │                         │ ││
+│  │  │ SDK calls ──────┐        │  │ │ │ API calls ──────┐      │ ││
+│  │  │                 ▼        │  │ │ │                 ▼      │ ││
+│  │  │  ┌─────────────────────┐ │  │ │ │  ┌──────────────────┐  │ ││
+│  │  │  │ Unix Socket         │ │  │ │ │  │ localhost:9001   │  │ ││
+│  │  │  │ /tmp/_primordial_   │ │  │ │ │  │ (proxy endpoint) │  │ ││
+│  │  │  │ delegate.sock       │ │  │ │ │  └────────┬─────────┘  │ ││
+│  │  │  └──────────┬──────────┘ │  │ │ │           │            │ ││
+│  │  └─────────────┼────────────┘  │ │ └───────────┼────────────┘ ││
+│  │                ▼               │ │             ▼              ││
+│  │  ┌───────────────────────────┐ │ │ ┌─────────────────────────┐││
+│  │  │ Delegation Proxy (root)   │ │ │ │ API Key Proxy (root)    │││
+│  │  │                           │ │ │ │                         │││
+│  │  │ • Validates commands      │ │ │ │ • Injects real API key  │││
+│  │  │ • Allowlist: search, run, │ │ │ │ • Forwards to real API  │││
+│  │  │   message, monitor, stop  │ │ │ │ • Strips key from resp  │││
+│  │  │ • Relays NDJSON to host   │ │ │ │ • Validates session tok │││
+│  │  └──────────┬────────────────┘ │ │ └────────────┬────────────┘││
+│  │             │ stdin/stdout      │ │              │ HTTPS       ││
+│  └─────────────┼──────────────────┘ └──────────────┼─────────────┘│
+│                │                                   │              │
+│                ▼                                   ▼              │
+│         Host Delegation                     api.anthropic.com     │
+│         Handler (routes                     api.openai.com        │
+│         commands to                         etc.                  │
+│         Sandbox B)                                                │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Concepts
+
+**Sandbox isolation:** Every agent (parent and sub-agent) runs in its own Firecracker microVM. They cannot access each other's filesystems, processes, or memory.
+
+**API key security:** Real API keys never enter the sandbox. The host resolves keys from the encrypted vault and passes them to a root-owned proxy process inside the sandbox. The agent process (running as `user`) talks to `localhost:9001` and sends a session token instead of a real key. The proxy swaps in the real key and forwards the request over HTTPS. Linux `hidepid=2` prevents the agent from reading the proxy's `/proc` entries.
+
+**Delegation flow:**
+1. Parent agent calls `run_agent("https://github.com/owner/repo")` via the SDK
+2. SDK connects to the Unix socket → delegation proxy (root) → host process via stdin/stdout
+3. Host process spins up a **new sandbox** for the sub-agent with its own manifest, permissions, and API key proxy
+4. Parent sends messages to the sub-agent through the same socket relay chain
+5. Sub-agent's responses stream back: sub-agent → its sandbox stdout → host → parent's delegation proxy → parent's Unix socket → parent's SDK
+
+**API key resolution for sub-agents:** When the host spawns a sub-agent sandbox, it reads the sub-agent's `agent.yaml` to determine which API keys it needs, resolves them from the user's key vault, and configures a fresh API key proxy inside the sub-agent's sandbox. The parent agent never sees the sub-agent's keys.
+
 ## Setup Checklist
 
 - [ ] Add `permissions.delegation.enabled: true` to your `agent.yaml`
@@ -152,7 +220,7 @@ Both SDKs include `emit_activity()` / `emitActivity()` helpers. The `message_id`
 - Sub-agent permissions come from **its own manifest**, not the parent's
 - A parent cannot override or escalate a sub-agent's permissions
 - API keys are resolved automatically and **scoped per-agent**
-- The delegation socket blocks `setup`, `keys`, `config`, and `cache` commands
+- The delegation socket only allows whitelisted commands (`search`, `run`, `message`, `monitor`, `stop`)
 
 ## API Reference
 

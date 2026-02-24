@@ -23,11 +23,6 @@ _ALLOWED_COMMANDS = {
     "stop",         # Shutdown a sub-agent
 }
 
-# Commands explicitly blocked — anything touching keys or host config
-_BLOCKED_COMMANDS = {
-    "setup", "keys", "config", "cache",
-}
-
 
 def _send_to_host(msg: dict) -> None:
     """Write NDJSON message to stdout (read by host-side handler)."""
@@ -141,15 +136,6 @@ def main():
                             continue
 
                         cmd = msg.get("type", "")
-
-                        if cmd in _BLOCKED_COMMANDS:
-                            client_conn.sendall(
-                                (json.dumps({
-                                    "type": "error",
-                                    "error": f"Command '{cmd}' is not available in delegation mode",
-                                }) + "\n").encode()
-                            )
-                            continue
 
                         if cmd not in _ALLOWED_COMMANDS:
                             client_conn.sendall(
