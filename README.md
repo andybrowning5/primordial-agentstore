@@ -29,6 +29,8 @@ pip install primordial-agentstore
 primordial search
 ```
 
+> **Troubleshooting:** If something isn't working, you may be on an older version. Run `pip install --upgrade primordial-agentstore` to update to the latest release.
+
 ---
 
 ## Prerequisites
