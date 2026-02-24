@@ -862,6 +862,8 @@ class DelegationHandler:
 
         # Serialize key prompts so only one thread prompts at a time
         self._input_lock = threading.Lock()
+        # True while a key prompt is visible — lets the TUI know to stay paused
+        self.input_active = False
 
     def start(self) -> None:
         """Start the delegation handler threads."""
@@ -1115,6 +1117,7 @@ class DelegationHandler:
                         if missing:
                             from rich.console import Console
                             console = Console()
+                            self.input_active = True
                             if self.on_input_needed:
                                 self.on_input_needed()
                             display = sub_manifest.display_name or sub_manifest.name
@@ -1131,6 +1134,7 @@ class DelegationHandler:
                                     vault.add_key(kr.provider, key.strip())
                                     console.print(f"  [dim]Stored {kr.provider}.[/dim]")
                                 else:
+                                    self.input_active = False
                                     if self.on_input_done:
                                         self.on_input_done()
                                     self._send_to_proxy({
@@ -1140,6 +1144,7 @@ class DelegationHandler:
                                     })
                                     return
                             console.print()
+                            self.input_active = False
                             if self.on_input_done:
                                 self.on_input_done()
 
