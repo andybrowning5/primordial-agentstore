@@ -930,12 +930,17 @@ class DelegationHandler:
                 elif cmd == "search_all":
                     self._handle_search_all(req_id)
                 elif cmd == "run":
-                    # Spawn in a separate thread so multiple agents can
-                    # be created concurrently.
-                    threading.Thread(
-                        target=self._handle_run, args=(msg, req_id),
-                        daemon=True,
-                    ).start()
+                    # Resolve manifest and ensure API keys are available
+                    # BEFORE spawning the thread.  This way all key prompts
+                    # happen sequentially on the command thread and the user
+                    # sees them before any sandbox setup begins.
+                    prepared = self._prepare_run(msg, req_id)
+                    if prepared is not None:
+                        threading.Thread(
+                            target=self._execute_run,
+                            args=(prepared, req_id),
+                            daemon=True,
+                        ).start()
                 elif cmd == "message":
                     self._handle_message(msg, req_id)
                 elif cmd == "monitor":
@@ -1046,8 +1051,13 @@ class DelegationHandler:
             "request_id": req_id,
         })
 
-    def _handle_run(self, msg: dict, req_id: str) -> None:
-        """Spawn a sub-agent and return a session ID."""
+    def _prepare_run(self, msg: dict, req_id: str) -> Optional[dict]:
+        """Resolve manifest, check API keys, and prompt if needed.
+
+        Runs on the command thread (serial) so all key prompts happen
+        before any sandbox starts spinning up.  Returns a prepared dict
+        with everything needed for _execute_run, or None on failure.
+        """
         agent_url = msg.get("agent_url", "")
         if not agent_url:
             self._send_to_proxy({
@@ -1055,22 +1065,19 @@ class DelegationHandler:
                 "error": "agent_url is required",
                 "request_id": req_id,
             })
-            return
+            return None
 
         # Validate against allowed_agents if set
         allowed = self._manifest.permissions.delegation.allowed_agents
         if allowed:
-            # Check if URL matches any allowed agent pattern
-            matched = any(
-                a in agent_url for a in allowed
-            )
+            matched = any(a in agent_url for a in allowed)
             if not matched:
                 self._send_to_proxy({
                     "type": "error",
                     "error": f"Agent not in allowed_agents list: {agent_url}",
                     "request_id": req_id,
                 })
-                return
+                return None
 
         try:
             # Resolve the agent (GitHub URL or local path)
@@ -1085,7 +1092,7 @@ class DelegationHandler:
                 agent_dir = Path(agent_url)
             sub_manifest = load_manifest(agent_dir)
 
-            # Generate session ID (thread-safe for concurrent spawns)
+            # Generate session ID
             with self._lock:
                 self._session_counter += 1
                 session_id = f"deleg-{self._session_counter}"
@@ -1096,60 +1103,86 @@ class DelegationHandler:
             config = get_config()
             sub_state_dir = config.session_state_dir(sub_manifest.name, session_name)
 
-            # Resolve sub-agent's API keys from the vault
+            # Check for missing required keys and prompt the user.
             from primordial.security.key_vault import KeyVault
             import click
             vault = KeyVault(config.keys_file)
             sub_providers = [kr.provider for kr in sub_manifest.keys] if sub_manifest.keys else []
             sub_providers.append("e2b")  # Always needed for sandbox creation
 
-            # Check for missing required keys and prompt the user.
-            # Use _input_lock to serialize prompts across concurrent spawns.
-            # Re-check the vault after acquiring the lock — another thread may
-            # have already stored the key we need.
             if sub_manifest.keys:
                 missing = [kr for kr in sub_manifest.keys if kr.required and not vault.get_key(kr.provider)]
                 if missing:
-                    with self._input_lock:
-                        # Re-check: another thread may have stored the key
-                        vault = KeyVault(config.keys_file)
-                        missing = [kr for kr in sub_manifest.keys if kr.required and not vault.get_key(kr.provider)]
-                        if missing:
-                            from rich.console import Console
-                            console = Console()
-                            self.input_active = True
-                            if self.on_input_needed:
-                                self.on_input_needed()
-                            display = sub_manifest.display_name or sub_manifest.name
-                            console.print(f"\n[bold yellow]Sub-agent [cyan]{display}[/cyan] needs API keys to continue:[/bold yellow]")
-                            for kr in missing:
-                                console.print(f"  [red]✗[/red] {kr.provider} [dim]({kr.resolved_env_var()})[/dim]")
-                            console.print()
-                            for kr in missing:
-                                key = click.prompt(
-                                    f"  Paste {kr.provider.upper()} API key ({kr.resolved_env_var()})",
-                                    hide_input=True,
-                                )
-                                if key.strip():
-                                    vault.add_key(kr.provider, key.strip())
-                                    console.print(f"  [dim]Stored {kr.provider}.[/dim]")
-                                else:
-                                    self.input_active = False
-                                    if self.on_input_done:
-                                        self.on_input_done()
-                                    self._send_to_proxy({
-                                        "type": "error",
-                                        "error": f"Missing required API key: {kr.provider}",
-                                        "request_id": req_id,
-                                    })
-                                    return
-                            console.print()
+                    from rich.console import Console
+                    console = Console()
+                    self.input_active = True
+                    if self.on_input_needed:
+                        self.on_input_needed()
+                    display = sub_manifest.display_name or sub_manifest.name
+                    console.print(f"\n[bold yellow]Sub-agent [cyan]{display}[/cyan] needs API keys to continue:[/bold yellow]")
+                    for kr in missing:
+                        console.print(f"  [red]✗[/red] {kr.provider} [dim]({kr.resolved_env_var()})[/dim]")
+                    console.print()
+                    for kr in missing:
+                        key = click.prompt(
+                            f"  Paste {kr.provider.upper()} API key ({kr.resolved_env_var()})",
+                            hide_input=True,
+                        )
+                        if key.strip():
+                            vault.add_key(kr.provider, key.strip())
+                            console.print(f"  [dim]Stored {kr.provider}.[/dim]")
+                        else:
                             self.input_active = False
                             if self.on_input_done:
                                 self.on_input_done()
+                            self._send_to_proxy({
+                                "type": "error",
+                                "error": f"Missing required API key: {kr.provider}",
+                                "request_id": req_id,
+                            })
+                            return None
+                    console.print()
+                    self.input_active = False
+                    if self.on_input_done:
+                        self.on_input_done()
 
             sub_env_vars = vault.get_env_vars(providers=sub_providers)
 
+            return {
+                "agent_url": agent_url,
+                "agent_dir": agent_dir,
+                "sub_manifest": sub_manifest,
+                "session_id": session_id,
+                "session_name": session_name,
+                "sub_state_dir": sub_state_dir,
+                "sub_env_vars": sub_env_vars,
+            }
+
+        except Exception as e:
+            import traceback as _tb
+            logger.error(f"Sub-agent prepare failed: {_tb.format_exc()}")
+            self._send_to_proxy({
+                "type": "error",
+                "error": f"Failed to prepare agent: {e}",
+                "request_id": req_id,
+            })
+            return None
+
+    def _execute_run(self, prepared: dict, req_id: str) -> None:
+        """Create the sandbox and start the sub-agent.
+
+        Runs in its own thread so multiple agents can spawn concurrently.
+        All key prompting has already been handled by _prepare_run.
+        """
+        agent_url = prepared["agent_url"]
+        agent_dir = prepared["agent_dir"]
+        sub_manifest = prepared["sub_manifest"]
+        session_id = prepared["session_id"]
+        session_name = prepared["session_name"]
+        sub_state_dir = prepared["sub_state_dir"]
+        sub_env_vars = prepared["sub_env_vars"]
+
+        try:
             # Send agent info before setup begins
             display = sub_manifest.display_name or sub_manifest.name
             version = sub_manifest.version or ""
@@ -1204,10 +1237,8 @@ class DelegationHandler:
             })
 
         except Exception as e:
-            import traceback
             import traceback as _tb
-            tb = _tb.format_exc()
-            logger.error(f"Sub-agent spawn failed: {tb}")
+            logger.error(f"Sub-agent spawn failed: {_tb.format_exc()}")
             self._send_to_proxy({
                 "type": "error",
                 "error": f"Failed to start agent: {e}",
