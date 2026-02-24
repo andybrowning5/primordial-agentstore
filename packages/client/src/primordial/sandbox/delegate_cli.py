@@ -48,17 +48,20 @@ def read_line(sock, buf=b""):
     return json.loads(line), buf
 
 
-def emit_activity(tool, description):
+def emit_activity(tool, description, session_id=None):
     """Emit a Primordial Protocol activity event to stdout.
 
     The calling process is expected to intercept these JSON lines and
     forward them to the agent's real stdout for TUI display.
     """
-    sys.stdout.write(json.dumps({
+    event = {
         "type": "activity",
         "tool": f"sub:{tool}",
         "description": description,
-    }) + "\n")
+    }
+    if session_id:
+        event["session_id"] = session_id
+    sys.stdout.write(json.dumps(event) + "\n")
     sys.stdout.flush()
 
 
@@ -95,11 +98,15 @@ def cmd_run(args):
     sock = connect()
     send(sock, {"type": "run", "agent_url": args[0]})
     buf = b""
+    session_id = None
     while True:
         msg, buf = read_line(sock, buf)
         if msg.get("type") == "setup_status":
-            emit_activity("setup", msg.get("status", ""))
+            session_id = msg.get("session_id", session_id)
+            emit_activity("setup", msg.get("status", ""), session_id=session_id)
         elif msg.get("type") == "session":
+            session_id = msg.get("session_id", session_id)
+            emit_activity("spawned", session_id or "", session_id=session_id)
             print(msg["session_id"])
             break
         elif msg.get("type") == "error":

@@ -923,7 +923,12 @@ class DelegationHandler:
                 elif cmd == "search_all":
                     self._handle_search_all(req_id)
                 elif cmd == "run":
-                    self._handle_run(msg, req_id)
+                    # Spawn in a separate thread so multiple agents can
+                    # be created concurrently.
+                    threading.Thread(
+                        target=self._handle_run, args=(msg, req_id),
+                        daemon=True,
+                    ).start()
                 elif cmd == "message":
                     self._handle_message(msg, req_id)
                 elif cmd == "monitor":
@@ -1073,9 +1078,10 @@ class DelegationHandler:
                 agent_dir = Path(agent_url)
             sub_manifest = load_manifest(agent_dir)
 
-            # Generate session ID
-            self._session_counter += 1
-            session_id = f"deleg-{self._session_counter}"
+            # Generate session ID (thread-safe for concurrent spawns)
+            with self._lock:
+                self._session_counter += 1
+                session_id = f"deleg-{self._session_counter}"
             session_name = f"sub-{secrets.token_hex(4)}"
 
             # Determine state dir for sub-agent

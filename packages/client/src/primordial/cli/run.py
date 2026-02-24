@@ -384,45 +384,60 @@ def _mini_helix_frame(phase: float) -> list[Text]:
 
 
 def _show_sub_spawn(console: Console, session, sid: str, first_status: str) -> None:
-    """Show a mini helix animation while sub-agent setup events stream in."""
+    """Show a mini helix animation while sub-agent setup events stream in.
+
+    Supports multiple concurrent spawns — if setup events arrive for different
+    session IDs, all are tracked and displayed together.
+    """
     import time
     from rich.console import Group
     from rich.live import Live
 
-    current_status = first_status
-    completed: list[Text] = []
-    start_time = time.monotonic()
-    phase_start = time.monotonic()
+    # Per-agent spawn state
+    class _SpawnState:
+        def __init__(self, sid: str, status: str):
+            self.sid = sid
+            self.status = status
+            self.start_time = time.monotonic()
+            self.phase_start = time.monotonic()
+            self.done = False
+            self.elapsed: float = 0.0
+
+    agents: dict[str, _SpawnState] = {sid: _SpawnState(sid, first_status)}
 
     def _render(frame: int) -> Group:
         helix_lines = _mini_helix_frame(frame * 0.2)
-
         parts: list = []
+
         # Header
+        n = sum(1 for a in agents.values() if not a.done)
+        label = "Spawning sub-agents" if len(agents) > 1 else "Spawning sub-agent"
         header = Text()
         header.append("      ")
-        header.append("Spawning sub-agent", style="bold yellow")
+        header.append(label, style="bold yellow")
+        if len(agents) > 1:
+            header.append(f" ({n} active)", style="dim yellow")
         parts.append(header)
 
-        # Build status lines: completed + current with live timer
-        phase_elapsed = time.monotonic() - phase_start
+        # Build status lines — one per agent
         sp = _MINI_SPINNER[frame % len(_MINI_SPINNER)]
-
         status_lines: list[Text] = []
-        for c in completed:
-            status_lines.append(c)
-        cur = Text()
-        cur.append(f"{sp} ", style="cyan")
-        cur.append(current_status, style="dim")
-        cur.append(f" ({phase_elapsed:.1f}s)", style="dim bold")
-        status_lines.append(cur)
-
-        # Show last N status lines to keep compact
-        max_visible = _MINI_ROWS
-        visible = status_lines[-max_visible:]
+        for st in agents.values():
+            line = Text()
+            if st.done:
+                line.append("  + ", style="green")
+                line.append(f"{st.sid}", style="green dim")
+                line.append(f": spawned in {st.elapsed:.1f}s", style="dim")
+            else:
+                elapsed = time.monotonic() - st.phase_start
+                line.append(f"  {sp} ", style="cyan")
+                line.append(f"{st.sid}", style="cyan")
+                line.append(f": {st.status}", style="dim")
+                line.append(f" ({elapsed:.1f}s)", style="dim bold")
+            status_lines.append(line)
 
         # Render helix rows alongside status lines
-        num_rows = max(_MINI_ROWS, len(visible))
+        num_rows = max(_MINI_ROWS, len(status_lines))
         for i in range(num_rows):
             row = Text()
             row.append("      ")
@@ -430,9 +445,8 @@ def _show_sub_spawn(console: Console, session, sid: str, first_status: str) -> N
                 row.append_text(helix_lines[i])
             else:
                 row.append(" " * _MINI_WIDTH)
-            if i < len(visible):
-                row.append("  ")
-                row.append_text(visible[i])
+            if i < len(status_lines):
+                row.append_text(status_lines[i])
             parts.append(row)
 
         return Group(*parts)
@@ -440,24 +454,29 @@ def _show_sub_spawn(console: Console, session, sid: str, first_status: str) -> N
     frame = 0
     with Live(_render(frame), console=console, refresh_per_second=12, transient=True) as live:
         while True:
+            # Check if all agents are done
+            if all(a.done for a in agents.values()):
+                break
+
             msg = session.receive(timeout=0.08)
             if msg is not None:
                 msg_type = msg.get("type")
                 tool = msg.get("tool", "")
+                msg_sid = msg.get("session_id", "")
 
                 if msg_type == "activity" and tool == "sub:setup":
-                    # Finish current phase
-                    phase_elapsed = time.monotonic() - phase_start
-                    done_line = Text()
-                    done_line.append("+ ", style="green")
-                    done_line.append(current_status, style="dim")
-                    done_line.append(f" ({phase_elapsed:.1f}s)", style="dim")
-                    completed.append(done_line)
-                    # Trim to keep display compact
-                    if len(completed) > _MINI_ROWS:
-                        completed.pop(0)
-                    current_status = msg.get("description", "")
-                    phase_start = time.monotonic()
+                    if msg_sid in agents:
+                        # Update existing agent's phase
+                        agents[msg_sid].status = msg.get("description", "")
+                        agents[msg_sid].phase_start = time.monotonic()
+                    else:
+                        # New concurrent spawn
+                        agents[msg_sid] = _SpawnState(msg_sid, msg.get("description", ""))
+                elif msg_type == "activity" and tool == "sub:spawned":
+                    # Agent finished spawning
+                    if msg_sid in agents:
+                        agents[msg_sid].done = True
+                        agents[msg_sid].elapsed = time.monotonic() - agents[msg_sid].start_time
                 else:
                     # Non-setup event — put it back and exit
                     session._messages.put(msg)
@@ -466,12 +485,17 @@ def _show_sub_spawn(console: Console, session, sid: str, first_status: str) -> N
             frame += 1
             live.update(_render(frame))
 
-    # Print the final summary
-    elapsed = time.monotonic() - start_time
-    label = sid if sid else "sub-agent"
-    console.print(
-        f"      [yellow]› {label}:[/yellow] [dim]spawned in {elapsed:.1f}s[/dim]"
-    )
+    # Print final summary for each agent
+    for st in agents.values():
+        if st.done:
+            console.print(
+                f"      [yellow]› {st.sid}:[/yellow] [dim]spawned in {st.elapsed:.1f}s[/dim]"
+            )
+        else:
+            elapsed = time.monotonic() - st.start_time
+            console.print(
+                f"      [yellow]› {st.sid}:[/yellow] [dim]spawned in {elapsed:.1f}s[/dim]"
+            )
 
 
 def _run_terminal(
