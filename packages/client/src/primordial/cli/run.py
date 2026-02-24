@@ -597,6 +597,18 @@ def _run_chat(
             session.shutdown()
             raise SystemExit(1)
 
+    # Wire up delegation handler callbacks to pause/resume the thinking spinner
+    _active_spinner = {"ref": None}
+    if hasattr(session, "_delegation_handler") and session._delegation_handler:
+        def _pause_spinner():
+            s = _active_spinner.get("ref")
+            if s:
+                s.stop()
+        def _resume_spinner():
+            pass  # spinner is re-created after each activity message
+        session._delegation_handler.on_input_needed = _pause_spinner
+        session._delegation_handler.on_input_done = _resume_spinner
+
     try:
         console.print(f"[dim]{manifest.display_name} ready[/dim]\n")
         msg_counter = 0
@@ -655,17 +667,20 @@ def _run_chat(
             accumulated_content = ""
             thinking = console.status("[dim]Thinking...[/dim]", spinner="flip")
             thinking.start()
+            _active_spinner["ref"] = thinking
 
             while True:
                 msg = session.receive(timeout=300)
                 if msg is None:
                     thinking.stop()
+                    _active_spinner["ref"] = None
                     console.print("[yellow]Response timed out.[/yellow]")
                     break
 
                 msg_type = msg.get("type")
                 if msg_type == "response":
                     thinking.stop()
+                    _active_spinner["ref"] = None
                     content = msg.get("content", "")
                     if content:
                         accumulated_content += content
@@ -680,6 +695,7 @@ def _run_chat(
                         break
                 elif msg_type == "activity":
                     thinking.stop()
+                    _active_spinner["ref"] = None
                     tool = msg.get("tool", "?")
                     desc = msg.get("description", "")
                     if tool == "sub:response":
@@ -700,8 +716,10 @@ def _run_chat(
                         console.print(f"  [dim]› {tool}: {desc}[/dim]")
                     thinking = console.status("[dim]Thinking...[/dim]", spinner="flip")
                     thinking.start()
+                    _active_spinner["ref"] = thinking
                 elif msg_type == "error":
                     thinking.stop()
+                    _active_spinner["ref"] = None
                     console.print(f"  [red]Error: {msg.get('error', 'Unknown')}[/red]")
                     break
 

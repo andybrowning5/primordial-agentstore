@@ -856,6 +856,10 @@ class DelegationHandler:
         # FastEmbed model (lazy-loaded)
         self._embed_model = None
 
+        # Callbacks for pausing/resuming host UI (e.g. spinners) during input
+        self.on_input_needed: Optional[Callable[[], None]] = None
+        self.on_input_done: Optional[Callable[[], None]] = None
+
     def start(self) -> None:
         """Start the delegation handler threads."""
         self._reader_thread = threading.Thread(
@@ -1092,20 +1096,23 @@ class DelegationHandler:
                 if missing:
                     from rich.console import Console
                     console = Console()
+                    if self.on_input_needed:
+                        self.on_input_needed()
                     display = sub_manifest.display_name or sub_manifest.name
-                    console.print(f"\n[bold]Sub-agent [cyan]{display}[/cyan] requires API keys:[/bold]")
+                    console.print(f"\n[bold yellow]Sub-agent [cyan]{display}[/cyan] needs API keys to continue:[/bold yellow]")
                     for kr in missing:
                         console.print(f"  [red]✗[/red] {kr.provider} [dim]({kr.resolved_env_var()})[/dim]")
                     console.print()
                     for kr in missing:
                         key = click.prompt(
-                            f"  Enter {kr.provider.upper()} API key ({kr.resolved_env_var()})",
-                            hide_input=True,
+                            f"  Paste {kr.provider.upper()} API key ({kr.resolved_env_var()})",
                         )
                         if key.strip():
                             vault.add_key(kr.provider, key.strip())
                             console.print(f"  [dim]Stored {kr.provider}.[/dim]")
                         else:
+                            if self.on_input_done:
+                                self.on_input_done()
                             self._send_to_proxy({
                                 "type": "error",
                                 "error": f"Missing required API key: {kr.provider}",
@@ -1113,6 +1120,8 @@ class DelegationHandler:
                             })
                             return
                     console.print()
+                    if self.on_input_done:
+                        self.on_input_done()
 
             sub_env_vars = vault.get_env_vars(providers=sub_providers)
 
