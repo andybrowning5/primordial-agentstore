@@ -1,82 +1,111 @@
-# Primordial AgentStore Skill
+# Primordial Delegation
 
-You are running inside a Primordial AgentStore sandbox. You can spin up other agents to help you with tasks using the `primordial` CLI, which is available in your environment.
+Agents can search for, spawn, and interact with other agents on the Primordial AgentStore. When delegation is enabled, a Unix socket at `/tmp/_primordial_delegate.sock` is available for agent-to-agent communication.
 
-## Running an Agent
+## SDKs
 
-```bash
-primordial run <agent> --agent-read --yes
-```
+### Python
 
-**Arguments:**
-
-- `<agent>` — A GitHub URL (`https://github.com/owner/repo`) or a local path to an agent directory containing an `agent.yaml`.
-- `--agent-read` — Communicate with the agent via the Primordial Protocol (NDJSON on stdin/stdout) instead of interactive mode.
-- `--yes`, `-y` — Skip the permission approval prompt (auto-approve).
-- `--ref` — Git ref (branch, tag, commit) when using a GitHub agent.
-
-## The Primordial Protocol
-
-When using `--agent-read`, communication happens over newline-delimited JSON (NDJSON):
-
-**Sending a message** (write to the agent's stdin):
-```json
-{"type": "message", "content": "Your task description here", "message_id": "msg-1"}
-```
-
-**Receiving responses** (read from the agent's stdout):
-```json
-{"type": "ready"}
-{"type": "response", "content": "Result text", "message_id": "msg-1", "done": true}
-{"type": "activity", "tool": "tool_name", "description": "Working on...", "message_id": "msg-1"}
-{"type": "error", "error": "Something went wrong", "message_id": "msg-1"}
-```
-
-**Shutting down** (write to stdin when done):
-```json
-{"type": "shutdown"}
-```
-
-## Example: Delegating to Another Agent
+Copy `primordial_delegate.py` into your agent. Stdlib-only, no dependencies.
 
 ```python
-import subprocess
-import json
+from primordial_delegate import search, run_agent, message_agent, stop_agent
 
-proc = subprocess.Popen(
-    ["primordial", "run", "https://github.com/owner/repo", "--agent-read", "--yes"],
-    stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
-)
+# Find an agent
+agents = search("web research")
+agent_url = agents[0]["url"]
 
-# Wait for ready
-for line in proc.stdout:
-    msg = json.loads(line.strip())
-    if msg["type"] == "ready":
-        break
+# Spawn it
+session_id = run_agent(agent_url, on_status=lambda e: print(e["status"]))
 
 # Send a task
-proc.stdin.write(json.dumps({
-    "type": "message",
-    "content": "Analyze the code in the workspace and summarize it.",
-    "message_id": "task-1",
-}) + "\n")
-proc.stdin.flush()
+result = message_agent(session_id, "Research recent AI breakthroughs")
+print(result["response"])
 
-# Collect responses
-for line in proc.stdout:
-    msg = json.loads(line.strip())
-    if msg.get("done"):
-        print(msg["content"])
-        break
-
-# Shutdown
-proc.stdin.write(json.dumps({"type": "shutdown"}) + "\n")
-proc.stdin.flush()
-proc.wait()
+# Clean up
+stop_agent(session_id)
 ```
+
+**Streaming variant:**
+```python
+from primordial_delegate import message_agent_stream
+
+for event in message_agent_stream(session_id, "Do research"):
+    inner = event.get("event", {})
+    if inner.get("type") == "activity":
+        print(f"  [{inner['tool']}] {inner['description']}")
+    elif inner.get("type") == "response" and inner.get("done"):
+        print(inner["content"])
+```
+
+### Node.js
+
+Copy `primordial_delegate.mjs` into your agent. Zero dependencies, uses built-in `net`.
+
+```javascript
+import { search, runAgent, messageAgent, stopAgent } from './primordial_delegate.mjs';
+
+const agents = await search("web research");
+const sessionId = await runAgent(agents[0].url, {
+  onStatus: (e) => console.log(e.status),
+});
+
+const result = await messageAgent(sessionId, "Research recent AI breakthroughs", {
+  onActivity: (tool, desc) => console.log(`  [${tool}] ${desc}`),
+});
+console.log(result.response);
+
+await stopAgent(sessionId);
+```
+
+### CLI (any language)
+
+The `delegate` CLI can be included in your agent for shell-based delegation.
+
+```bash
+delegate search "web research"
+SESSION_ID=$(delegate run https://github.com/owner/repo)
+delegate message $SESSION_ID "Research recent AI breakthroughs"
+delegate stop $SESSION_ID
+```
+
+## Activity Events
+
+To let the parent agent / TUI see sub-agent progress in real-time, emit activity events to stdout:
+
+```json
+{"type": "activity", "tool": "sub:search", "description": "searching the web...", "message_id": "msg-1"}
+```
+
+Both SDKs include an `emit_activity()` helper for this.
+
+## Manifest Configuration
+
+Enable delegation in your `agent.yaml`:
+
+```yaml
+permissions:
+  delegation:
+    enabled: true
+    allowed_agents:          # optional — omit to allow all
+      - https://github.com/owner/repo-a
+```
+
+## Raw Protocol Reference
+
+For custom implementations in other languages, connect to `/tmp/_primordial_delegate.sock` and exchange NDJSON:
+
+| Command | Request | Streaming |
+|---|---|---|
+| search | `{"type":"search","query":"..."}` | No |
+| search_all | `{"type":"search_all"}` | No |
+| run | `{"type":"run","agent_url":"..."}` | Yes — until `session` or `error` |
+| message | `{"type":"message","session_id":"...","content":"..."}` | Yes — until `done:true` |
+| monitor | `{"type":"monitor","session_id":"..."}` | No |
+| stop | `{"type":"stop","session_id":"..."}` | No |
 
 ## Constraints
 
-- You can only delegate to agents listed in your manifest's `permissions.delegation.allowed_agents`.
-- Delegated agents inherit your workspace unless you specify a different path.
-- Each spawned agent runs in its own sandbox with its own network rules.
+- Each sub-agent runs in its own isolated sandbox.
+- API keys are resolved automatically — you don't need to pass them.
+- The commands `setup`, `keys`, `config`, and `cache` are blocked.

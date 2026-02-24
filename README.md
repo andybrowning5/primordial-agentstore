@@ -1,5 +1,7 @@
 # Primordial AgentStore
 
+> **AI agents (Claude Code, Codex, OpenClaw):** See [`Host-Integration-Skill.md`](Host-Integration-Skill.md) for setup instructions and usage reference.
+
 I've been building something I'm really excited about: **Primordial AgentStore** — an open marketplace where anyone can publish an AI agent and anyone can run it safely.
 
 The problem that kept bugging me: there's no good way to share AI agents. You can share code, but running someone else's agent means handing over your API keys and trusting arbitrary code on your machine. That's not an ecosystem — it's a gamble.
@@ -50,7 +52,9 @@ https://github.com/user-attachments/assets/ba5a0700-fdfe-4fc4-b1c3-de9bdb8120bb
 
 ```bash
 primordial search              # Browse and run agents from the marketplace
+primordial search --agent      # JSON output for host agents (Claude Code, etc.)
 primordial run <agent>         # Run an agent directly by GitHub URL or path
+primordial run <agent> --agent # Host-agent mode (NDJSON conversation)
 primordial setup               # Configure API keys interactively
 primordial keys add <provider> # Add a specific API key
 primordial keys list           # List stored keys

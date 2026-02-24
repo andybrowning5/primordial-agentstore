@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.3.0
+
+### Added
+
+- **`--agent` flag** — unified host-agent mode for `primordial search` and `primordial run`. Replaces `--json`, `--agent-read`, and `--yes` with a single flag
+  - `search --agent`: JSON output for programmatic agent discovery
+  - `run --agent`: interactive setup (session picker, permissions, approval) via plain stdin/stdout, then NDJSON conversation mode
+  - Missing API keys produce actionable error messages instead of interactive prompts
+- **Agent delegation system** — agents can discover, spawn, and interact with other agents
+  - Python SDK (`primordial_delegate.py`) — stdlib-only, zero dependencies
+  - Node.js SDK (`primordial_delegate.mjs`) — zero dependencies, uses built-in `net`
+  - CLI tool (`delegate_cli.py`) — language-agnostic delegation via shell commands
+  - Delegation proxy (`delegation_proxy.py`) — in-sandbox relay with command allowlist
+  - Sub-agent activity events bubble up to parent TUI in real-time
+- **Terminal passthrough mode** — raw PTY support for agents that need a full terminal (e.g., Claude Code)
+- **Sub-agent spawn animation** — mini double helix with live setup status and phase timers
+- **`skill.md` injection** — agents receive protocol documentation on first message
+
+### Changed
+
+- Removed `--agent-read`, `--yes`, and `--json` flags (replaced by `--agent`)
+- Proxy session tokens use `sk-ant-` prefix for Claude Code compatibility
+- Sandbox timeouts increased 10x for long-running agent operations
+
+### Fixed
+
+- Spinner glitch: PTY output deferred until spinner clears
+- Terminal mode: inline env vars and suppress spinner artifacts
+- Claude Code auth passthrough for proxied API keys
+
 ## 0.2.0
 
 ### Security

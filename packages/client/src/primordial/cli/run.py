@@ -1,6 +1,7 @@
 """CLI command for running agents."""
 
 import json
+import math
 import os
 import select
 import subprocess
@@ -12,6 +13,7 @@ from pathlib import Path
 import click
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.text import Text
 
 from primordial.config import get_config
 from primordial.github import GitHubResolver, GitHubResolverError, is_github_url, parse_github_url
@@ -75,19 +77,33 @@ def _detect_host_tz() -> str | None:
     return None
 
 
-def _new_session_name() -> str:
+def _stdin_prompt(prompt: str, default: str = "") -> str:
+    """Read a line from stdin with a prompt — works without a TTY."""
+    if default:
+        sys.stdout.write(f"{prompt} [{default}]: ")
+    else:
+        sys.stdout.write(f"{prompt}: ")
+    sys.stdout.flush()
+    value = sys.stdin.readline().strip()
+    return value or default
+
+
+def _new_session_name(agent_mode: bool = False) -> str:
     """Prompt for a custom session name or generate one."""
     auto_name = datetime.now().strftime("%Y%m%d-%H%M%S")
-    name = click.prompt("Session name", default=auto_name).strip()
+    if agent_mode:
+        name = _stdin_prompt("Session name", auto_name)
+    else:
+        name = click.prompt("Session name", default=auto_name).strip()
     return name or auto_name
 
 
-def _pick_session(config, agent_name: str) -> Path:
+def _pick_session(config, agent_name: str, agent_mode: bool = False) -> Path:
     """Prompt user to create a new session or resume an existing one."""
     sessions = config.list_sessions(agent_name)
 
     if not sessions:
-        return config.session_state_dir(agent_name, _new_session_name())
+        return config.session_state_dir(agent_name, _new_session_name(agent_mode))
 
     console.print("\n[bold]Sessions[/bold]")
     console.print(f"  [dim]0)[/dim] New session")
@@ -95,27 +111,32 @@ def _pick_session(config, agent_name: str) -> Path:
         console.print(f"  [dim]{i})[/dim] {name}")
     console.print()
 
-    choice = click.prompt("Select session", type=int, default=0)
+    if agent_mode:
+        raw = _stdin_prompt("Select session", "0")
+        try:
+            choice = int(raw)
+        except ValueError:
+            choice = 0
+    else:
+        choice = click.prompt("Select session", type=int, default=0)
 
     if choice < 1 or choice > len(sessions):
-        return config.session_state_dir(agent_name, _new_session_name())
+        return config.session_state_dir(agent_name, _new_session_name(agent_mode))
 
     return config.session_state_dir(agent_name, sessions[choice - 1])
 
 
 @click.command()
 @click.argument("agent_path")
-@click.option("--agent-read", is_flag=True, help="Primordial Protocol pipe mode (NDJSON stdin/stdout)")
+@click.option("--agent", "agent_mode", is_flag=True, help="Host-agent mode (NDJSON conversation, no key prompts)")
 @click.option("--ref", default=None, help="Git ref (branch, tag, commit) for GitHub agents")
 @click.option("--refresh", is_flag=True, help="Force re-fetch of GitHub agent (ignore cache)")
-@click.option("--yes", "-y", is_flag=True, help="Skip approval prompt")
 @click.option("--session", "session_name", default=None, help="Session name to resume (skips prompt)")
 def run(
     agent_path: str,
-    agent_read: bool,
+    agent_mode: bool,
     ref: str | None,
     refresh: bool,
-    yes: bool,
     session_name: str | None,
 ):
     """Run an agent in a sandbox.
@@ -156,19 +177,21 @@ def run(
     # Session selection
     if session_name:
         state_dir = config.session_state_dir(manifest.name, session_name)
-    elif agent_read:
-        # Pipe mode — auto-create session
-        state_dir = config.session_state_dir(
-            manifest.name, datetime.now().strftime("%Y%m%d-%H%M%S")
-        )
     else:
-        state_dir = _pick_session(config, manifest.name)
+        state_dir = _pick_session(config, manifest.name, agent_mode)
 
     # Validate required API keys from manifest and prompt for missing ones
     vault = KeyVault(config.keys_file)
 
     # E2B key is always required for sandbox runtime
     if not vault.get_key("e2b"):
+        if agent_mode:
+            console.print(
+                "Missing API key: e2b (E2B_API_KEY)\n"
+                "Run: primordial keys add e2b\n"
+                "Sign up at https://e2b.dev/dashboard"
+            )
+            raise SystemExit(1)
         console.print(
             "\n[bold yellow]E2B API key required[/bold yellow]\n"
             "[dim]E2B is the sandbox provider that Primordial uses to run agents "
@@ -191,7 +214,15 @@ def run(
     for line in format_permissions_for_display(manifest, stored_providers=stored_providers):
         console.print(f"  {line}")
     console.print()
-    if not yes and not click.confirm("Approve and run?"):
+    if agent_mode:
+        # Plain stdin prompt — click.confirm requires a TTY
+        sys.stdout.write("Approve and run? [y/N]: ")
+        sys.stdout.flush()
+        answer = sys.stdin.readline().strip().lower()
+        if answer not in ("y", "yes"):
+            console.print("[dim]Aborted.[/dim]")
+            raise SystemExit(0)
+    elif not click.confirm("Approve and run?"):
         console.print("[dim]Aborted.[/dim]")
         raise SystemExit(0)
 
@@ -206,6 +237,13 @@ def run(
                     missing_optional.append(key_req)
 
         if missing_required:
+            if agent_mode:
+                console.print("Missing required API keys:")
+                for kr in missing_required:
+                    console.print(f"  - {kr.provider} ({kr.resolved_env_var()})")
+                    console.print(f"    Run: primordial keys add {kr.provider}")
+                raise SystemExit(1)
+
             console.print("[bold]Missing API keys[/bold]")
             for kr in missing_required:
                 console.print(f"  [red]✗[/red] {kr.provider} [dim]({kr.resolved_env_var()})[/dim]")
@@ -235,6 +273,10 @@ def run(
 
         api_key = vault.get_key(provider)
         if not api_key:
+            if agent_mode:
+                console.print(f"Missing required API key: {provider}")
+                console.print(f"Run: primordial keys add {provider}")
+                raise SystemExit(1)
             console.print(
                 f"\n[bold yellow]{provider.upper()} API key required[/bold yellow]\n"
                 f"[dim]This agent uses {provider} as its model provider.[/dim]\n"
@@ -267,10 +309,258 @@ def run(
     workspace = "."
     manager = SandboxManager()
 
-    if agent_read:
-        _run_json(manager, agent_dir, manifest, workspace, env_vars, state_dir)
+    if agent_mode:
+        _run_agent(manager, agent_dir, manifest, workspace, env_vars, state_dir)
+    elif manifest.runtime.mode == "terminal":
+        _run_terminal(manager, agent_dir, manifest, workspace, env_vars, state_dir)
     else:
         _run_chat(manager, agent_dir, manifest, workspace, env_vars, state_dir)
+
+
+_MINI_ROWS = 3
+_MINI_HALF = 3
+_MINI_CENTER = 4
+_MINI_WIDTH = _MINI_CENTER * 2 + 2
+_MINI_SPINNER = "/-\\|"
+
+
+def _mini_strand_char(dx: float, z: float) -> str:
+    """Pick strand character based on visual slope and depth."""
+    if abs(dx) < 0.12:
+        return "|" if z > 0 else ":"
+    if dx > 0:
+        return "\\" if z > -0.2 else "."
+    return "/" if z > -0.2 else "."
+
+
+def _mini_helix_frame(phase: float) -> list[Text]:
+    """Render one frame of a mini double helix (3 rows)."""
+    lines = []
+    for r in range(_MINI_ROWS):
+        t = r * 0.7 + phase
+        hx1 = _MINI_CENTER + math.sin(t) * _MINI_HALF
+        hx2 = _MINI_CENTER + math.sin(t + math.pi) * _MINI_HALF
+        hz1 = math.cos(t)
+
+        x1 = int(round(hx1))
+        x2 = int(round(hx2))
+
+        dx1, dx2 = hz1 * 0.55, -hz1 * 0.55
+        ch = [" "] * _MINI_WIDTH
+
+        if abs(x1 - x2) <= 1:
+            cx = min(x1, x2)
+            if 0 <= cx < _MINI_WIDTH:
+                front_dx = dx1 if hz1 > 0 else dx2
+                ch[cx] = _mini_strand_char(front_dx, 0.5)
+            ln = Text("".join(ch))
+            if 0 <= cx < _MINI_WIDTH:
+                ln.stylize("bright_green", cx, cx + 1)
+            lines.append(ln)
+            continue
+
+        lx, rx = (x1, x2) if x1 < x2 else (x2, x1)
+        lz = hz1 if x1 < x2 else -hz1
+        rz = -hz1 if x1 < x2 else hz1
+        ldx = dx1 if x1 < x2 else dx2
+        rdx = dx2 if x1 < x2 else dx1
+
+        if 0 <= lx < _MINI_WIDTH:
+            ch[lx] = _mini_strand_char(ldx, lz)
+        if 0 <= rx < _MINI_WIDTH:
+            ch[rx] = _mini_strand_char(rdx, rz)
+
+        ln = Text("".join(ch))
+        for pos, z, c in [(lx, lz, "green"), (rx, rz, "cyan")]:
+            if 0 <= pos < _MINI_WIDTH:
+                if z > 0.2:
+                    ln.stylize(f"bold bright_{c}", pos, pos + 1)
+                elif z > -0.2:
+                    ln.stylize(c, pos, pos + 1)
+                else:
+                    ln.stylize(f"dim {c}", pos, pos + 1)
+        lines.append(ln)
+    return lines
+
+
+def _show_sub_spawn(console: Console, session, sid: str, first_status: str) -> None:
+    """Show a mini helix animation while sub-agent setup events stream in."""
+    import time
+    from rich.console import Group
+    from rich.live import Live
+
+    current_status = first_status
+    completed: list[Text] = []
+    start_time = time.monotonic()
+    phase_start = time.monotonic()
+
+    def _render(frame: int) -> Group:
+        helix_lines = _mini_helix_frame(frame * 0.2)
+
+        parts: list = []
+        # Header
+        header = Text()
+        header.append("      ")
+        header.append("Spawning sub-agent", style="bold yellow")
+        parts.append(header)
+
+        # Build status lines: completed + current with live timer
+        phase_elapsed = time.monotonic() - phase_start
+        sp = _MINI_SPINNER[frame % len(_MINI_SPINNER)]
+
+        status_lines: list[Text] = []
+        for c in completed:
+            status_lines.append(c)
+        cur = Text()
+        cur.append(f"{sp} ", style="cyan")
+        cur.append(current_status, style="dim")
+        cur.append(f" ({phase_elapsed:.1f}s)", style="dim bold")
+        status_lines.append(cur)
+
+        # Show last N status lines to keep compact
+        max_visible = _MINI_ROWS
+        visible = status_lines[-max_visible:]
+
+        # Render helix rows alongside status lines
+        num_rows = max(_MINI_ROWS, len(visible))
+        for i in range(num_rows):
+            row = Text()
+            row.append("      ")
+            if i < len(helix_lines):
+                row.append_text(helix_lines[i])
+            else:
+                row.append(" " * _MINI_WIDTH)
+            if i < len(visible):
+                row.append("  ")
+                row.append_text(visible[i])
+            parts.append(row)
+
+        return Group(*parts)
+
+    frame = 0
+    with Live(_render(frame), console=console, refresh_per_second=12, transient=True) as live:
+        while True:
+            msg = session.receive(timeout=0.08)
+            if msg is not None:
+                msg_type = msg.get("type")
+                tool = msg.get("tool", "")
+
+                if msg_type == "activity" and tool == "sub:setup":
+                    # Finish current phase
+                    phase_elapsed = time.monotonic() - phase_start
+                    done_line = Text()
+                    done_line.append("+ ", style="green")
+                    done_line.append(current_status, style="dim")
+                    done_line.append(f" ({phase_elapsed:.1f}s)", style="dim")
+                    completed.append(done_line)
+                    # Trim to keep display compact
+                    if len(completed) > _MINI_ROWS:
+                        completed.pop(0)
+                    current_status = msg.get("description", "")
+                    phase_start = time.monotonic()
+                else:
+                    # Non-setup event — put it back and exit
+                    session._messages.put(msg)
+                    break
+
+            frame += 1
+            live.update(_render(frame))
+
+    # Print the final summary
+    elapsed = time.monotonic() - start_time
+    label = sid if sid else "sub-agent"
+    console.print(
+        f"      [yellow]› {label}:[/yellow] [dim]spawned in {elapsed:.1f}s[/dim]"
+    )
+
+
+def _run_terminal(
+    manager: SandboxManager,
+    agent_dir: Path,
+    manifest,
+    workspace: str,
+    env_vars: dict,
+    state_dir: Path | None = None,
+) -> None:
+    """Run an agent in terminal passthrough mode (raw PTY)."""
+    import signal
+    import termios
+    import tty
+
+    agent_subtitle = f"Starting {manifest.display_name} v{manifest.version}"
+
+    # Get local terminal size
+    try:
+        term_size = os.get_terminal_size()
+        cols, rows = term_size.columns, term_size.lines
+    except OSError:
+        cols, rows = 80, 24
+
+    def on_data(data) -> None:
+        if isinstance(data, (bytes, bytearray)):
+            os.write(sys.stdout.fileno(), data)
+        else:
+            os.write(sys.stdout.fileno(), data.encode() if isinstance(data, str) else bytes(data))
+
+    with HelixSpinner(console, subtitle=agent_subtitle) as spinner:
+        try:
+            session = manager.run_agent_terminal(
+                agent_dir=agent_dir,
+                manifest=manifest,
+                workspace=Path(workspace).resolve(),
+                env_vars=env_vars,
+                cols=cols,
+                rows=rows,
+                on_data=on_data,
+                state_dir=state_dir,
+                on_status=spinner.set_phase,
+            )
+        except Exception as e:
+            console.print(f"\n[red]Failed to start agent:[/red] {e}")
+            raise SystemExit(1)
+
+    # Spinner is cleared — now start forwarding PTY output
+    session.start_output()
+
+    # Save and set raw terminal mode
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+
+    # Handle terminal resize
+    def handle_winch(signum, frame):
+        try:
+            size = os.get_terminal_size()
+            session.resize(size.columns, size.lines)
+        except Exception:
+            pass
+
+    old_sigwinch = signal.getsignal(signal.SIGWINCH)
+    signal.signal(signal.SIGWINCH, handle_winch)
+
+    try:
+        tty.setraw(fd)
+
+        while session.is_alive:
+            # Check for local input
+            ready, _, _ = select.select([sys.stdin], [], [], 0.05)
+            if ready:
+                data = os.read(fd, 4096)
+                if not data:
+                    break
+                session.send_input(data)
+
+    except (KeyboardInterrupt, EOFError):
+        pass
+    finally:
+        # Restore terminal
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        signal.signal(signal.SIGWINCH, old_sigwinch)
+
+        # Print newline so prompt doesn't overlap
+        print()
+        console.print("[dim]Session ended.[/dim]")
+
+        session.shutdown()
 
 
 def _run_chat(
@@ -392,7 +682,22 @@ def _run_chat(
                     thinking.stop()
                     tool = msg.get("tool", "?")
                     desc = msg.get("description", "")
-                    console.print(f"  [dim]› {tool}: {desc}[/dim]")
+                    if tool == "sub:response":
+                        sid = msg.get("session_id", "")
+                        label = sid if sid else "response"
+                        console.print(f"      [green]› {label}:[/green] [dim]{desc}[/dim]")
+                    elif tool == "sub:setup":
+                        sid = msg.get("session_id", "")
+                        # Show mini spawn animation with live-updating status
+                        _show_sub_spawn(console, session, sid, desc)
+                        # After spawn completes, resume the thinking spinner
+                    elif tool.startswith("sub:"):
+                        sub_tool = tool[4:]
+                        sid = msg.get("session_id", "")
+                        prefix = f"{sid} › {sub_tool}" if sid else sub_tool
+                        console.print(f"      [cyan]› {prefix}:[/cyan] [dim]{desc}[/dim]")
+                    else:
+                        console.print(f"  [dim]› {tool}: {desc}[/dim]")
                     thinking = console.status("[dim]Thinking...[/dim]", spinner="flip")
                     thinking.start()
                 elif msg_type == "error":
@@ -412,7 +717,7 @@ def _run_chat(
         console.print("[dim]Session ended.[/dim]")
 
 
-def _run_json(
+def _run_agent(
     manager: SandboxManager,
     agent_dir: Path,
     manifest,

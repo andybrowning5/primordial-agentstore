@@ -134,9 +134,10 @@ class GitHubResolver:
 
     META_FILE = "_agentstore_meta.json"
 
-    def __init__(self, cache_dir: Optional[Path] = None):
+    def __init__(self, cache_dir: Optional[Path] = None, quiet: bool = False):
         config = get_config()
         self._cache_dir = cache_dir or (config.cache_dir / "repos")
+        self._quiet = quiet
         self._cache_dir.mkdir(parents=True, exist_ok=True)
 
     def resolve(
@@ -203,10 +204,10 @@ class GitHubResolver:
 
     # --- internal ---
 
-    @staticmethod
-    def _log(msg: str) -> None:
+    def _log(self, msg: str) -> None:
         """Print a status message. Imported lazily to avoid circular deps."""
-        print(f"  {msg}")
+        if not self._quiet:
+            print(f"  {msg}")
 
     def _get_cache_age(self, cache_path: Path) -> float | None:
         meta_path = cache_path / self.META_FILE

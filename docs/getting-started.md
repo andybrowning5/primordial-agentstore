@@ -47,10 +47,27 @@ primordial keys remove anthropic                 # Remove a key
 primordial run ./my-agent                        # Local directory
 primordial run https://github.com/user/repo      # GitHub URL
 primordial run https://github.com/user/repo --ref v1.0.0  # Specific git ref
-primordial run ./my-agent --yes                  # Skip permission approval
 primordial run ./my-agent --refresh              # Force re-fetch from GitHub
-primordial run ./my-agent --agent-read           # Pipe mode (for delegation)
+primordial run ./my-agent --agent                # Host-agent mode (NDJSON I/O)
 ```
+
+## Host-Agent Mode
+
+The `--agent` flag lets host agents like Claude Code or OpenClaw use Primordial interactively to spawn and converse with specialized sub-agents.
+
+```bash
+# Search returns JSON
+primordial search "web research" --agent
+
+# Run goes through interactive setup, then switches to NDJSON
+primordial run <url> --agent
+```
+
+With `--agent`:
+- **Search** outputs a JSON array of agents (no Rich UI)
+- **Run** shows the session picker and permissions approval on stdout/stdin — the host agent participates just like a human
+- After approval, the conversation uses NDJSON on stdin/stdout
+- Missing API keys produce an error with `primordial keys add <provider>` instructions instead of prompting for the key value
 
 ## Sessions
 
