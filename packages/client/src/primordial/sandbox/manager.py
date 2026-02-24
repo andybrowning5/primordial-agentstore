@@ -860,6 +860,9 @@ class DelegationHandler:
         self.on_input_needed: Optional[Callable[[], None]] = None
         self.on_input_done: Optional[Callable[[], None]] = None
 
+        # Serialize key prompts so only one thread prompts at a time
+        self._input_lock = threading.Lock()
+
     def start(self) -> None:
         """Start the delegation handler threads."""
         self._reader_thread = threading.Thread(
@@ -1098,39 +1101,47 @@ class DelegationHandler:
             sub_providers = [kr.provider for kr in sub_manifest.keys] if sub_manifest.keys else []
             sub_providers.append("e2b")  # Always needed for sandbox creation
 
-            # Check for missing required keys and prompt the user
+            # Check for missing required keys and prompt the user.
+            # Use _input_lock to serialize prompts across concurrent spawns.
+            # Re-check the vault after acquiring the lock — another thread may
+            # have already stored the key we need.
             if sub_manifest.keys:
                 missing = [kr for kr in sub_manifest.keys if kr.required and not vault.get_key(kr.provider)]
                 if missing:
-                    from rich.console import Console
-                    console = Console()
-                    if self.on_input_needed:
-                        self.on_input_needed()
-                    display = sub_manifest.display_name or sub_manifest.name
-                    console.print(f"\n[bold yellow]Sub-agent [cyan]{display}[/cyan] needs API keys to continue:[/bold yellow]")
-                    for kr in missing:
-                        console.print(f"  [red]✗[/red] {kr.provider} [dim]({kr.resolved_env_var()})[/dim]")
-                    console.print()
-                    for kr in missing:
-                        key = click.prompt(
-                            f"  Paste {kr.provider.upper()} API key ({kr.resolved_env_var()})",
-                            hide_input=True,
-                        )
-                        if key.strip():
-                            vault.add_key(kr.provider, key.strip())
-                            console.print(f"  [dim]Stored {kr.provider}.[/dim]")
-                        else:
+                    with self._input_lock:
+                        # Re-check: another thread may have stored the key
+                        vault = KeyVault(config.keys_file)
+                        missing = [kr for kr in sub_manifest.keys if kr.required and not vault.get_key(kr.provider)]
+                        if missing:
+                            from rich.console import Console
+                            console = Console()
+                            if self.on_input_needed:
+                                self.on_input_needed()
+                            display = sub_manifest.display_name or sub_manifest.name
+                            console.print(f"\n[bold yellow]Sub-agent [cyan]{display}[/cyan] needs API keys to continue:[/bold yellow]")
+                            for kr in missing:
+                                console.print(f"  [red]✗[/red] {kr.provider} [dim]({kr.resolved_env_var()})[/dim]")
+                            console.print()
+                            for kr in missing:
+                                key = click.prompt(
+                                    f"  Paste {kr.provider.upper()} API key ({kr.resolved_env_var()})",
+                                    hide_input=True,
+                                )
+                                if key.strip():
+                                    vault.add_key(kr.provider, key.strip())
+                                    console.print(f"  [dim]Stored {kr.provider}.[/dim]")
+                                else:
+                                    if self.on_input_done:
+                                        self.on_input_done()
+                                    self._send_to_proxy({
+                                        "type": "error",
+                                        "error": f"Missing required API key: {kr.provider}",
+                                        "request_id": req_id,
+                                    })
+                                    return
+                            console.print()
                             if self.on_input_done:
                                 self.on_input_done()
-                            self._send_to_proxy({
-                                "type": "error",
-                                "error": f"Missing required API key: {kr.provider}",
-                                "request_id": req_id,
-                            })
-                            return
-                    console.print()
-                    if self.on_input_done:
-                        self.on_input_done()
 
             sub_env_vars = vault.get_env_vars(providers=sub_providers)
 
