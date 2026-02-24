@@ -387,9 +387,11 @@ def _show_sub_spawn(console: Console, session, sid: str, first_status: str) -> N
     """Show a mini helix animation while sub-agent setup events stream in.
 
     Supports multiple concurrent spawns — if setup events arrive for different
-    session IDs, all are tracked and displayed together.
+    session IDs, all are tracked and displayed together.  When a sub-agent
+    needs an API key the Live display is paused so the prompt renders cleanly.
     """
     import time
+    import threading
     from rich.console import Group
     from rich.live import Live
 
@@ -404,6 +406,31 @@ def _show_sub_spawn(console: Console, session, sid: str, first_status: str) -> N
             self.elapsed: float = 0.0
 
     agents: dict[str, _SpawnState] = {sid: _SpawnState(sid, first_status)}
+
+    # Threading events for pausing/resuming the Live display during key prompts
+    _paused = threading.Event()
+    _resumed = threading.Event()
+    _live_ref: dict[str, Live | None] = {"live": None}
+
+    # Wire up delegation handler callbacks to pause/resume our Live display
+    handler = getattr(session, "_delegation_handler", None)
+    _prev_input_needed = getattr(handler, "on_input_needed", None) if handler else None
+    _prev_input_done = getattr(handler, "on_input_done", None) if handler else None
+
+    def _on_input_needed():
+        """Called from delegation thread when key prompt is about to show."""
+        _paused.set()
+        _resumed.clear()
+        # Wait briefly for the main thread to actually stop the Live display
+        _resumed.wait(timeout=2.0)
+
+    def _on_input_done():
+        """Called from delegation thread when key prompt is finished."""
+        _paused.clear()
+
+    if handler:
+        handler.on_input_needed = _on_input_needed
+        handler.on_input_done = _on_input_done
 
     def _render(frame: int) -> Group:
         helix_lines = _mini_helix_frame(frame * 0.2)
@@ -452,38 +479,86 @@ def _show_sub_spawn(console: Console, session, sid: str, first_status: str) -> N
         return Group(*parts)
 
     frame = 0
-    with Live(_render(frame), console=console, refresh_per_second=12, transient=True) as live:
-        while True:
-            # Check if all agents are done
-            if all(a.done for a in agents.values()):
-                break
+    while True:
+        # Check if all agents are done before starting/restarting Live
+        if all(a.done for a in agents.values()) and agents:
+            break
 
-            msg = session.receive(timeout=0.08)
-            if msg is not None:
-                msg_type = msg.get("type")
-                tool = msg.get("tool", "")
-                msg_sid = msg.get("session_id", "")
+        with Live(_render(frame), console=console, refresh_per_second=12, transient=True) as live:
+            _live_ref["live"] = live
+            while True:
+                # Check if we need to pause for a key prompt
+                if _paused.is_set():
+                    live.stop()
+                    _live_ref["live"] = None
+                    _resumed.set()  # Signal delegation thread to proceed with prompt
+                    # Wait for the prompt to finish
+                    while _paused.is_set():
+                        # Keep processing messages so spawns don't stall
+                        msg = session.receive(timeout=0.1)
+                        if msg is not None:
+                            msg_type = msg.get("type")
+                            tool = msg.get("tool", "")
+                            msg_sid = msg.get("session_id", "")
+                            if msg_type == "activity" and tool == "sub:setup":
+                                if msg_sid in agents:
+                                    agents[msg_sid].status = msg.get("description", "")
+                                    agents[msg_sid].phase_start = time.monotonic()
+                                else:
+                                    agents[msg_sid] = _SpawnState(msg_sid, msg.get("description", ""))
+                            elif msg_type == "activity" and tool == "sub:spawned":
+                                if msg_sid in agents:
+                                    agents[msg_sid].done = True
+                                    agents[msg_sid].elapsed = time.monotonic() - agents[msg_sid].start_time
+                            else:
+                                session._messages.put(msg)
+                    break  # Break inner loop to restart Live display
 
-                if msg_type == "activity" and tool == "sub:setup":
-                    if msg_sid in agents:
-                        # Update existing agent's phase
-                        agents[msg_sid].status = msg.get("description", "")
-                        agents[msg_sid].phase_start = time.monotonic()
-                    else:
-                        # New concurrent spawn
-                        agents[msg_sid] = _SpawnState(msg_sid, msg.get("description", ""))
-                elif msg_type == "activity" and tool == "sub:spawned":
-                    # Agent finished spawning
-                    if msg_sid in agents:
-                        agents[msg_sid].done = True
-                        agents[msg_sid].elapsed = time.monotonic() - agents[msg_sid].start_time
-                else:
-                    # Non-setup event — put it back and exit
-                    session._messages.put(msg)
+                # Check if all agents are done
+                if all(a.done for a in agents.values()) and agents:
                     break
 
-            frame += 1
-            live.update(_render(frame))
+                msg = session.receive(timeout=0.08)
+                if msg is not None:
+                    msg_type = msg.get("type")
+                    tool = msg.get("tool", "")
+                    msg_sid = msg.get("session_id", "")
+
+                    if msg_type == "activity" and tool == "sub:setup":
+                        if msg_sid in agents:
+                            agents[msg_sid].status = msg.get("description", "")
+                            agents[msg_sid].phase_start = time.monotonic()
+                        else:
+                            agents[msg_sid] = _SpawnState(msg_sid, msg.get("description", ""))
+                    elif msg_type == "activity" and tool == "sub:spawned":
+                        if msg_sid in agents:
+                            agents[msg_sid].done = True
+                            agents[msg_sid].elapsed = time.monotonic() - agents[msg_sid].start_time
+                    else:
+                        # Non-setup event — put it back and exit
+                        session._messages.put(msg)
+                        # Restore previous callbacks and return
+                        if handler:
+                            handler.on_input_needed = _prev_input_needed
+                            handler.on_input_done = _prev_input_done
+                        # Print final summary
+                        for st in agents.values():
+                            elapsed = st.elapsed if st.done else time.monotonic() - st.start_time
+                            console.print(
+                                f"      [yellow]› {st.sid}:[/yellow] [dim]spawned in {elapsed:.1f}s[/dim]"
+                            )
+                        return
+
+                frame += 1
+                live.update(_render(frame))
+        # If we broke out of the inner loop (pause/resume), continue outer loop
+        if all(a.done for a in agents.values()) and agents:
+            break
+
+    # Restore previous callbacks
+    if handler:
+        handler.on_input_needed = _prev_input_needed
+        handler.on_input_done = _prev_input_done
 
     # Print final summary for each agent
     for st in agents.values():
