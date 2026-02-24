@@ -1204,6 +1204,10 @@ class DelegationHandler:
             })
 
         except Exception as e:
+            import traceback
+            import traceback as _tb
+            tb = _tb.format_exc()
+            logger.error(f"Sub-agent spawn failed: {tb}")
             self._send_to_proxy({
                 "type": "error",
                 "error": f"Failed to start agent: {e}",
