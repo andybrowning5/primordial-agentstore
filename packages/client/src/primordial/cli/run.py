@@ -145,6 +145,27 @@ def run(
       - A local directory (./my-agent)
       - A GitHub URL (https://github.com/user/repo)
     """
+    # Auto-delegate to daemon if running in agent mode and daemon is available.
+    # This keeps vault keys out of the calling process entirely.
+    if agent_mode:
+        from primordial.daemon import is_daemon_running, stream_request
+        if is_daemon_running():
+            request = {
+                "method": "run",
+                "agent": agent_path,
+                "ref": ref,
+                "refresh": refresh,
+                "session": session_name,
+            }
+            for msg in stream_request(request):
+                if msg.get("type") == "done":
+                    return
+                sys.stdout.write(json.dumps(msg) + "\n")
+                sys.stdout.flush()
+                if msg.get("type") == "error":
+                    raise SystemExit(1)
+            return
+
     config = get_config()
 
     # Resolve agent path — GitHub URL, local path, or installed name

@@ -180,6 +180,44 @@ On macOS, the keychain secret requires user approval for any process to access. 
 
 ---
 
+## Daemon Mode — Secure Host-Agent Integration
+
+When host agents like OpenClaw use Primordial, the vault must be decryptable — but exposing vault access to the host agent means it could replicate the decryption and extract raw keys. The **daemon** solves this.
+
+```
+Host Agent ──► Unix socket ──► primordial serve ──► vault (keys in memory)
+                                      │
+                                      ▼
+                                   E2B sandbox (keys injected internally)
+```
+
+### How it works
+
+1. You start the daemon: `primordial serve`
+2. The daemon opens the vault once, holds keys in memory, and listens on a Unix socket (`~/Library/Application Support/primordial/daemon.sock`)
+3. When a host agent runs `primordial run <agent> --agent`, the CLI detects the running daemon and delegates through the socket instead of opening the vault directly
+4. The daemon handles the entire agent lifecycle — resolving the agent, injecting keys into the E2B sandbox, streaming results back
+5. **Keys never cross the socket.** Only action requests (`run`, `search`) and results are transmitted
+
+### Security properties
+
+| Property | Detail |
+|----------|--------|
+| Socket permissions | `0600` — same-user only |
+| No key extraction | The socket protocol has no "get key" endpoint — only action endpoints |
+| Backward compatible | If no daemon is running, `primordial run` falls back to direct vault access |
+| Clean shutdown | `SIGINT`/`SIGTERM` removes the socket file |
+
+### What the host agent can't do
+
+| Attack | Why it fails |
+|--------|-------------|
+| Read keys from socket traffic | Keys are never transmitted — only action requests and results |
+| Open the vault directly | Keychain ACL blocks unauthorized processes |
+| Read the daemon's memory | Separate process, no shared memory |
+
+---
+
 ## Proxy Security Details
 
 The proxy (`proxy_script.py`) is stdlib-only Python with zero dependencies:

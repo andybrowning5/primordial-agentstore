@@ -62,6 +62,7 @@ primordial keys add <provider> # Add a specific API key
 primordial keys list           # List stored keys
 primordial sessions <agent>    # Manage chat sessions for an agent
 primordial cache list|clear    # View or clear cached agent repos
+primordial serve               # Start daemon (holds keys, serves actions over Unix socket)
 ```
 
 ---
@@ -94,6 +95,7 @@ AgentStore/
 │           ├── sandbox/           # Sandbox manager + reverse proxy
 │           ├── security/          # Key vault, permissions
 │           ├── config.py          # Platform-specific paths
+│           ├── daemon.py          # Daemon client (Unix socket)
 │           ├── github.py          # GitHub URL resolver + caching
 │           └── manifest.py        # agent.yaml loader + validation
 ├── docs/                          # Documentation

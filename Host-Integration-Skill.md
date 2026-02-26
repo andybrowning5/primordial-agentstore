@@ -12,6 +12,16 @@ pip install primordial-agentstore
 
 No additional setup is needed — when you run an agent, Primordial will automatically prompt for any missing API keys.
 
+### Recommended: Daemon Mode
+
+For secure key isolation, have the user start the Primordial daemon in a separate terminal:
+
+```bash
+primordial serve
+```
+
+When the daemon is running, `primordial run --agent` automatically delegates through it. This means your process never has access to the vault or API keys — the daemon holds them in memory and only returns action results over a Unix socket. If the daemon isn't running, commands fall back to direct vault access.
+
 ### Per-agent setup
 
 - **Claude Code:** Copy this file to `~/.claude/skills/primordial/skill.md`
