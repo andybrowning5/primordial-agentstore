@@ -1,15 +1,5 @@
 # Changelog
 
-## 0.4.0
-
-### Added
-
-- **Daemon mode (`primordial serve`)** — Unix socket server that holds vault keys in memory and serves actions (run, search) without exposing raw API keys. Host agents like OpenClaw delegate through the daemon automatically when it's running, with zero access to the vault or key material
-  - Keys never cross the socket — only action requests and results
-  - Socket permissions `0600` (same-user only)
-  - Auto-delegation: `primordial run --agent` detects the daemon and proxies through it; falls back to direct vault access when no daemon is running
-  - Clean shutdown on `SIGINT`/`SIGTERM`, removes socket file
-
 ## 0.3.0
 
 ### Added

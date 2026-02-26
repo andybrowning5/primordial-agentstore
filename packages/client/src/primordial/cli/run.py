@@ -145,22 +145,6 @@ def run(
       - A local directory (./my-agent)
       - A GitHub URL (https://github.com/user/repo)
     """
-    # Auto-delegate to daemon if running in agent mode and daemon is available.
-    # This keeps vault keys out of the calling process entirely.
-    # The relay forwards stdin (NDJSON from host agent) to the daemon socket
-    # and daemon responses back to stdout.
-    if agent_mode:
-        from primordial.daemon import is_daemon_running, relay_run
-        if is_daemon_running():
-            relay_run({
-                "method": "run",
-                "agent": agent_path,
-                "ref": ref,
-                "refresh": refresh,
-                "session": session_name,
-            })
-            return
-
     config = get_config()
 
     # Resolve agent path — GitHub URL, local path, or installed name

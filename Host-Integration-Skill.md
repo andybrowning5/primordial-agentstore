@@ -10,41 +10,7 @@ If `primordial` is not installed, install it:
 pip install primordial-agentstore
 ```
 
-### Daemon Mode (Recommended)
-
-The Primordial daemon holds vault keys in memory and serves actions over a local Unix socket. Host agents delegate through the daemon automatically — they never access the vault or API keys directly.
-
-**macOS auto-start (launchd):**
-
-Create `~/Library/LaunchAgents/com.primordial.daemon.plist`:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.primordial.daemon</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/path/to/primordial</string>
-        <string>serve</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>/tmp/primordial-daemon.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/primordial-daemon.err.log</string>
-</dict>
-</plist>
-```
-
-Then load it: `launchctl load ~/Library/LaunchAgents/com.primordial.daemon.plist`
-
-**Or start manually:** `primordial serve`
+No additional setup is needed — when you run an agent, Primordial will automatically prompt for any missing API keys.
 
 ### Per-agent setup
 
@@ -62,75 +28,98 @@ Then load it: `launchctl load ~/Library/LaunchAgents/com.primordial.daemon.plist
 
 **Before spawning any agent, search the marketplace to find the right one.** Do not guess agent URLs or names — always discover them via search.
 
+Browse all available agents:
 ```bash
 primordial search --agent
+```
+
+Or search with a query:
+```bash
 primordial search "web research" --agent
 ```
 
-Returns a JSON array:
+Both return a JSON array of matching agents:
 ```json
 [{"name": "user/repo", "description": "...", "url": "https://github.com/...", "stars": 0}]
 ```
 
-**Pick the best match** by reading the `description` field. Use the `url` field as the agent URL in the next step.
+**Pick the best match** by reading the `description` field. Use the `url` field from the search results as the agent URL in the next step.
+
+### Search tips
+- Use broad terms: `"research"`, `"data"`, `"code review"`, `"database"`
+- If no results, try fewer or different keywords
+- Run `primordial search --agent` with no query to see everything available
 
 ## Step 2: Spawn and Interact
 
-When the daemon is running, `primordial run --agent` delegates through it automatically. **No interactive setup prompts** — the daemon handles sessions, keys, and permissions.
+Use `primordial run <url> --agent` to spawn an agent. This command is interactive — it goes through setup prompts on stdin/stdout, then switches to NDJSON mode for the conversation.
+
+**The setup phase requires you to respond to prompts:**
+1. **Session picker** — type a number to select an existing session, or `0` for a new one
+2. **Session name** — press Enter to accept the auto-generated name, or type a custom name
+3. **Permissions approval** — the agent's permissions are displayed; type `y` to approve
+
+**After setup, the conversation uses NDJSON on stdin/stdout.**
 
 ### Single-message pattern (simplest)
 
-```bash
-printf '{"type":"message","content":"YOUR TASK HERE","message_id":"msg_0001"}\n{"type":"shutdown"}\n' \
-  | primordial run <agent-url> --agent 2>/dev/null
-```
-
-### Multi-turn pattern
+Pipe all interactive answers and a single NDJSON message:
 
 ```bash
-printf '{"type":"message","content":"Research topic X","message_id":"msg_0001"}\n{"type":"message","content":"Now summarize in 3 bullets","message_id":"msg_0002"}\n{"type":"shutdown"}\n' \
-  | primordial run <agent-url> --agent 2>/dev/null
+printf '0\n\ny\n{"type":"message","content":"YOUR TASK HERE","message_id":"msg_0001"}\n{"type":"shutdown"}\n' | primordial run <agent-url> --agent 2>/dev/null
 ```
+
+The breakdown:
+- `0\n` — select "new session"
+- `\n` — accept auto-generated session name
+- `y\n` — approve permissions
+- `{"type":"message",...}\n` — your task as NDJSON
+- `{"type":"shutdown"}\n` — clean exit
 
 ### Reading the output
 
-stdout contains NDJSON lines:
-- `{"type": "ready"}` — agent is ready
-- `{"type": "activity", "tool": "...", "description": "..."}` — agent is working
-- `{"type": "response", "content": "...", "done": true}` — the final answer
+The stdout will contain:
+1. Setup text (session list, permissions display) — ignore these lines
+2. NDJSON lines after setup:
+   - `{"type": "ready"}` — agent is ready
+   - `{"type": "activity", "tool": "...", "description": "..."}` — agent is working (tool calls, searches, etc.)
+   - `{"type": "response", "content": "...", "done": true}` — the final answer
 
-**Parse the line where `"done": true` to get the agent's response.**
+**Parse the last NDJSON line with `"done": true` to get the agent's response.**
 
-### Fallback (no daemon)
+### Multi-turn pattern
 
-If the daemon isn't running, the CLI falls back to interactive mode. Pipe setup responses before your NDJSON:
+For follow-up questions, send multiple messages before shutdown:
 
 ```bash
-printf '0\n\ny\n{"type":"message","content":"YOUR TASK","message_id":"msg_0001"}\n{"type":"shutdown"}\n' \
-  | primordial run <agent-url> --agent 2>/dev/null
+printf '0\n\ny\n{"type":"message","content":"Research topic X","message_id":"msg_0001"}\n{"type":"message","content":"Now summarize in 3 bullets","message_id":"msg_0002"}\n{"type":"shutdown"}\n' | primordial run <agent-url> --agent 2>/dev/null
 ```
 
-- `0\n` — new session
-- `\n` — accept auto session name
-- `y\n` — approve permissions
+Each message gets its own response with a matching `message_id`.
 
-Filter NDJSON lines from stdout (skip non-JSON setup text).
+### Resuming a session
+
+To continue a previous conversation, select the session number instead of `0`:
+
+```bash
+printf '1\ny\n{"type":"message","content":"Follow up question","message_id":"msg_0001"}\n{"type":"shutdown"}\n' | primordial run <agent-url> --agent 2>/dev/null
+```
 
 ## Step 3: Parse the Response
+
+Filter NDJSON lines from the output. Non-JSON lines are setup text — skip them. Look for lines starting with `{` and parse as JSON.
 
 The response content is in the `"content"` field of the line where `"done": true`.
 
 ## Error Handling
 
-- **Missing API key**: Tell the user to run `primordial keys add <provider>`
-- **Vault decryption error**: The daemon isn't running. Tell the user to check `primordial serve`
+- **Missing API key**: The command exits with a message like `Missing required API key: anthropic. Run: primordial keys add anthropic`. Tell the user to run that command.
 - **Agent not found**: Search returned empty results. Try a broader query.
 - **Timeout**: Set a generous bash timeout (5+ minutes) — agents may take time for complex tasks.
 
 ## Important Notes
 
-- Always use `2>/dev/null` to suppress stderr (spinners, debug logs)
+- Always use `2>/dev/null` to suppress stderr (setup spinners, debug logs)
 - Set bash timeout to at least 300000ms (5 minutes) for research tasks
 - The agent sees its own permissions and API keys — you don't need to provide them
 - Each agent runs in full isolation — it cannot access your local filesystem
-- With the daemon running, you never need to handle API keys, sessions, or permissions

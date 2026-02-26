@@ -69,18 +69,6 @@ With `--agent`:
 - After approval, the conversation uses NDJSON on stdin/stdout
 - Missing API keys produce an error with `primordial keys add <provider>` instructions instead of prompting for the key value
 
-## Daemon Mode
-
-For host agents that shouldn't have direct access to your API keys, run the daemon:
-
-```bash
-primordial serve
-```
-
-This starts a local Unix socket server that holds your vault keys in memory. When a host agent runs `primordial run <agent> --agent`, it automatically delegates through the daemon instead of accessing the vault directly. **Keys never leave the daemon process** — only action requests and results cross the socket.
-
-If the daemon isn't running, commands fall back to direct vault access (the normal behavior).
-
 ## Sessions
 
 Agents persist state between runs. When you run an agent, you can start fresh or resume a previous session.
@@ -106,7 +94,7 @@ Uses [`platformdirs`](https://github.com/platformdirs/platformdirs):
 
 | Directory | macOS | Linux |
 |-----------|-------|-------|
-| Data (keys, state, daemon socket) | `~/Library/Application Support/primordial/` | `~/.local/share/primordial/` |
+| Data (keys, state) | `~/Library/Application Support/primordial/` | `~/.local/share/primordial/` |
 | Cache (GitHub repos) | `~/Library/Caches/primordial/` | `~/.cache/primordial/` |
 
 ## Next Steps
