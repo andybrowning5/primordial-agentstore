@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import select
 import socket
 import sys
 from pathlib import Path
@@ -71,63 +70,96 @@ def stream_request(request: dict) -> Generator[dict, None, None]:
                         return
 
 
+class _SocketLineReader:
+    """Buffered line reader over a socket."""
+
+    def __init__(self, sock: socket.socket):
+        self._sock = sock
+        self._buf = b""
+
+    def readline(self, timeout: float = 300) -> dict | None:
+        """Read one NDJSON line from the socket. Returns parsed dict or None on close."""
+        self._sock.settimeout(timeout)
+        while True:
+            if b"\n" in self._buf:
+                line, self._buf = self._buf.split(b"\n", 1)
+                if line.strip():
+                    return json.loads(line.decode())
+                continue
+            chunk = self._sock.recv(4096)
+            if not chunk:
+                return None
+            self._buf += chunk
+
+
 def relay_run(request: dict) -> None:
     """Send a run request, relay stdin to daemon and daemon responses to stdout.
 
-    This is the bidirectional version needed for agent mode: stdin lines
-    (NDJSON messages from the host agent) are forwarded to the daemon socket,
-    and daemon responses are written to stdout.
+    Sequential protocol:
+    1. Send run request, wait for ready
+    2. For each stdin line: send to daemon, drain responses until done:true
+    3. On stdin EOF or shutdown: send shutdown, drain final done, exit
     """
     sock = _connect()
+    reader = _SocketLineReader(sock)
     try:
         sock.sendall(json.dumps(request).encode() + b"\n")
-        sock.setblocking(False)
 
-        recv_buf = b""
-        stdin_fd = sys.stdin.fileno()
-
+        # Phase 1: Wait for ready (or error)
         while True:
-            # Wait for data from either the socket or stdin
-            readable, _, _ = select.select([sock, stdin_fd], [], [], 300)
-            if not readable:
-                # Timeout
+            msg = reader.readline(timeout=120)
+            if msg is None:
+                return
+            sys.stdout.write(json.dumps(msg) + "\n")
+            sys.stdout.flush()
+            if msg.get("type") == "ready":
                 break
+            if msg.get("type") in ("error", "done"):
+                return
 
-            for fd in readable:
-                if fd is sock:
-                    # Data from daemon → stdout
-                    try:
-                        chunk = sock.recv(4096)
-                    except BlockingIOError:
-                        continue
-                    if not chunk:
+        # Phase 2: Read stdin lines, send each to daemon, wait for response
+        for line in sys.stdin:
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                incoming = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            if incoming.get("type") == "shutdown":
+                sock.sendall(json.dumps({"type": "shutdown"}).encode() + b"\n")
+                # Drain until done
+                while True:
+                    msg = reader.readline(timeout=10)
+                    if msg is None or msg.get("type") == "done":
                         return
-                    recv_buf += chunk
-                    while b"\n" in recv_buf:
-                        line, recv_buf = recv_buf.split(b"\n", 1)
-                        if line.strip():
-                            msg = json.loads(line.decode())
-                            if msg.get("type") == "done":
-                                return
-                            sys.stdout.write(json.dumps(msg) + "\n")
-                            sys.stdout.flush()
-                            if msg.get("type") == "error":
-                                return
-                else:
-                    # Data from stdin → daemon socket
-                    # Temporarily switch to blocking for sendall
-                    line = sys.stdin.readline()
-                    sock.setblocking(True)
-                    try:
-                        if not line:
-                            # EOF on stdin — send shutdown to daemon
-                            sock.sendall(json.dumps({"type": "shutdown"}).encode() + b"\n")
-                            sock.setblocking(False)
-                            continue
-                        line = line.strip()
-                        if line:
-                            sock.sendall(line.encode() + b"\n")
-                    finally:
-                        sock.setblocking(False)
+                return
+
+            # Send message to daemon
+            sock.sendall(line.encode() + b"\n")
+
+            # Drain responses until done:true for this message
+            while True:
+                msg = reader.readline(timeout=300)
+                if msg is None:
+                    return
+                if msg.get("type") == "done":
+                    return
+                sys.stdout.write(json.dumps(msg) + "\n")
+                sys.stdout.flush()
+                if msg.get("type") == "response" and msg.get("done"):
+                    break
+                if msg.get("type") == "error":
+                    break
+
+        # stdin EOF — send shutdown
+        sock.sendall(json.dumps({"type": "shutdown"}).encode() + b"\n")
+        while True:
+            msg = reader.readline(timeout=10)
+            if msg is None or msg.get("type") == "done":
+                return
+
     finally:
         sock.close()
