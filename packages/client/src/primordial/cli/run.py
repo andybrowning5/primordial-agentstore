@@ -147,23 +147,18 @@ def run(
     """
     # Auto-delegate to daemon if running in agent mode and daemon is available.
     # This keeps vault keys out of the calling process entirely.
+    # The relay forwards stdin (NDJSON from host agent) to the daemon socket
+    # and daemon responses back to stdout.
     if agent_mode:
-        from primordial.daemon import is_daemon_running, stream_request
+        from primordial.daemon import is_daemon_running, relay_run
         if is_daemon_running():
-            request = {
+            relay_run({
                 "method": "run",
                 "agent": agent_path,
                 "ref": ref,
                 "refresh": refresh,
                 "session": session_name,
-            }
-            for msg in stream_request(request):
-                if msg.get("type") == "done":
-                    return
-                sys.stdout.write(json.dumps(msg) + "\n")
-                sys.stdout.flush()
-                if msg.get("type") == "error":
-                    raise SystemExit(1)
+            })
             return
 
     config = get_config()

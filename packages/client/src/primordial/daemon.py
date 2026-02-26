@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import select
 import socket
+import sys
 from pathlib import Path
 from typing import Generator
 
@@ -67,3 +69,59 @@ def stream_request(request: dict) -> Generator[dict, None, None]:
                     yield msg
                     if msg.get("type") == "done":
                         return
+
+
+def relay_run(request: dict) -> None:
+    """Send a run request, relay stdin to daemon and daemon responses to stdout.
+
+    This is the bidirectional version needed for agent mode: stdin lines
+    (NDJSON messages from the host agent) are forwarded to the daemon socket,
+    and daemon responses are written to stdout.
+    """
+    sock = _connect()
+    try:
+        sock.sendall(json.dumps(request).encode() + b"\n")
+        sock.setblocking(False)
+
+        recv_buf = b""
+        stdin_fd = sys.stdin.fileno()
+
+        while True:
+            # Wait for data from either the socket or stdin
+            readable, _, _ = select.select([sock, stdin_fd], [], [], 300)
+            if not readable:
+                # Timeout
+                break
+
+            for fd in readable:
+                if fd is sock:
+                    # Data from daemon → stdout
+                    try:
+                        chunk = sock.recv(4096)
+                    except BlockingIOError:
+                        continue
+                    if not chunk:
+                        return
+                    recv_buf += chunk
+                    while b"\n" in recv_buf:
+                        line, recv_buf = recv_buf.split(b"\n", 1)
+                        if line.strip():
+                            msg = json.loads(line.decode())
+                            if msg.get("type") == "done":
+                                return
+                            sys.stdout.write(json.dumps(msg) + "\n")
+                            sys.stdout.flush()
+                            if msg.get("type") == "error":
+                                return
+                else:
+                    # Data from stdin → daemon socket
+                    line = sys.stdin.readline()
+                    if not line:
+                        # EOF on stdin — send shutdown to daemon
+                        sock.sendall(json.dumps({"type": "shutdown"}).encode() + b"\n")
+                        continue
+                    line = line.strip()
+                    if line:
+                        sock.sendall(line.encode() + b"\n")
+    finally:
+        sock.close()
