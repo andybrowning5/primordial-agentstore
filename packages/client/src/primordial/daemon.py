@@ -115,13 +115,19 @@ def relay_run(request: dict) -> None:
                                 return
                 else:
                     # Data from stdin → daemon socket
+                    # Temporarily switch to blocking for sendall
                     line = sys.stdin.readline()
-                    if not line:
-                        # EOF on stdin — send shutdown to daemon
-                        sock.sendall(json.dumps({"type": "shutdown"}).encode() + b"\n")
-                        continue
-                    line = line.strip()
-                    if line:
-                        sock.sendall(line.encode() + b"\n")
+                    sock.setblocking(True)
+                    try:
+                        if not line:
+                            # EOF on stdin — send shutdown to daemon
+                            sock.sendall(json.dumps({"type": "shutdown"}).encode() + b"\n")
+                            sock.setblocking(False)
+                            continue
+                        line = line.strip()
+                        if line:
+                            sock.sendall(line.encode() + b"\n")
+                    finally:
+                        sock.setblocking(False)
     finally:
         sock.close()
