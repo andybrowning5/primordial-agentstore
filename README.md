@@ -56,6 +56,7 @@ See **[docs/](docs/)** for all guides:
 | Guide | Description |
 |-------|-------------|
 | [Getting Started](docs/getting-started.md) | Install, configure, run your first agent |
+| [The Daemon](docs/daemon.md) | How the background service works, logs, troubleshooting |
 | [Building Agents](docs/building-agents.md) | Agent structure, examples, persistence, debugging |
 | [Primordial Protocol](docs/primordial-protocol.md) | The NDJSON message protocol |
 | [Agent Manifest](docs/agent-manifest.md) | Complete `agent.yaml` reference |
