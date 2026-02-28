@@ -21,14 +21,6 @@ primordial search
 
 Browse available agents on the marketplace. Pick one to run.
 
-### Run an agent
-
-```bash
-primordial run https://github.com/andybrowning5/web-research-agent
-```
-
-You'll see what permissions the agent needs and approve before it launches. The first time you use an agent, you'll be prompted for any API keys it requires. Keys are encrypted and stored locally — you only enter them once.
-
 ### Manage your keys
 
 ```bash

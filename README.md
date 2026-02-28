@@ -22,24 +22,7 @@ Primordial extends that workflow. Instead of only delegating to general-purpose 
 
 Agents that compose other agents. Not one monolith trying to do everything — a network of specialists, each doing one thing well, each sandboxed independently.
 
-**Quick Start:**
-
-```bash
-pip install primordial-agentstore
-primordial search
-```
-
-> **Troubleshooting:** If something isn't working, you may be on an older version. Run `pip install --upgrade primordial-agentstore` to update to the latest release.
-
----
-
-## Prerequisites
-
-| Requirement | Details |
-|-------------|---------|
-| **Python** | 3.11+ |
-| **pip** | Latest recommended |
-| **OS** | macOS, Linux (Windows via WSL2) |
+**→ [Get started here](docs/getting-started.md)**
 
 ---
 
