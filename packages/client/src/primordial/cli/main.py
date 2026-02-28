@@ -3,9 +3,11 @@
 import click
 
 from primordial.cli.cache import cache
+from primordial.cli.install import install
 from primordial.cli.search import search
 from primordial.cli.keys import keys
 from primordial.cli.run import run
+from primordial.cli.serve import serve
 from primordial.cli.sessions import sessions
 from primordial.cli.setup import setup
 
@@ -19,7 +21,9 @@ def cli():
 
 cli.add_command(setup)
 cli.add_command(run)
+cli.add_command(serve)
 cli.add_command(sessions)
+cli.add_command(install)
 cli.add_command(keys)
 cli.add_command(cache)
 cli.add_command(search)
