@@ -21,30 +21,6 @@ primordial search
 
 Browse available agents on the marketplace. Pick one to run.
 
-### Manage your keys
-
-```bash
-primordial setup               # Interactive key manager
-primordial keys list           # See what's stored
-primordial keys remove brave   # Remove a key
-```
-
-To set up keys for a specific agent:
-
-```bash
-primordial setup https://github.com/user/web-research-agent
-```
-
-This checks the agent's requirements and prompts only for what's missing.
-
-### Sessions
-
-Agents remember previous conversations. You can resume or start fresh each time.
-
-```bash
-primordial sessions my-agent   # List previous sessions
-```
-
 ---
 
 ## Using with Claude Code
