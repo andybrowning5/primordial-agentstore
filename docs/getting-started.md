@@ -3,13 +3,66 @@
 ## Prerequisites
 
 - **Python 3.11+**
-- **E2B API key** — sandbox runtime ([e2b.dev](https://e2b.dev))
-- At least one LLM provider API key (Anthropic, OpenAI, etc.)
+- **E2B API key** — sandbox runtime ([e2b.dev](https://e2b.dev), free tier available)
 
-## Install
+## Quick Start (Claude Code)
 
 ```bash
 pip install primordial-agentstore
+primordial install --claude
+```
+
+The install command:
+1. Creates an encrypted vault for your API keys (idempotent — safe to run again)
+2. Sets up a wrapper script and launchd daemon (auto-starts on login)
+3. Installs the Primordial skill into Claude Code
+4. Prompts for your E2B API key (required for sandboxes)
+
+After install, restart Claude Code. Then just say "use primordial to research X" and Claude handles the rest.
+
+## Quick Start (OpenClaw / Codex)
+
+```bash
+pip install primordial-agentstore
+primordial install --openclaw    # or --codex, or --all
+```
+
+Same flow — installs the skill for your chosen host agent.
+
+## Adding Agent-Specific API Keys
+
+When Claude or OpenClaw tries to use an agent that needs keys you haven't added yet, it will tell you exactly what to run:
+
+```bash
+primordial setup https://github.com/user/web-research-agent
+```
+
+This resolves the agent's manifest, checks which keys are missing, and prompts only for those. Example output:
+
+```
+Setting up keys for: web-research-agent
+  Paste ANTHROPIC API key (required) (Enter to skip): ****
+  Paste BRAVE API key (required) (Enter to skip): ****
+  Stored anthropic.
+  Stored brave.
+
+  anthropic        ✓
+  brave            ✓
+  e2b              ✓
+
+2 key(s) added.
+```
+
+## Interactive Key Management
+
+To manage all keys interactively:
+
+```bash
+primordial setup                                 # Interactive picker
+primordial keys add                              # Same thing
+primordial keys add anthropic sk-ant-...         # Direct add
+primordial keys list                             # Show all stored keys
+primordial keys remove anthropic                 # Remove a key
 ```
 
 ## Run Your First Agent
@@ -18,28 +71,13 @@ pip install primordial-agentstore
 primordial search
 ```
 
-This searches GitHub for repos tagged `primordial-agent`. Pick one and run it. The CLI will prompt you for any API keys the agent needs on first run.
-
-You can also run an agent directly by URL:
+This searches GitHub for repos tagged `primordial-agent`. Pick one and run it:
 
 ```bash
 primordial run https://github.com/andybrowning5/web-research-agent
 ```
 
 You'll see the agent's permissions (network access, API keys, resource limits) and approve before launch.
-
-## Managing API Keys
-
-To add or update keys at any time:
-
-```bash
-primordial setup                                 # Interactive setup for all providers
-primordial keys add                              # Interactive picker
-primordial keys add anthropic sk-ant-...         # Direct add
-primordial keys add anthropic sk-ant-... --key-id prod  # With custom ID
-primordial keys list                             # Show all stored keys
-primordial keys remove anthropic                 # Remove a key
-```
 
 ## Running Agents
 
@@ -51,23 +89,14 @@ primordial run ./my-agent --refresh              # Force re-fetch from GitHub
 primordial run ./my-agent --agent                # Host-agent mode (NDJSON I/O)
 ```
 
-## Host-Agent Mode
+## Daemon & Authentication
 
-The `--agent` flag lets host agents like Claude Code or OpenClaw use Primordial interactively to spawn and converse with specialized sub-agents.
+The Primordial daemon (`primordial serve`) runs on `localhost:19400` and handles all agent lifecycle management. It generates a bearer token at `~/.primordial-daemon-token` (permissions 0600) on each startup.
 
-```bash
-# Search returns JSON
-primordial search "web research" --agent
+- `/health` (GET) — unauthenticated, for checking if daemon is running
+- All POST endpoints (`/search`, `/run`, `/message`, `/shutdown`) require `Authorization: Bearer <token>`
 
-# Run goes through interactive setup, then switches to NDJSON
-primordial run <url> --agent
-```
-
-With `--agent`:
-- **Search** outputs a JSON array of agents (no Rich UI)
-- **Run** shows the session picker and permissions approval on stdout/stdin — the host agent participates just like a human
-- After approval, the conversation uses NDJSON on stdin/stdout
-- Missing API keys produce an error with `primordial keys add <provider>` instructions instead of prompting for the key value
+The skill files handle auth automatically — you don't need to manage tokens manually.
 
 ## Sessions
 
@@ -87,6 +116,15 @@ primordial cache list                            # List cached repos
 primordial cache clear --all                     # Clear entire cache
 primordial cache clear https://github.com/u/repo # Clear specific entry
 ```
+
+## Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| "Primordial daemon isn't running" | Run `primordial serve` or reinstall: `primordial install --claude` |
+| 401 Unauthorized from daemon | Restart the daemon — token regenerates on startup |
+| 428 Missing API keys | Run the `primordial setup <url>` command shown in the error |
+| Agent won't start | Check `cat /tmp/primordial-daemon.log` for details |
 
 ## Configuration Paths
 

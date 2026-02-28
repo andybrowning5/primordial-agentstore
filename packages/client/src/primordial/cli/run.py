@@ -129,12 +129,14 @@ def _pick_session(config, agent_name: str, agent_mode: bool = False) -> Path:
 @click.command()
 @click.argument("agent_path")
 @click.option("--agent", "agent_mode", is_flag=True, help="Host-agent mode (NDJSON conversation, no key prompts)")
+@click.option("--auto-approve", is_flag=True, help="Skip permission approval prompt (for daemon use)")
 @click.option("--ref", default=None, help="Git ref (branch, tag, commit) for GitHub agents")
 @click.option("--refresh", is_flag=True, help="Force re-fetch of GitHub agent (ignore cache)")
 @click.option("--session", "session_name", default=None, help="Session name to resume (skips prompt)")
 def run(
     agent_path: str,
     agent_mode: bool,
+    auto_approve: bool,
     ref: str | None,
     refresh: bool,
     session_name: str | None,
@@ -177,6 +179,9 @@ def run(
     # Session selection
     if session_name:
         state_dir = config.session_state_dir(manifest.name, session_name)
+    elif auto_approve:
+        from datetime import datetime as _dt
+        state_dir = config.session_state_dir(manifest.name, _dt.now().strftime("%Y%m%d-%H%M%S"))
     else:
         state_dir = _pick_session(config, manifest.name, agent_mode)
 
@@ -214,7 +219,9 @@ def run(
     for line in format_permissions_for_display(manifest, stored_providers=stored_providers):
         console.print(f"  {line}")
     console.print()
-    if agent_mode:
+    if auto_approve:
+        pass  # Skip approval prompt entirely
+    elif agent_mode:
         # Plain stdin prompt — click.confirm requires a TTY
         sys.stdout.write("Approve and run? [y/N]: ")
         sys.stdout.flush()

@@ -1,6 +1,7 @@
 """Interactive first-run setup for Primordial AgentStore."""
 
 import time
+from pathlib import Path
 
 import click
 from rich.console import Console, Group
@@ -37,13 +38,98 @@ def _print_banner() -> None:
     console.print()
 
 
-@click.command()
-def setup():
-    """Configure API keys — pick a provider, add or update its key.
+def _setup_for_agent(agent_url: str):
+    """Resolve an agent manifest and prompt for missing keys."""
+    from primordial.github import GitHubResolver, GitHubResolverError, is_github_url, parse_github_url
+    from primordial.manifest import load_manifest
 
-    Shows a numbered list of providers. Pick one to add/replace,
-    press Enter to exit. Keys are encrypted and stored locally.
-    """
+    config = get_config()
+    vault = KeyVault(config.keys_file)
+
+    # Resolve agent directory
+    if is_github_url(agent_url):
+        try:
+            github_ref = parse_github_url(agent_url)
+            resolver = GitHubResolver()
+            agent_dir = resolver.resolve(github_ref)
+        except GitHubResolverError as e:
+            console.print(f"[red]Failed to resolve agent: {e}[/red]")
+            raise SystemExit(1)
+    else:
+        agent_dir = Path(agent_url)
+        if not agent_dir.exists():
+            installed = config.agents_dir / agent_url
+            if installed.exists():
+                agent_dir = installed
+            else:
+                console.print(f"[red]Agent not found: {agent_url}[/red]")
+                raise SystemExit(1)
+
+    try:
+        manifest = load_manifest(agent_dir)
+    except (FileNotFoundError, ValueError) as e:
+        console.print(f"[red]Invalid agent: {e}[/red]")
+        raise SystemExit(1)
+
+    console.print(f"\n[bold]Setting up keys for:[/bold] {manifest.name}")
+
+    if not manifest.keys:
+        console.print("[dim]This agent has no key requirements.[/dim]")
+        return
+
+    # Always need e2b
+    all_providers = {kr.provider for kr in manifest.keys}
+    all_providers.add("e2b")
+
+    missing = []
+    present = []
+    for provider in sorted(all_providers):
+        if vault.get_key(provider):
+            present.append(provider)
+        else:
+            # Check if required (e2b is always required)
+            req = next((kr for kr in manifest.keys if kr.provider == provider), None)
+            is_required = provider == "e2b" or (req and req.required)
+            missing.append((provider, is_required))
+
+    if not missing:
+        console.print()
+        for p in sorted(present):
+            console.print(f"  {p:<16} [green]✓[/green]")
+        console.print(f"\n[bold green]{manifest.name} is ready![/bold green]")
+        return
+
+    # Prompt for missing keys
+    added = 0
+    for provider, required in missing:
+        label = f"{'(required)' if required else '(optional)'}"
+        key = click.prompt(
+            f"  Paste {provider.upper()} API key {label} (Enter to skip)",
+            default="",
+            show_default=False,
+            hide_input=True,
+        ).strip()
+        if key:
+            vault.add_key(provider, key)
+            console.print(f"  [green]Stored {provider}.[/green]")
+            present.append(provider)
+            added += 1
+        elif required:
+            console.print(f"  [yellow]Skipped {provider} (required — agent may not work).[/yellow]")
+
+    # Summary
+    console.print()
+    for p in sorted(present):
+        console.print(f"  {p:<16} [green]✓[/green]")
+    still_missing = [p for p, req in missing if p not in present]
+    for p in still_missing:
+        console.print(f"  {p:<16} [red]✗[/red]")
+
+    console.print(f"\n[bold]{added} key(s) added.[/bold]")
+
+
+def _setup_interactive():
+    """Original interactive key picker flow."""
     _print_banner()
 
     config = get_config()
@@ -88,3 +174,18 @@ def setup():
     console.print()
     console.print(f"[bold bright_green]Done.[/bold bright_green] {added} key(s) added this session.")
     console.print()
+
+
+@click.command()
+@click.argument("agent_url", required=False, default=None)
+def setup(agent_url: str | None):
+    """Configure API keys — pick a provider, add or update its key.
+
+    Optionally pass an agent URL to set up only the keys that agent needs:
+
+        primordial setup https://github.com/user/web-research-agent
+    """
+    if agent_url:
+        _setup_for_agent(agent_url)
+    else:
+        _setup_interactive()
