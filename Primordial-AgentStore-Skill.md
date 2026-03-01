@@ -35,7 +35,7 @@ author:
   github: your-handle
 
 runtime:
-  language: python
+  language: python                       # Or "node" — see Node.js note below
   run_command: python -u src/agent.py    # -u for unbuffered stdout
   setup_command: pip install -r requirements.txt
   dependencies: requirements.txt
@@ -451,6 +451,37 @@ proc.wait()
 | State lost between sessions | Write to `workspace/`, `data/`, `output/`, or `state/` |
 | Import errors | Check `setup_command` installs dependencies |
 | SSL/connection errors | Declare domain in `permissions.network` |
+
+---
+
+## Node.js Agents (Fastest Setup)
+
+All languages are supported, but Node.js with esbuild bundling gives the fastest sandbox setup (~0.2s vs 3-5s for Python/pip).
+
+**Node.js manifest:**
+
+```yaml
+runtime:
+  language: node
+  run_command: node bundle.mjs 2>/dev/null || node src/agent.js
+  setup_command: test -f bundle.mjs || npm install
+  dependencies: package.json
+```
+
+**esbuild bundling** — bundle your agent into a single file to skip `npm install`:
+
+```bash
+npx esbuild src/agent.js --bundle --platform=node --format=esm --outfile=bundle.mjs \
+  --banner:js="import{createRequire}from'module';const require=createRequire(import.meta.url);"
+```
+
+Commit `bundle.mjs` to your repo. The `--banner` flag adds a `require()` shim needed for CommonJS modules in ESM bundles.
+
+| Approach | Setup Time |
+|----------|-----------|
+| Python + pip install | 3-5s |
+| Node.js + npm install | 1-3s |
+| Node.js + esbuild bundle | ~0.2s |
 
 ---
 

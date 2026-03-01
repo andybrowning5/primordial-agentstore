@@ -51,6 +51,83 @@ for line in sys.stdin:
         send({"type": "response", "content": f"You said: {msg['content']}", "message_id": mid, "done": True})
 ```
 
+## Node.js Example
+
+Node.js agents have significantly faster setup times than Python — `npm install` is typically 2-3x faster than `pip install`, and with esbuild bundling you can eliminate the install step entirely (0.2s vs 2-5s for pip).
+
+```javascript
+import { createInterface } from "readline";
+
+function send(msg) {
+  process.stdout.write(JSON.stringify(msg) + "\n");
+}
+
+send({ type: "ready" });
+
+const rl = createInterface({ input: process.stdin, terminal: false });
+
+rl.on("line", (line) => {
+  line = line.trim();
+  if (!line) return;
+  const msg = JSON.parse(line);
+
+  if (msg.type === "shutdown") {
+    rl.close();
+    return;
+  }
+
+  if (msg.type === "message") {
+    const mid = msg.message_id;
+    send({ type: "activity", tool: "thinking", description: "Processing...", message_id: mid });
+    send({ type: "response", content: `You said: ${msg.content}`, message_id: mid, done: true });
+  }
+});
+```
+
+Manifest for a Node.js agent:
+
+```yaml
+runtime:
+  language: node
+  run_command: node bundle.mjs 2>/dev/null || node src/agent.js
+  setup_command: test -f bundle.mjs || npm install
+  dependencies: package.json
+```
+
+### esbuild Bundling (Recommended)
+
+Bundle your agent into a single file to skip `npm install` entirely in the sandbox:
+
+```bash
+npm install --save-dev esbuild
+npx esbuild src/agent.js --bundle --platform=node --format=esm --outfile=bundle.mjs \
+  --banner:js="import{createRequire}from'module';const require=createRequire(import.meta.url);"
+```
+
+The `--banner` flag is required — it creates a `require()` shim so bundled CommonJS modules (like `node-fetch` inside `@anthropic-ai/sdk`) work in ESM format.
+
+Add a build script to `package.json`:
+
+```json
+{
+  "scripts": {
+    "build": "esbuild src/agent.js --bundle --platform=node --format=esm --outfile=bundle.mjs --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\""
+  }
+}
+```
+
+Commit `bundle.mjs` to your repo. The manifest's `setup_command: test -f bundle.mjs || npm install` will skip the install when the bundle exists, and fall back to `npm install` if it doesn't.
+
+**Setup time comparison:**
+
+| Approach | Setup Time |
+|----------|-----------|
+| Python + pip install | 3-5s |
+| Node.js + npm install | 1-3s |
+| Node.js + esbuild bundle | ~0.2s |
+
+All languages are fully supported — Python, Node.js, Go, Rust, or anything that runs on Linux. But if setup speed matters (especially for agents spawned as sub-agents by an orchestrator), Node.js with esbuild is the fastest path.
+
 ## Persistence
 
 Certain subdirectories of `/home/user/` are saved between sessions — `workspace/`, `data/`, `output/`, and `state/`. Write files, SQLite databases, config files to these directories and they'll be there next time the user resumes.
