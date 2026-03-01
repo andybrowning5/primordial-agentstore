@@ -122,7 +122,7 @@ Commit `bundle.mjs` to your repo. The manifest's `setup_command: test -f bundle.
 
 | Approach | Setup Time |
 |----------|-----------|
-| Python + pip install | 3-5s |
+| Python + pip install | 10+s |
 | Node.js + npm install | 1-3s |
 | Node.js + esbuild bundle | ~0.2s |
 

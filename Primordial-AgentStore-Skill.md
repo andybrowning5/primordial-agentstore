@@ -2,6 +2,8 @@
 
 You are an expert at building and modifying agents for the Primordial AgentStore platform. When asked to create or update an agent, follow these specifications exactly.
 
+**Always use Node.js** — it has the fastest sandbox setup time (~0.2s with esbuild bundling vs 10+s for Python/pip).
+
 ---
 
 ## Agent Structure
@@ -11,9 +13,9 @@ Every agent needs at minimum:
 ```
 my-agent/
 ├── agent.yaml          # Manifest — identity, runtime, permissions
-├── requirements.txt    # Dependencies (if Python)
+├── package.json        # Dependencies
 └── src/
-    └── agent.py        # Entrypoint
+    └── agent.js        # Entrypoint
 ```
 
 ---
@@ -35,10 +37,10 @@ author:
   github: your-handle
 
 runtime:
-  language: python                       # Or "node" — see Node.js note below
-  run_command: python -u src/agent.py    # -u for unbuffered stdout
-  setup_command: pip install -r requirements.txt
-  dependencies: requirements.txt
+  language: node
+  run_command: node bundle.mjs 2>/dev/null || node src/agent.js
+  setup_command: test -f bundle.mjs || npm install
+  dependencies: package.json
   default_model:
     provider: anthropic
     model: claude-sonnet-4-5-20250929
@@ -110,13 +112,15 @@ The agent never sees real API keys. Primordial runs a reverse proxy inside the s
 3. Agent sends requests to localhost with the session token
 4. Proxy validates the token, swaps it for the real key, forwards to the real domain over HTTPS
 
-SDKs like `ChatAnthropic` and `openai.OpenAI()` auto-read `*_BASE_URL` env vars, so they route through the proxy without any special code.
+SDKs like `@anthropic-ai/sdk` and `openai` auto-read `*_BASE_URL` env vars, so they route through the proxy without any special code.
 
 For manual HTTP calls (e.g., Brave Search), read the base URL env var:
 
-```python
-BRAVE_BASE_URL = os.environ.get("BRAVE_BASE_URL", "https://api.search.brave.com")
-resp = httpx.get(f"{BRAVE_BASE_URL}/res/v1/web/search", ...)
+```javascript
+const BRAVE_BASE_URL = process.env.BRAVE_BASE_URL || "https://api.search.brave.com";
+const resp = await fetch(`${BRAVE_BASE_URL}/res/v1/web/search?q=${query}`, {
+  headers: { "X-Subscription-Token": process.env.BRAVE_API_KEY },
+});
 ```
 
 ### Permissions — Network
@@ -194,172 +198,215 @@ Agents communicate via **NDJSON over stdin/stdout**. One JSON object per line.
 ### Critical Rules
 
 - **stdout = protocol only.** Debug logs go to stderr.
-- **Always use `python -u`** or `sys.stdout.flush()` — buffered stdout breaks the protocol.
 - **Every message must get a `done: true` response.** No exceptions.
 - **`message_id` must match** between request and response.
 
 ---
 
-## Minimal Python Agent Template
+## Minimal Agent Template
 
-```python
-"""Minimal Primordial agent."""
-import json
-import sys
+```javascript
+import { createInterface } from "readline";
 
+function send(msg) {
+  process.stdout.write(JSON.stringify(msg) + "\n");
+}
 
-def send(msg: dict) -> None:
-    sys.stdout.write(json.dumps(msg) + "\n")
-    sys.stdout.flush()
+function log(text) {
+  process.stderr.write(text + "\n");
+}
 
+function handleMessage(content, messageId) {
+  // YOUR LOGIC HERE
+  return `You said: ${content}`;
+}
 
-def log(text: str) -> None:
-    print(text, file=sys.stderr, flush=True)
+send({ type: "ready" });
+log("Agent ready");
 
+const rl = createInterface({ input: process.stdin, terminal: false });
 
-def handle_message(content: str, message_id: str) -> str:
-    """Process a user message and return the response text."""
-    # YOUR LOGIC HERE
-    return f"You said: {content}"
+rl.on("line", (line) => {
+  line = line.trim();
+  if (!line) return;
 
+  let msg;
+  try {
+    msg = JSON.parse(line);
+  } catch {
+    return;
+  }
 
-def main():
-    send({"type": "ready"})
-    log("Agent ready")
+  if (msg.type === "shutdown") {
+    log("Shutting down");
+    rl.close();
+    return;
+  }
 
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-
-        try:
-            msg = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-
-        if msg["type"] == "shutdown":
-            log("Shutting down")
-            break
-
-        if msg["type"] == "message":
-            mid = msg["message_id"]
-            try:
-                send({"type": "activity", "tool": "thinking",
-                      "description": "Processing...", "message_id": mid})
-                result = handle_message(msg["content"], mid)
-                send({"type": "response", "content": result,
-                      "message_id": mid, "done": True})
-            except Exception as e:
-                log(f"Error: {e}")
-                send({"type": "error", "error": str(e), "message_id": mid})
-                send({"type": "response", "content": f"Error: {e}",
-                      "message_id": mid, "done": True})
-
-
-if __name__ == "__main__":
-    main()
+  if (msg.type === "message") {
+    const mid = msg.message_id;
+    try {
+      send({ type: "activity", tool: "thinking", description: "Processing...", message_id: mid });
+      const result = handleMessage(msg.content, mid);
+      send({ type: "response", content: result, message_id: mid, done: true });
+    } catch (e) {
+      log(`Error: ${e.message}`);
+      send({ type: "error", error: e.message, message_id: mid });
+      send({ type: "response", content: `Error: ${e.message}`, message_id: mid, done: true });
+    }
+  }
+});
 ```
 
 ---
 
-## LLM Agent Template (with Deep Agents)
+## LLM Agent Template (with Anthropic SDK)
 
-Uses [LangChain Deep Agents](https://github.com/langchain-ai/deepagents) — an agent harness with built-in planning, filesystem, and sub-agent spawning.
+Uses `@anthropic-ai/sdk` with native tool use for an agentic loop.
 
-```python
-"""Primordial agent using LangChain Deep Agents."""
-import json
-import sys
+```javascript
+import Anthropic from "@anthropic-ai/sdk";
+import { createInterface } from "readline";
 
-from deepagents import create_deep_agent
-from langchain.chat_models import init_chat_model
-from langchain_core.tools import tool
+const client = new Anthropic();
 
+function send(msg) {
+  process.stdout.write(JSON.stringify(msg) + "\n");
+}
 
-def send(msg: dict) -> None:
-    sys.stdout.write(json.dumps(msg) + "\n")
-    sys.stdout.flush()
+function log(text) {
+  process.stderr.write(text + "\n");
+}
 
+const tools = [
+  {
+    name: "my_tool",
+    description: "Describe what this tool does — the LLM reads this.",
+    input_schema: {
+      type: "object",
+      properties: { query: { type: "string", description: "The query" } },
+      required: ["query"],
+    },
+  },
+];
 
-def log(text: str) -> None:
-    print(text, file=sys.stderr, flush=True)
+function runTool(name, input) {
+  // YOUR TOOL LOGIC
+  return "tool result";
+}
 
+async function process(query, messageId) {
+  send({ type: "activity", tool: "thinking", description: "Thinking...", message_id: messageId });
 
-@tool
-def my_tool(query: str) -> str:
-    """Describe what this tool does — the LLM reads this docstring."""
-    # YOUR TOOL LOGIC
-    return "tool result"
+  let messages = [{ role: "user", content: query }];
 
+  while (true) {
+    const resp = await client.messages.create({
+      model: "claude-sonnet-4-5-20250929",
+      max_tokens: 4096,
+      system: "You are a helpful agent. Use tools when needed.",
+      tools,
+      messages,
+    });
 
-def process(query: str, message_id: str) -> str:
-    send({"type": "activity", "tool": "thinking",
-          "description": "Thinking...", "message_id": message_id})
+    // Collect text and tool calls
+    let text = "";
+    const toolCalls = [];
+    for (const block of resp.content) {
+      if (block.type === "text") text += block.text;
+      if (block.type === "tool_use") toolCalls.push(block);
+    }
 
-    agent = create_deep_agent(
-        model=init_chat_model("anthropic:claude-sonnet-4-5-20250929"),
-        tools=[my_tool],
-        system_prompt="You are a helpful agent. Use tools when needed.",
-    )
+    if (resp.stop_reason !== "tool_use" || toolCalls.length === 0) {
+      return text;
+    }
 
-    result = agent.invoke(
-        {"messages": [{"role": "user", "content": query}]}
-    )
+    // Execute tools and continue the loop
+    messages.push({ role: "assistant", content: resp.content });
+    const toolResults = toolCalls.map((tc) => {
+      send({ type: "activity", tool: tc.name, description: `Running ${tc.name}...`, message_id: messageId });
+      const result = runTool(tc.name, tc.input);
+      return { type: "tool_result", tool_use_id: tc.id, content: result };
+    });
+    messages.push({ role: "user", content: toolResults });
+  }
+}
 
-    # Extract the final AI response
-    for msg in reversed(result.get("messages", [])):
-        if getattr(msg, "type", None) == "ai" and getattr(msg, "content", None):
-            content = msg.content
-            if isinstance(content, list):
-                return "\n".join(
-                    block if isinstance(block, str) else block.get("text", "")
-                    for block in content
-                )
-            return content
-    return ""
+send({ type: "ready" });
+log("Agent ready");
 
+const rl = createInterface({ input: process.stdin, terminal: false });
 
-def main():
-    send({"type": "ready"})
-    log("Agent ready")
+rl.on("line", async (line) => {
+  line = line.trim();
+  if (!line) return;
 
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
+  let msg;
+  try {
+    msg = JSON.parse(line);
+  } catch {
+    return;
+  }
 
-        try:
-            msg = json.loads(line)
-        except json.JSONDecodeError:
-            continue
+  if (msg.type === "shutdown") {
+    rl.close();
+    return;
+  }
 
-        if msg["type"] == "shutdown":
-            break
-
-        if msg["type"] == "message":
-            mid = msg["message_id"]
-            try:
-                result = process(msg["content"], mid)
-                send({"type": "response", "content": result,
-                      "message_id": mid, "done": True})
-            except Exception as e:
-                log(f"Error: {e}")
-                send({"type": "error", "error": str(e), "message_id": mid})
-                send({"type": "response", "content": f"Error: {e}",
-                      "message_id": mid, "done": True})
-
-
-if __name__ == "__main__":
-    main()
+  if (msg.type === "message") {
+    const mid = msg.message_id;
+    try {
+      const result = await process(msg.content, mid);
+      send({ type: "response", content: result, message_id: mid, done: true });
+    } catch (e) {
+      log(`Error: ${e.message}`);
+      send({ type: "error", error: e.message, message_id: mid });
+      send({ type: "response", content: `Error: ${e.message}`, message_id: mid, done: true });
+    }
+  }
+});
 ```
 
-**requirements.txt for Deep Agents:**
+**package.json:**
+```json
+{
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39"
+  }
+}
 ```
-deepagents>=0.2
-langchain>=0.3
-langchain-anthropic>=0.3
-httpx>=0.27
+
+---
+
+## esbuild Bundling (Recommended)
+
+Bundle your agent into a single file to skip `npm install` entirely in the sandbox (~0.2s setup vs 10+s for pip):
+
+```bash
+npx esbuild src/agent.js --bundle --platform=node --format=esm --outfile=bundle.mjs \
+  --banner:js="import{createRequire}from'module';const require=createRequire(import.meta.url);"
 ```
+
+The `--banner` flag adds a `require()` shim needed for CommonJS modules in ESM bundles.
+
+Add a build script to `package.json`:
+
+```json
+{
+  "scripts": {
+    "build": "esbuild src/agent.js --bundle --platform=node --format=esm --outfile=bundle.mjs --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\""
+  }
+}
+```
+
+Commit `bundle.mjs` to your repo. The manifest's `setup_command: test -f bundle.mjs || npm install` will skip the install when the bundle exists.
+
+| Approach | Setup Time |
+|----------|-----------|
+| Python + pip install | 10+s |
+| Node.js + npm install | 1-3s |
+| Node.js + esbuild bundle | ~0.2s |
 
 ---
 
@@ -392,43 +439,36 @@ permissions:
 ```
 
 **Code:**
-```python
-import subprocess, json
+```javascript
+import { spawn } from "child_process";
 
-proc = subprocess.Popen(
-    ["primordial", "run", "https://github.com/owner/repo", "--agent"],
-    stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
-)
+const proc = spawn("primordial", ["run", "https://github.com/owner/repo", "--agent"], {
+  stdio: ["pipe", "pipe", "inherit"],
+});
 
-# The --agent flag still shows the interactive session picker and
-# permissions approval prompt on stdout/stdin (the host agent
-# participates just like a human). After approval, it switches to
-# NDJSON mode.
+// Wait for ready
+for await (const line of proc.stdout) {
+  const msg = JSON.parse(line.toString().trim());
+  if (msg.type === "ready") break;
+}
 
-# Wait for ready
-for line in proc.stdout:
-    msg = json.loads(line.strip())
-    if msg["type"] == "ready":
-        break
+// Send task
+proc.stdin.write(JSON.stringify({
+  type: "message", content: "Do something", message_id: "task-1",
+}) + "\n");
 
-# Send task
-proc.stdin.write(json.dumps({
-    "type": "message", "content": "Do something",
-    "message_id": "task-1",
-}) + "\n")
-proc.stdin.flush()
+// Collect response
+for await (const line of proc.stdout) {
+  const msg = JSON.parse(line.toString().trim());
+  if (msg.done) {
+    const result = msg.content;
+    break;
+  }
+}
 
-# Collect response
-for line in proc.stdout:
-    msg = json.loads(line.strip())
-    if msg.get("done"):
-        result = msg["content"]
-        break
-
-# Shutdown
-proc.stdin.write(json.dumps({"type": "shutdown"}) + "\n")
-proc.stdin.flush()
-proc.wait()
+// Shutdown
+proc.stdin.write(JSON.stringify({ type: "shutdown" }) + "\n");
+proc.stdin.end();
 ```
 
 ---
@@ -436,8 +476,7 @@ proc.wait()
 ## Debugging
 
 - Use `primordial run ./my-agent` to test locally
-- Debug logs go to **stderr** (`print(..., file=sys.stderr)`)
-- Always use `python -u` in `run_command` to prevent stdout buffering
+- Debug logs go to **stderr** (`process.stderr.write(...)`)
 - Send `activity` messages so the UI shows progress
 
 **Common issues:**
@@ -447,49 +486,20 @@ proc.wait()
 | Agent never becomes ready | Send `{"type": "ready"}` before reading stdin |
 | No response appears | Missing `"done": true` on final response |
 | State lost between sessions | Write to `workspace/`, `data/`, `output/`, or `state/` |
-| Import errors | Check `setup_command` installs dependencies |
+| Module not found | Check `setup_command` installs dependencies |
 | SSL/connection errors | Declare domain in `permissions.network` |
-
----
-
-## Node.js Agents (Fastest Setup)
-
-All languages are supported, but Node.js with esbuild bundling gives the fastest sandbox setup (~0.2s vs 3-5s for Python/pip).
-
-**Node.js manifest:**
-
-```yaml
-runtime:
-  language: node
-  run_command: node bundle.mjs 2>/dev/null || node src/agent.js
-  setup_command: test -f bundle.mjs || npm install
-  dependencies: package.json
-```
-
-**esbuild bundling** — bundle your agent into a single file to skip `npm install`:
-
-```bash
-npx esbuild src/agent.js --bundle --platform=node --format=esm --outfile=bundle.mjs \
-  --banner:js="import{createRequire}from'module';const require=createRequire(import.meta.url);"
-```
-
-Commit `bundle.mjs` to your repo. The `--banner` flag adds a `require()` shim needed for CommonJS modules in ESM bundles.
-
-| Approach | Setup Time |
-|----------|-----------|
-| Python + pip install | 3-5s |
-| Node.js + npm install | 1-3s |
-| Node.js + esbuild bundle | ~0.2s |
+| esbuild "Dynamic require" error | Add the `--banner:js` createRequire shim |
 
 ---
 
 ## Checklist for New Agents
 
 - [ ] `agent.yaml` has `name`, `display_name`, `version`, `description`, `author`
-- [ ] `run_command` uses `python -u` (or equivalent unbuffered output)
+- [ ] `run_command` uses `node bundle.mjs 2>/dev/null || node src/agent.js`
 - [ ] Every API key has `provider`, `domain`, and `auth_style`
 - [ ] Every outbound domain is in `permissions.network` with a `reason`
 - [ ] Agent sends `{"type": "ready"}` immediately on startup
 - [ ] Every message gets a response with `"done": true`
 - [ ] Debug output goes to stderr, not stdout
 - [ ] Persistent data goes to `workspace/`, `data/`, `output/`, or `state/`
+- [ ] `bundle.mjs` committed to repo for fastest setup
