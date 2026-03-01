@@ -1,7 +1,7 @@
 ---
 name: primordial
 description: Use this skill when the user asks to delegate work to a specialist agent, spawn a sub-agent, use Primordial, search for agents, or when the task would benefit from a purpose-built agent (web research, data analysis, etc.) rather than doing it yourself. Also use when the user says "find an agent", "use primordial", "delegate this", or "spawn an agent".
-version: 0.2.0
+version: 0.3.0
 ---
 
 # Primordial AgentStore — Claude Code Integration
