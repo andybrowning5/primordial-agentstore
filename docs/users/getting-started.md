@@ -33,7 +33,7 @@ This installs a skill file so Claude Code knows how to use Primordial. After ins
 
 Then just say things like "use primordial to research X" or "find an agent for data analysis" — Claude searches the marketplace, picks an agent, spawns it, and relays the results.
 
-If an agent needs API keys you haven't added yet, Claude will tell you exactly what to run:
+If an agent needs API keys you haven't added yet, Claude will tell you exactly what to run. For example:
 
 ```
 primordial setup https://github.com/user/web-research-agent
