@@ -2,7 +2,7 @@
 
 You build an agent. We give it a sandbox. Users run it safely.
 
-Your agent is a long-running process that speaks the [Primordial Protocol](primordial-protocol.md) — NDJSON over stdin/stdout. The platform doesn't care what language you write it in, which LLM you call, or what tools you use. Declare your permissions in a [manifest](agent-manifest.md), wire up the protocol, and you're done.
+Your agent is a long-running process that speaks the [Primordial Protocol](protocol.md) — NDJSON over stdin/stdout. The platform doesn't care what language you write it in, which LLM you call, or what tools you use. Declare your permissions in a [manifest](manifest.md), wire up the protocol, and you're done.
 
 ## Agent Structure
 
@@ -223,7 +223,7 @@ Tips:
 
 ## Next Steps
 
-- [Manifest reference](agent-manifest.md) — every field and validation rule
+- [Manifest reference](manifest.md) — every field and validation rule
 - [Setting up APIs](api-setup.md) — configuring API keys and proxy routes
-- [Agent delegation](agent-delegation.md) — spawning sub-agents
+- [Delegation](delegation.md) — spawning sub-agents
 - [Publishing](publishing.md) — share your agent with others

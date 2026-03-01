@@ -45,7 +45,7 @@ primordial setup https://github.com/user/web-research-agent
 primordial install --openclaw
 ```
 
-Same idea — OpenClaw can delegate tasks to specialist agents mid-workflow via the Primordial daemon.
+Same idea — OpenClaw can delegate tasks to specialist agents mid-workflow via the Primordial background service.
 
 ### Using with Codex
 
@@ -67,12 +67,12 @@ primordial install --all
 
 | Problem | Solution |
 |---------|----------|
-| Daemon not running | Run `primordial serve` or re-run `primordial install` |
+| Service not running | Run `primordial serve` or re-run `primordial install` |
 | Missing API keys | Run `primordial setup` or `primordial setup <agent-url>` |
 | Agent won't start | Check `/tmp/primordial-daemon.log` |
 
 ## Next Steps
 
-- [Build your own agent](building-agents.md)
-- [Understand the protocol](primordial-protocol.md)
-- [Publish an agent](publishing.md)
+- [Build your own agent](../developers/building-agents.md)
+- [Understand the protocol](../developers/protocol.md)
+- [Publish an agent](../developers/publishing.md)
