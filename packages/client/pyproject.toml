@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "primordial-agentstore"
-version = "0.7.0"
+version = "0.8.0"
 description = "Primordial AgentStore CLI — discover, install, and run AI agents"
 license = "MIT"
 authors = [{ name = "Andy Browning" }]
