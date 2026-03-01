@@ -19,5 +19,5 @@ primordial setup            # add API keys (e2b + model provider)
 ## Architecture
 
 - **OpenClaw**: Uses HTTP daemon on `localhost:19400` — no process management needed
-- **Claude Code**: Uses `primordial run --agent` with stdin/stdout NDJSON piping
+- **Claude Code**: Uses HTTP daemon on `localhost:19400` with bearer token auth
 - **Codex CLI**: Uses `primordial run --agent --auto-approve` for non-interactive operation

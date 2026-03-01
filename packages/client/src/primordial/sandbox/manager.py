@@ -942,7 +942,11 @@ class DelegationHandler:
                             daemon=True,
                         ).start()
                 elif cmd == "message":
-                    self._handle_message(msg, req_id)
+                    threading.Thread(
+                        target=self._handle_message,
+                        args=(msg, req_id),
+                        daemon=True,
+                    ).start()
                 elif cmd == "monitor":
                     self._handle_monitor(msg, req_id)
                 elif cmd == "stop":

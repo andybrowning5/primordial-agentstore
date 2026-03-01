@@ -53,7 +53,7 @@ for line in sys.stdin:
 
 ## Persistence
 
-Your agent's home directory (`/home/user/`) is saved between sessions. Write files, SQLite databases, config files — whatever you want. It'll all be there next time the user resumes.
+Certain subdirectories of `/home/user/` are saved between sessions — `workspace/`, `data/`, `output/`, and `state/`. Write files, SQLite databases, config files to these directories and they'll be there next time the user resumes.
 
 Users can maintain **multiple sessions** per agent. Each session gets its own isolated filesystem snapshot.
 

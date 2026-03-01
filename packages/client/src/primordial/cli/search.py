@@ -13,16 +13,23 @@ GITHUB_SEARCH_URL = "https://api.github.com/search/repositories"
 
 
 def _fetch_results(query: str | None) -> list[dict]:
-    topic_query = "topic:primordial-agent"
-    q = f"{topic_query} {query}" if query else topic_query
-    resp = httpx.get(
-        GITHUB_SEARCH_URL,
-        params={"q": q, "sort": "stars", "order": "desc", "per_page": 20},
-        headers={"Accept": "application/vnd.github.v3+json"},
-        timeout=10,
-    )
-    resp.raise_for_status()
-    return resp.json().get("items", [])
+    seen: set[str] = set()
+    results: list[dict] = []
+    for topic in ("primordial-agent", "primordial-agent-test"):
+        q = f"topic:{topic} {query}" if query else f"topic:{topic}"
+        resp = httpx.get(
+            GITHUB_SEARCH_URL,
+            params={"q": q, "sort": "stars", "order": "desc", "per_page": 20},
+            headers={"Accept": "application/vnd.github.v3+json"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        for item in resp.json().get("items", []):
+            if item["html_url"] not in seen:
+                seen.add(item["html_url"])
+                results.append(item)
+    results.sort(key=lambda r: r.get("stargazers_count", 0), reverse=True)
+    return results
 
 
 @click.command()
