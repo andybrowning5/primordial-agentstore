@@ -304,7 +304,11 @@ class GitHubResolver:
     def _find_agent_dir(self, cache_path: Path, subdirectory: Optional[str]) -> Path:
         """Locate the directory containing agent.yaml."""
         if subdirectory:
-            candidate = cache_path / subdirectory
+            candidate = (cache_path / subdirectory).resolve()
+            if not candidate.is_relative_to(cache_path.resolve()):
+                raise GitHubResolverError(
+                    f"Subdirectory '{subdirectory}' escapes repository root"
+                )
             if (candidate / "agent.yaml").exists():
                 return candidate
             raise GitHubResolverError(

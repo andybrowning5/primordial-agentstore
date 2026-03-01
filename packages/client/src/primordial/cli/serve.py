@@ -74,8 +74,9 @@ def _respond_error(handler: BaseHTTPRequestHandler, msg: str, status: int = 400)
 
 def _check_auth(handler: BaseHTTPRequestHandler) -> bool:
     """Verify Bearer token. Returns True if authorized."""
+    import hmac
     auth = handler.headers.get("Authorization", "")
-    if auth == f"Bearer {_daemon_token}":
+    if hmac.compare_digest(auth, f"Bearer {_daemon_token}"):
         return True
     _respond_error(handler, "Unauthorized", 401)
     return False
@@ -117,22 +118,13 @@ class DaemonHandler(BaseHTTPRequestHandler):
             _respond_error(self, "Not found", 404)
 
     def _handle_search(self, body: dict):
-        from primordial.cli.search import _fetch_results
+        from primordial.discovery import fetch_agents
         query = body.get("query")
         try:
-            repos = _fetch_results(query)
+            results = fetch_agents(query)
         except Exception as e:
             _respond_error(self, str(e), 502)
             return
-        results = [
-            {
-                "name": r["full_name"],
-                "description": r.get("description") or "",
-                "url": r["html_url"],
-                "stars": r.get("stargazers_count", 0),
-            }
-            for r in repos
-        ]
         _respond_json(self, results)
 
     def _handle_run(self, body: dict):

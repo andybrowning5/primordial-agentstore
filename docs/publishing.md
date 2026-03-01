@@ -108,7 +108,6 @@ See [Agent Manifest](agent-manifest.md) for the full field reference.
 - [ ] `runtime.run_command` set — uses `python -u` for Python (unbuffered stdout is **required**)
 - [ ] `runtime.setup_command` installs all deps (e.g., `pip install -r requirements.txt`)
 - [ ] `runtime.dependencies` points to an existing file (`requirements.txt`, `package.json`, etc.)
-- [ ] `runtime.e2b_template` is `"base"` (no other value allowed)
 - [ ] `runtime.resources` — memory/CPU limits are reasonable (defaults: 2GB / 2 CPU)
 
 ### API Keys
