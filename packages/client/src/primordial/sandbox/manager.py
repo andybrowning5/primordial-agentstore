@@ -279,11 +279,13 @@ class SandboxManager:
                     continue
 
         # Start reading stdout in background thread
-        reader = threading.Thread(
-            target=proxy_handle.wait,
-            kwargs={"on_stdout": _watch_proxy_stdout},
-            daemon=True,
-        )
+        def _read_proxy():
+            try:
+                proxy_handle.wait(on_stdout=_watch_proxy_stdout)
+            except Exception:
+                pass  # Sandbox killed — expected on shutdown
+
+        reader = threading.Thread(target=_read_proxy, daemon=True)
         reader.start()
 
         if not proxy_ready.wait(timeout=10):
@@ -1142,10 +1144,14 @@ class DelegationHandler:
                 agent_dir = Path(agent_url)
             sub_manifest = load_manifest(agent_dir)
 
-            # Generate session ID
+            # Generate session ID (or reuse a preferred one if not taken)
+            preferred_sid = msg.get("session_id")
             with self._lock:
-                self._session_counter += 1
-                session_id = f"deleg-{self._session_counter}"
+                if preferred_sid and preferred_sid not in self._sessions:
+                    session_id = preferred_sid
+                else:
+                    self._session_counter += 1
+                    session_id = f"deleg-{self._session_counter}"
             # Allow resuming a previous session by passing its session_name
             session_name = msg.get("session") or f"sub-{secrets.token_hex(4)}"
 
