@@ -766,7 +766,7 @@ class AgentSession:
             if self.is_alive:
                 shutdown_msg = json.dumps({"type": "shutdown"})
                 self._sandbox.commands.send_stdin(self._cmd_handle.pid, shutdown_msg + "\n")
-                self._reader_thread.join(timeout=10)
+                self._reader_thread.join(timeout=3)
         except Exception:
             pass
         finally:
@@ -998,7 +998,11 @@ class DelegationHandler:
                 elif cmd == "monitor":
                     self._handle_monitor(msg, req_id)
                 elif cmd == "stop":
-                    self._handle_stop(msg, req_id)
+                    threading.Thread(
+                        target=self._handle_stop,
+                        args=(msg, req_id),
+                        daemon=True,
+                    ).start()
                 else:
                     self._send_to_proxy({
                         "type": "error",
