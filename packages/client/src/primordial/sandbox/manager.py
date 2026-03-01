@@ -263,17 +263,31 @@ class SandboxManager:
         }
         sandbox.commands.send_stdin(proxy_pid, json.dumps(proxy_config) + "\n")
 
-        # Wait for proxy to bind
-        first_port = routes[0]["port"]
-        sandbox.commands.run(
-            f"python3 -c \""
-            f"import socket, time\n"
-            f"for _ in range(30):\n"
-            f"    try: s=socket.create_connection(('127.0.0.1',{first_port}),1); s.close(); break\n"
-            f"    except OSError: time.sleep(0.2)\n"
-            f"\"",
-            user="root",
+        # Wait for proxy to emit ready signal on stdout
+        proxy_ready = threading.Event()
+
+        def _watch_proxy_stdout(data: str) -> None:
+            for line in data.split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    msg = json.loads(line)
+                    if msg.get("status") == "ready":
+                        proxy_ready.set()
+                except json.JSONDecodeError:
+                    continue
+
+        # Start reading stdout in background thread
+        reader = threading.Thread(
+            target=proxy_handle.wait,
+            kwargs={"on_stdout": _watch_proxy_stdout},
+            daemon=True,
         )
+        reader.start()
+
+        if not proxy_ready.wait(timeout=10):
+            logger.warning("Security proxy did not signal ready in time")
 
         return proxy_pid, agent_envs
 
@@ -400,17 +414,49 @@ class SandboxManager:
             _status("Hardening sandbox...")
             self._apply_hardening(sandbox, needs_proxy=bool(manifest.keys))
 
-            # --- Start in-sandbox reverse proxy for API key isolation ---
-            # SECURITY: Proxy starts BEFORE setup_command to prevent malicious
-            # setup from pre-binding proxy ports and intercepting API traffic.
+            # --- Start proxies in parallel ---
+            # SECURITY: Both proxies start BEFORE setup_command to prevent
+            # malicious setup from pre-binding proxy ports.
             proxy_pid, agent_envs = None, {}
-            if manifest.keys:
+            delegation_handler = None
+
+            needs_security = bool(manifest.keys)
+            needs_delegation = manifest.permissions.delegation.enabled
+
+            if needs_security and needs_delegation:
+                _status("Starting proxies...")
+                proxy_result: list[tuple] = [()]
+                deleg_result: list[Optional["DelegationHandler"]] = [None]
+                errors: list[Exception] = []
+
+                def _start_sec():
+                    try:
+                        proxy_result[0] = self._start_proxy(sandbox, manifest, env_vars)
+                    except Exception as e:
+                        errors.append(e)
+
+                def _start_del():
+                    try:
+                        deleg_result[0] = self._start_delegation_proxy(
+                            sandbox, manifest, env_vars,
+                        )
+                    except Exception as e:
+                        errors.append(e)
+
+                t1 = threading.Thread(target=_start_sec)
+                t2 = threading.Thread(target=_start_del)
+                t1.start()
+                t2.start()
+                t1.join()
+                t2.join()
+                if errors:
+                    raise errors[0]
+                proxy_pid, agent_envs = proxy_result[0]
+                delegation_handler = deleg_result[0]
+            elif needs_security:
                 _status("Starting security proxy...")
                 proxy_pid, agent_envs = self._start_proxy(sandbox, manifest, env_vars)
-
-            # --- Start delegation proxy for agent-to-agent delegation ---
-            delegation_handler = None
-            if manifest.permissions.delegation.enabled:
+            elif needs_delegation:
                 _status("Starting delegation proxy...")
                 delegation_handler = self._start_delegation_proxy(
                     sandbox, manifest, env_vars,
@@ -1100,7 +1146,8 @@ class DelegationHandler:
             with self._lock:
                 self._session_counter += 1
                 session_id = f"deleg-{self._session_counter}"
-            session_name = f"sub-{secrets.token_hex(4)}"
+            # Allow resuming a previous session by passing its session_name
+            session_name = msg.get("session") or f"sub-{secrets.token_hex(4)}"
 
             # Determine state dir for sub-agent
             from primordial.config import get_config
@@ -1237,6 +1284,7 @@ class DelegationHandler:
             self._send_to_proxy({
                 "type": "session",
                 "session_id": session_id,
+                "session_name": session_name,
                 "request_id": req_id,
             })
 
