@@ -3,33 +3,12 @@
 import json as json_mod
 
 import click
-import httpx
 from rich.console import Console
 from rich.table import Table
 
+from primordial.discovery import fetch_agents
+
 console = Console()
-
-GITHUB_SEARCH_URL = "https://api.github.com/search/repositories"
-
-
-def _fetch_results(query: str | None) -> list[dict]:
-    seen: set[str] = set()
-    results: list[dict] = []
-    for topic in ("primordial-agent", "primordial-agent-test"):
-        q = f"topic:{topic} {query}" if query else f"topic:{topic}"
-        resp = httpx.get(
-            GITHUB_SEARCH_URL,
-            params={"q": q, "sort": "stars", "order": "desc", "per_page": 20},
-            headers={"Accept": "application/vnd.github.v3+json"},
-            timeout=10,
-        )
-        resp.raise_for_status()
-        for item in resp.json().get("items", []):
-            if item["html_url"] not in seen:
-                seen.add(item["html_url"])
-                results.append(item)
-    results.sort(key=lambda r: r.get("stargazers_count", 0), reverse=True)
-    return results
 
 
 @click.command()
@@ -39,30 +18,21 @@ def search(query: str | None, as_agent: bool = False):
     """Search for Primordial agents on GitHub."""
     if as_agent:
         try:
-            repos = _fetch_results(query)
-        except httpx.HTTPError as e:
+            agents = fetch_agents(query)
+        except Exception as e:
             click.echo(json_mod.dumps({"error": str(e)}))
             raise SystemExit(1)
-        compact = [
-            {
-                "name": r["full_name"],
-                "description": r.get("description") or "",
-                "url": r["html_url"],
-                "stars": r.get("stargazers_count", 0),
-            }
-            for r in repos
-        ]
-        click.echo(json_mod.dumps(compact))
+        click.echo(json_mod.dumps(agents))
         return
 
     with console.status("[bold green]Searching GitHub..."):
         try:
-            repos = _fetch_results(query)
-        except httpx.HTTPError as e:
+            agents = fetch_agents(query)
+        except Exception as e:
             console.print(f"[red]GitHub API error: {e}[/red]")
             return
 
-    if not repos:
+    if not agents:
         console.print("[yellow]No agents found.[/yellow]")
         return
 
@@ -73,13 +43,13 @@ def search(query: str | None, as_agent: bool = False):
     table.add_column("Stars", justify="right", style="yellow")
     table.add_column("URL", style="blue")
 
-    for i, repo in enumerate(repos, 1):
+    for i, repo in enumerate(agents, 1):
         table.add_row(
             str(i),
-            repo["full_name"],
-            (repo.get("description") or "")[:50],
-            str(repo.get("stargazers_count", 0)),
-            repo["html_url"],
+            repo["name"],
+            repo["description"][:50],
+            str(repo["stars"]),
+            repo["url"],
         )
 
     console.print(table)
@@ -90,13 +60,13 @@ def search(query: str | None, as_agent: bool = False):
 
     try:
         idx = int(choice) - 1
-        if not (0 <= idx < len(repos)):
+        if not (0 <= idx < len(agents)):
             raise ValueError
     except ValueError:
         console.print("[red]Invalid selection.[/red]")
         return
 
-    repo_url = repos[idx]["html_url"]
+    repo_url = agents[idx]["url"]
     console.print(f"\n[bold]Running:[/bold] {repo_url}")
     from primordial.cli.run import run
     ctx = click.Context(run)

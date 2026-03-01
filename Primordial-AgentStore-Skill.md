@@ -39,7 +39,6 @@ runtime:
   run_command: python -u src/agent.py    # -u for unbuffered stdout
   setup_command: pip install -r requirements.txt
   dependencies: requirements.txt
-  e2b_template: base                     # Must be "base"
   default_model:
     provider: anthropic
     model: claude-sonnet-4-5-20250929
@@ -144,7 +143,6 @@ Domains declared in `keys` are auto-allowed. Additional domains (webhooks, etc.)
 | `env_var` | `^[A-Z][A-Z0-9_]*$`, cannot be `PATH`, `HOME`, `SHELL`, etc. |
 | `domain` | FQDN with at least one dot and one letter. No IP literals. |
 | `auth_style` | `^[a-z][a-z0-9-]*$` |
-| `e2b_template` | Must be `"base"` |
 
 ---
 

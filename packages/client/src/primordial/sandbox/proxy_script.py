@@ -44,15 +44,16 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         # SECURITY: Validate session token if configured.
         # Check the auth header matching this route's auth_style.
         if self.server.session_token is not None:
+            import hmac
             if self.server.auth_style == "bearer":
-                token_found = (
-                    self.headers.get("Authorization", "")
-                    == f"Bearer {self.server.session_token}"
+                token_found = hmac.compare_digest(
+                    self.headers.get("Authorization", ""),
+                    f"Bearer {self.server.session_token}",
                 )
             else:
-                token_found = (
-                    self.headers.get(self.server.auth_style, "")
-                    == self.server.session_token
+                token_found = hmac.compare_digest(
+                    self.headers.get(self.server.auth_style, ""),
+                    self.server.session_token,
                 )
             if not token_found:
                 self.send_error(403, "Unauthorized")

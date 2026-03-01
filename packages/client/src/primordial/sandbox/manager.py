@@ -394,7 +394,7 @@ class SandboxManager:
         # 30 min timeout — delegation scenarios with nested sub-agents
         # can take several minutes just for setup.
         sandbox = Sandbox.create(
-            template=manifest.runtime.e2b_template,
+            template="base",
             envs=safe_envs,
             timeout=1800,
             **network_kwargs,
@@ -485,6 +485,7 @@ class SandboxManager:
                 background=True,
                 stdin=True,
                 timeout=0,  # No connection timeout — agent sessions are long-lived
+                user="user",
             )
 
             def _on_stdout(data: str) -> None:
@@ -557,7 +558,7 @@ class SandboxManager:
         # 30 min timeout — delegation scenarios with nested sub-agents
         # can take several minutes just for setup.
         sandbox = Sandbox.create(
-            template=manifest.runtime.e2b_template,
+            template="base",
             envs=safe_envs,
             timeout=1800,
             **network_kwargs,
@@ -1023,26 +1024,8 @@ class DelegationHandler:
 
     def _fetch_agents(self, query: str | None = None) -> list[dict]:
         """Fetch agents from GitHub API."""
-        import httpx
-        topic_query = "topic:primordial-agent"
-        q = f"{topic_query} {query}" if query else topic_query
-        resp = httpx.get(
-            "https://api.github.com/search/repositories",
-            params={"q": q, "sort": "stars", "order": "desc", "per_page": 100},
-            headers={"Accept": "application/vnd.github.v3+json"},
-            timeout=10,
-        )
-        resp.raise_for_status()
-        items = resp.json().get("items", [])
-        return [
-            {
-                "name": r["full_name"],
-                "description": r.get("description") or "",
-                "url": r["html_url"],
-                "stars": r.get("stargazers_count", 0),
-            }
-            for r in items
-        ]
+        from primordial.discovery import fetch_agents
+        return fetch_agents(query)
 
     def _get_embed_model(self):
         """Lazy-load the FastEmbed model."""
@@ -1123,10 +1106,26 @@ class DelegationHandler:
             })
             return None
 
+        # Limit concurrent sub-agents
+        MAX_SUB_AGENTS = 6
+        with self._lock:
+            active = sum(1 for s in self._sessions.values() if s.sandbox is not None)
+        if active >= MAX_SUB_AGENTS:
+            self._send_to_proxy({
+                "type": "error",
+                "error": f"Maximum of {MAX_SUB_AGENTS} concurrent sub-agents reached. Stop an existing agent first.",
+                "request_id": req_id,
+            })
+            return None
+
         # Validate against allowed_agents if set
         allowed = self._manifest.permissions.delegation.allowed_agents
         if allowed:
-            matched = any(a in agent_url for a in allowed)
+            # Exact match against owner/repo or full URL — no substring matching
+            matched = any(
+                agent_url == a or agent_url.rstrip("/").endswith(f"/{a}")
+                for a in allowed
+            )
             if not matched:
                 self._send_to_proxy({
                     "type": "error",

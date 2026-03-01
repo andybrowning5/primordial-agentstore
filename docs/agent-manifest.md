@@ -25,7 +25,6 @@ runtime:
   run_command: python -u src/agent.py
   setup_command: pip install -r requirements.txt
   dependencies: requirements.txt
-  e2b_template: base
   default_model:
     provider: anthropic
     model: claude-sonnet-4-5-20250929
@@ -79,7 +78,6 @@ permissions:
 | `run_command` | string | no | `null` | Agent entrypoint command |
 | `setup_command` | string | no | `null` | Runs once at sandbox startup |
 | `dependencies` | string | no | `null` | Dependencies file (checked for existence) |
-| `e2b_template` | string | no | `"base"` | Sandbox template. Must be `"base"`. |
 | `default_model.provider` | string | no | `"anthropic"` | LLM provider |
 | `default_model.model` | string | no | `"claude-sonnet-4-5-20250929"` | Model ID |
 | `resources.max_memory` | string | no | `"2GB"` | Memory limit |
@@ -129,7 +127,6 @@ List of allowed outbound domains. Each entry:
 | `domain` | FQDN with at least one dot and one letter. No IP literals. |
 | `base_url_env` | `^[A-Z][A-Z0-9_]*$` — cannot be a protected name |
 | `auth_style` | Any valid header name (`^[a-z][a-z0-9-]*$`) |
-| `e2b_template` | Must be `"base"` |
 
 ### Protected Environment Variables
 

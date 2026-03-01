@@ -32,18 +32,8 @@ class RuntimeConfig(BaseModel):
     setup_command: Optional[str] = None
     run_command: Optional[str] = None
     mode: str = "agent"  # "agent" (NDJSON protocol) or "terminal" (raw PTY passthrough)
-    e2b_template: str = "base"
     default_model: ModelConfig = Field(default_factory=ModelConfig)
     resources: ResourceLimits = Field(default_factory=ResourceLimits)
-
-    @field_validator("e2b_template")
-    @classmethod
-    def validate_template(cls, v: str) -> str:
-        if v not in ALLOWED_TEMPLATES:
-            raise ValueError(
-                f"Template {v!r} not allowed. Allowed: {ALLOWED_TEMPLATES}"
-            )
-        return v
 
 
 class NetworkPermission(BaseModel):
@@ -81,9 +71,6 @@ _PROTECTED_ENV_VARS = {
     "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES",
 }
 
-# Only these templates are allowed for sandbox creation
-ALLOWED_TEMPLATES = {"base"}
-
 
 class KeyRequirement(BaseModel):
     """Declares an API key that an agent needs."""
@@ -100,16 +87,19 @@ class KeyRequirement(BaseModel):
     @classmethod
     def validate_provider(cls, v: str) -> str:
         if not _PROVIDER_RE.match(v):
-            raise ValueError(f"Invalid provider name: {v!r} (lowercase letters, numbers, hyphens)")
+            suggestion = v.lower().replace("_", "-").replace(" ", "-")
+            hint = f" — try: {suggestion!r}" if suggestion != v else ""
+            raise ValueError(f"Invalid provider name: {v!r} (must be lowercase letters, numbers, hyphens){hint}")
         return v
 
     @field_validator("env_var")
     @classmethod
     def validate_env_var(cls, v: Optional[str]) -> Optional[str]:
         if v is not None and not _ENV_VAR_RE.match(v):
-            raise ValueError(f"Invalid env_var: {v!r} (must match [A-Z][A-Z0-9_]*)")
+            suggestion = v.upper().replace("-", "_").replace(" ", "_")
+            raise ValueError(f"Invalid env_var: {v!r} — try: {suggestion!r} (must be UPPER_SNAKE_CASE)")
         if v is not None and v in _PROTECTED_ENV_VARS:
-            raise ValueError(f"env_var cannot use protected name: {v!r}")
+            raise ValueError(f"env_var {v!r} is a protected system variable — choose a different name")
         return v
 
     @field_validator("domain")
@@ -118,18 +108,22 @@ class KeyRequirement(BaseModel):
         if not v:
             return v  # empty domain allowed for passthrough keys
         if not _DOMAIN_RE.match(v):
-            raise ValueError(f"Invalid domain: {v!r} (must be a valid FQDN with at least one dot)")
+            raise ValueError(
+                f"Invalid domain: {v!r} — must be a fully qualified domain name "
+                f"(e.g. 'api.example.com'). No IP addresses or single-label hosts."
+            )
         if not _DOMAIN_HAS_LETTER.search(v):
-            raise ValueError(f"Invalid domain: {v!r} (IP literals not allowed)")
+            raise ValueError(f"Invalid domain: {v!r} — IP addresses are not allowed, use a domain name instead")
         return v
 
     @field_validator("base_url_env")
     @classmethod
     def validate_base_url_env(cls, v: Optional[str]) -> Optional[str]:
         if v is not None and not _ENV_VAR_RE.match(v):
-            raise ValueError(f"Invalid base_url_env: {v!r} (must match [A-Z][A-Z0-9_]*)")
+            suggestion = v.upper().replace("-", "_").replace(" ", "_")
+            raise ValueError(f"Invalid base_url_env: {v!r} — try: {suggestion!r} (must be UPPER_SNAKE_CASE)")
         if v is not None and v in _PROTECTED_ENV_VARS:
-            raise ValueError(f"base_url_env cannot use protected name: {v!r}")
+            raise ValueError(f"base_url_env {v!r} is a protected system variable — choose a different name")
         return v
 
     @field_validator("auth_style")
@@ -137,7 +131,9 @@ class KeyRequirement(BaseModel):
     def validate_auth_style(cls, v: str) -> str:
         v = v.lower()
         if not re.match(r"^[a-z][a-z0-9-]*$", v):
-            raise ValueError(f"Invalid auth_style: {v!r} (must be a valid header name)")
+            raise ValueError(
+                f"Invalid auth_style: {v!r} — common values: 'bearer', 'x-api-key', 'x-subscription-token'"
+            )
         return v
 
     def resolved_env_var(self) -> str:
