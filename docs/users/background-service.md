@@ -1,6 +1,6 @@
-# The Primordial Daemon
+# Background Service
 
-When Claude Code or OpenClaw uses Primordial, they talk to a small background service running on your machine called the **daemon**. It manages agent sandboxes so you don't have to.
+When Claude Code or OpenClaw uses Primordial, they talk to a small background service running on your machine. It manages agent sandboxes so you don't have to.
 
 ## What it does
 
@@ -11,19 +11,19 @@ When Claude Code or OpenClaw uses Primordial, they talk to a small background se
 
 ## How it gets installed
 
-When you run `primordial install`, it sets up the daemon to start automatically on login using macOS launchd. You may see a prompt to install **Xcode Command Line Tools** — agree to install them if asked.
+When you run `primordial install`, it sets up the service to start automatically on login using macOS launchd. You may see a prompt to install **Xcode Command Line Tools** — agree to install them if asked.
 
-After install, the daemon runs in the background. You don't need to start it manually.
+After install, the service runs in the background. You don't need to start it manually.
 
 ## Files on your machine
 
 | File | Purpose |
 |------|---------|
-| `~/Library/LaunchAgents/com.primordial.daemon.plist` | Tells macOS to start the daemon on login and restart it if it crashes |
+| `~/Library/LaunchAgents/com.primordial.daemon.plist` | Tells macOS to start the service on login and restart it if it crashes |
 | `~/.local/bin/primordial` | Wrapper script that unlocks your key vault before running commands |
 | `~/.primordial-password` | Your vault encryption password (auto-generated, never leave your machine) |
-| `~/.primordial-daemon-token` | Auth token for the current daemon session (regenerated each time it starts) |
-| `/tmp/primordial-daemon.log` | Daemon log output |
+| `~/.primordial-daemon-token` | Auth token for the current session (regenerated each time it starts) |
+| `/tmp/primordial-daemon.log` | Service log output |
 
 All sensitive files (`-password`, `-daemon-token`) are readable only by your user account.
 
@@ -35,7 +35,7 @@ curl -s http://localhost:19400/health
 
 If you get back `{"ok": true, ...}`, it's running. If the connection is refused, it's not.
 
-## Restarting the daemon
+## Restarting the service
 
 ```bash
 launchctl stop com.primordial.daemon
@@ -56,7 +56,7 @@ Or follow live:
 tail -f /tmp/primordial-daemon.log
 ```
 
-## Stopping the daemon permanently
+## Stopping the service permanently
 
 ```bash
 launchctl unload ~/Library/LaunchAgents/com.primordial.daemon.plist
@@ -66,4 +66,4 @@ This stops it and prevents it from starting on login. Run `primordial install` a
 
 ## Linux
 
-On Linux, launchd isn't available. You'll need to run `primordial serve` manually or set up a systemd service. The daemon works the same way — just the auto-start mechanism differs.
+On Linux, launchd isn't available. You'll need to run `primordial serve` manually or set up a systemd service. The service works the same way — just the auto-start mechanism differs.

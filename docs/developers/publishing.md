@@ -101,7 +101,7 @@ Complete every item before publishing. Each section links to the relevant doc fo
 - [ ] `description` — clear and informative (written for humans AND AI callers)
 - [ ] `author.name` filled in (and ideally `author.github`)
 
-See [Agent Manifest](agent-manifest.md) for the full field reference.
+See [Manifest Reference](manifest.md) for the full field reference.
 
 ### Runtime
 
@@ -119,7 +119,7 @@ See [Agent Manifest](agent-manifest.md) for the full field reference.
 - [ ] `env_var` / `base_url_env` don't collide with protected system variables (`PATH`, `HOME`, `SHELL`, etc.)
 - [ ] Agent code reads `<PROVIDER>_BASE_URL` env var for all HTTP calls (required for proxy routing)
 
-See [Setting Up APIs](api-setup.md) for proxy and key vault details.
+See [API Setup](api-setup.md) for proxy and key vault details.
 
 ### Permissions
 
@@ -136,7 +136,7 @@ See [Setting Up APIs](api-setup.md) for proxy and key vault details.
 - [ ] **All debug/log output goes to stderr** — stdout is protocol-only
 - [ ] Streaming responses use `"done": false` for intermediate chunks, `"done": true` for the final chunk
 
-See [Primordial Protocol](primordial-protocol.md) for the full message spec.
+See [Protocol](protocol.md) for the full message spec.
 
 ### Persistence (if applicable)
 

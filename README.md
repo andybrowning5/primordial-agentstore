@@ -2,7 +2,7 @@
 
 An open-source marketplace for AI agents. Anyone can publish an agent, anyone can run it safely — no trust required. Agents run in cloud-sandboxed Firecracker microVMs with proxy-injected API keys, declared permissions, and full network isolation. You never run someone else's code on your machine, and your credentials never touch theirs.
 
-**→ [Get started](docs/getting-started.md)**
+**→ [Get started](docs/users/getting-started.md)**
 
 #### Run any AI agent safely in 5 seconds
 Pick an agent, approve its permissions, it's live — running in a cloud sandbox, not on your machine. Your API keys never touch the agent code. No Docker, no config, no trust required.
@@ -42,19 +42,24 @@ primordial cache list|clear    # View or clear cached agent repos
 
 ## Documentation
 
-See **[docs/](docs/)** for all guides:
+### For Users
 
 | Guide | Description |
 |-------|-------------|
-| [Getting Started](docs/getting-started.md) | Install, configure, run your first agent |
-| [The Daemon](docs/daemon.md) | How the background service works, logs, troubleshooting |
-| [Building Agents](docs/building-agents.md) | Agent structure, examples, persistence, debugging |
-| [Primordial Protocol](docs/primordial-protocol.md) | The NDJSON message protocol |
-| [Agent Manifest](docs/agent-manifest.md) | Complete `agent.yaml` reference |
-| [Setting Up APIs](docs/api-setup.md) | Configuring API keys and proxy routes |
-| [Agent Delegation](docs/agent-delegation.md) | Spawning sub-agents |
-| [Publishing Agents](docs/publishing.md) | Share your agent with others |
-| [Security Architecture](docs/security.md) | Threat model, sandbox, key vault, proxy |
+| [Getting Started](docs/users/getting-started.md) | Install Primordial and run your first agent |
+| [Background Service](docs/users/background-service.md) | How the background service works, logs, and troubleshooting |
+| [Security](docs/users/security.md) | How your API keys and data are protected |
+
+### For Agent Developers
+
+| Guide | Description |
+|-------|-------------|
+| [Building Agents](docs/developers/building-agents.md) | Create an agent in Python, Node.js, or any language |
+| [Protocol](docs/developers/protocol.md) | The NDJSON message format agents speak |
+| [Manifest](docs/developers/manifest.md) | Complete `agent.yaml` reference |
+| [API Setup](docs/developers/api-setup.md) | Configuring API keys and the security proxy |
+| [Delegation](docs/developers/delegation.md) | Spawning and coordinating sub-agents |
+| [Publishing](docs/developers/publishing.md) | Share your agent with the world |
 
 ---
 
