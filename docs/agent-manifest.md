@@ -75,7 +75,7 @@ permissions:
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `language` | string | no | `"python"` | Language identifier |
+| `language` | string | no | `"python"` | Language identifier (`python`, `node`, etc.) |
 | `run_command` | string | no | `null` | Agent entrypoint command |
 | `setup_command` | string | no | `null` | Runs once at sandbox startup |
 | `dependencies` | string | no | `null` | Dependencies file (checked for existence) |
