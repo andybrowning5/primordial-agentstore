@@ -698,6 +698,15 @@ def _run_chat(
             session.shutdown()
             raise SystemExit(1)
 
+    # Per-session colors for sub-agent activities
+    _DELEG_COLORS = ["cyan", "magenta", "yellow", "green", "blue", "red"]
+    _deleg_color_map: dict[str, str] = {}
+
+    def _color_for(sid: str) -> str:
+        if sid not in _deleg_color_map:
+            _deleg_color_map[sid] = _DELEG_COLORS[len(_deleg_color_map) % len(_DELEG_COLORS)]
+        return _deleg_color_map[sid]
+
     # Wire up delegation handler callbacks to pause/resume the thinking spinner
     _active_spinner = {"ref": None}
     if hasattr(session, "_delegation_handler") and session._delegation_handler:
@@ -802,7 +811,8 @@ def _run_chat(
                     if tool == "sub:response":
                         sid = msg.get("session_id", "")
                         label = sid if sid else "response"
-                        console.print(f"      [green]› {label}:[/green] [dim]{desc}[/dim]")
+                        c = _color_for(sid) if sid else "green"
+                        console.print(f"      [{c}]› {label}:[/{c}] [dim]{desc}[/dim]")
                     elif tool == "sub:setup":
                         sid = msg.get("session_id", "")
                         # Show mini spawn animation with live-updating status
@@ -811,8 +821,9 @@ def _run_chat(
                     elif tool.startswith("sub:"):
                         sub_tool = tool[4:]
                         sid = msg.get("session_id", "")
+                        c = _color_for(sid) if sid else "cyan"
                         prefix = f"{sid} › {sub_tool}" if sid else sub_tool
-                        console.print(f"      [cyan]› {prefix}:[/cyan] [dim]{desc}[/dim]")
+                        console.print(f"      [{c}]› {prefix}:[/{c}] [dim]{desc}[/dim]")
                     else:
                         console.print(f"  [dim]› {tool}: {desc}[/dim]")
                     thinking = console.status("[dim]Thinking...[/dim]", spinner="flip")
