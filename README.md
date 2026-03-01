@@ -1,21 +1,19 @@
 # Primordial AgentStore
 
-### Run any AI agent safely in 5 seconds
-Pick an agent, approve its permissions, it's live — running in a cloud sandbox, not on your machine. Your API keys never touch the agent code. Every agent gets its own Firecracker microVM with declared network permissions and proxy-injected credentials. No Docker, no config, no trust required.
+An open-source marketplace for AI agents. Anyone can publish an agent, anyone can run it safely — no trust required. Agents run in cloud-sandboxed Firecracker microVMs with proxy-injected API keys, declared permissions, and full network isolation. You never run someone else's code on your machine, and your credentials never touch theirs.
 
-### Build an agent in any language, zero SDK
+**→ [Get started](docs/getting-started.md)**
+
+#### Run any AI agent safely in 5 seconds
+Pick an agent, approve its permissions, it's live — running in a cloud sandbox, not on your machine. Your API keys never touch the agent code. No Docker, no config, no trust required.
+
+#### Build an agent in any language, zero SDK
 NDJSON over stdin/stdout. That's the whole protocol. Python, Node, Go, Rust — if it reads stdin and writes stdout, it's a Primordial agent. Push to GitHub, tag it, and anyone in the world can run it. 50 lines of code, one YAML manifest.
 
-### Plug thousands of specialist agents into Claude Code
+#### Plug thousands of specialist agents into Claude Code
 One integration, instant access to a growing ecosystem of purpose-built agents. Claude Code discovers and runs them on its own — web research, data analysis, code generation, whatever you need. Every agent runs sandboxed in the cloud. Install Primordial, and Claude Code can use any of them.
 
-*One command. Thousands of agents. Claude picks the right one.*
-
----
-
 > **AI agents (Claude Code, Codex, OpenClaw):** See [`Host-Integration-Skill.md`](Host-Integration-Skill.md) for setup instructions and usage reference.
-
-**→ [Get started here](docs/getting-started.md)**
 
 ---
 
