@@ -20,7 +20,8 @@ One integration, instant access to a growing ecosystem of purpose-built agents. 
 ## Demo
 
 
-https://github.com/user-attachments/assets/ba5a0700-fdfe-4fc4-b1c3-de9bdb8120bb
+https://github.com/user-attachments/assets/57f4ddec-75bb-4740-8c13-0a7a774dc10e
+
 
 ---
 
