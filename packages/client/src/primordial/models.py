@@ -15,6 +15,18 @@ class AuthorInfo(BaseModel):
     name: str
     github: Optional[str] = None
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("author.name must not be empty")
+        if len(v) > 100:
+            raise ValueError(
+                f"author.name is too long ({len(v)} chars) — must be 100 characters or fewer"
+            )
+        return v
+
 
 class ModelConfig(BaseModel):
     provider: str = "anthropic"
