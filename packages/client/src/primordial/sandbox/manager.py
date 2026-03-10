@@ -157,13 +157,14 @@ class SandboxManager:
         try:
             tar_bytes = sandbox.files.read(tmp_path, format="bytes")
             with tarfile.open(fileobj=io.BytesIO(tar_bytes)) as tar_stream:
-                # SECURITY: Only extract members with safe paths.
-                # Rejects absolute paths, ".." traversal, and symlinks.
+                # SECURITY: Only extract regular files and directories.
+                # Rejects absolute paths, ".." traversal, symlinks, device
+                # files, FIFOs, and sockets to prevent tar-based attacks.
                 safe_members = []
                 for member in tar_stream.getmembers():
                     if member.name.startswith("/") or ".." in member.name.split("/"):
                         continue
-                    if member.issym() or member.islnk():
+                    if not (member.isfile() or member.isdir()):
                         continue
                     safe_members.append(member)
                 tar_stream.extractall(path=str(state_dir), members=safe_members)
@@ -427,6 +428,7 @@ class SandboxManager:
         manifest: AgentManifest,
         env_vars: dict[str, str],
         worktree_mgr: Optional[Any] = None,
+        delegation_depth: int = 0,
     ) -> Optional["DelegationHandler"]:
         """Start the delegation proxy if delegation is enabled.
 
@@ -464,6 +466,7 @@ class SandboxManager:
             env_vars=env_vars,
             manager=self,
             worktree_mgr=worktree_mgr,
+            delegation_depth=delegation_depth,
         )
         handler.start()
 
@@ -482,6 +485,7 @@ class SandboxManager:
         state_dir: Optional[Path] = None,
         on_status: Optional[Callable[[str], None]] = None,
         worktree_mgr: Optional[Any] = None,
+        delegation_depth: int = 0,
     ) -> AgentSession:
         """Start an agent session in an E2B sandbox."""
         self._ensure_e2b_api_key(env_vars)
@@ -575,6 +579,7 @@ class SandboxManager:
                     try:
                         deleg_result[0] = self._start_delegation_proxy(
                             sandbox, manifest, env_vars, worktree_mgr,
+                            delegation_depth=delegation_depth,
                         )
                     except Exception as e:
                         errors.append(e)
@@ -596,6 +601,7 @@ class SandboxManager:
                 _status("Starting delegation proxy...")
                 delegation_handler = self._start_delegation_proxy(
                     sandbox, manifest, env_vars, worktree_mgr,
+                    delegation_depth=delegation_depth,
                 )
 
             if manifest.runtime.setup_command:
@@ -735,6 +741,7 @@ class SandboxManager:
                 _status("Starting delegation proxy...")
                 delegation_handler = self._start_delegation_proxy(
                     sandbox, manifest, env_vars, worktree_mgr,
+                    delegation_depth=delegation_depth,
                 )
 
             if manifest.runtime.setup_command:
@@ -1059,6 +1066,8 @@ class DelegationHandler:
 
     _MAX_OUTPUT_LINES = 1000
 
+    _MAX_DELEGATION_DEPTH = 3
+
     def __init__(
         self,
         sandbox: Sandbox,
@@ -1067,6 +1076,7 @@ class DelegationHandler:
         env_vars: dict[str, str],
         manager: SandboxManager,
         worktree_mgr: Optional[Any] = None,
+        delegation_depth: int = 0,
     ):
         self._sandbox = sandbox
         self._deleg_handle = deleg_handle
@@ -1074,6 +1084,7 @@ class DelegationHandler:
         self._env_vars = env_vars
         self._manager = manager
         self._worktree_mgr = worktree_mgr
+        self._delegation_depth = delegation_depth
         self._sessions: dict[str, AgentSession] = {}
         self._output_buffers: dict[str, list[str]] = {}
         self._session_meta: dict[str, dict] = {}  # session_id -> {agent_url, session_name}
@@ -1287,6 +1298,15 @@ class DelegationHandler:
             })
             return None
 
+        # Limit delegation depth to prevent infinite recursion
+        if self._delegation_depth >= self._MAX_DELEGATION_DEPTH:
+            self._send_to_proxy({
+                "type": "error",
+                "error": f"Maximum delegation depth of {self._MAX_DELEGATION_DEPTH} reached. Cannot spawn further sub-agents.",
+                "request_id": req_id,
+            })
+            return None
+
         # Limit concurrent sub-agents
         MAX_SUB_AGENTS = 6
         with self._lock:
@@ -1464,6 +1484,7 @@ class DelegationHandler:
                 env_vars=sub_env_vars,
                 state_dir=sub_state_dir,
                 on_status=_on_status,
+                delegation_depth=self._delegation_depth + 1,
             )
 
             if not sub_session.wait_ready(timeout=1200):

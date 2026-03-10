@@ -43,7 +43,7 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
     def _proxy(self):
         # SECURITY: Validate session token if configured.
         # Check the auth header matching this route's auth_style.
-        if self.server.session_token is not None:
+        if self.server.session_token:
             import hmac
             if self.server.auth_style == "bearer":
                 token_found = hmac.compare_digest(
@@ -151,7 +151,7 @@ class ThreadedProxyServer(http.server.ThreadingHTTPServer):
     timeout = 60
 
     def __init__(self, port, target_host, real_key, auth_style,
-                 session_token="", **_):
+                 session_token=None, **_):
         self.target_host = target_host
         self.real_key = real_key
         self.auth_style = auth_style
@@ -172,7 +172,7 @@ def main():
         sys.exit(1)
     config = json.loads(config_line)
 
-    session_token = config.get("session_token", "")
+    session_token = config.get("session_token") or None
 
     servers = []
     threads = []
