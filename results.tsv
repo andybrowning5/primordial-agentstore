@@ -14,3 +14,4 @@ iteration	commit	score	status	description
 13	f59330f	100.0000	keep	Add model validation for ResourceLimits.max_memory and max_cpu fields to reject invalid values
 14	e85e5de	100.0000	keep	Add model_validator to AgentManifest to reject duplicate env_var or base_url_env values across keys list
 15	290de17	100.0000	keep	Add validation for NetworkPermission.domain and NetworkPermission.reason fields to reject empty strings
+16	fe084f1	100.0000	keep	Add validation for the run_command field in RuntimeConfig to reject empty strings if provided

@@ -116,6 +116,23 @@ class RuntimeConfig(BaseModel):
     default_model: ModelConfig = Field(default_factory=ModelConfig)
     resources: ResourceLimits = Field(default_factory=ResourceLimits)
 
+    @field_validator("language")
+    @classmethod
+    def validate_language(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not v:
+            raise ValueError("runtime.language must not be empty")
+        _VALID_LANGUAGES = {
+            "python", "node", "javascript", "typescript", "ruby",
+            "go", "rust", "java", "bash", "sh",
+        }
+        if v not in _VALID_LANGUAGES:
+            suggestion = ", ".join(sorted(_VALID_LANGUAGES))
+            raise ValueError(
+                f"Invalid runtime.language: {v!r} — must be one of: {suggestion}"
+            )
+        return v
+
     @field_validator("run_command")
     @classmethod
     def validate_run_command(cls, v: Optional[str]) -> Optional[str]:
