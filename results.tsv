@@ -5,3 +5,4 @@ iteration	commit	score	status	description
 3	5077fb6	100.0000	keep	Add validation for description field in AgentManifest to ensure it is non-empty and not excessively long
 4	1642ea5	100.0000	keep	Add validation for the name field in AgentManifest to ensure it follows the same rules as _is_valid_name in manifest.py
 5	d9325c4	100.0000	keep	Add validation for the tags field in AgentManifest to ensure tag entries are non-empty, not too long, and the list is not excessively large
+6	dba7e14	100.0000	keep	Add validation for the category field in AgentManifest to ensure it is a non-empty lowercase string with allowed values
