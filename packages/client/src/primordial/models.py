@@ -121,6 +121,33 @@ class NetworkPermission(BaseModel):
     domain: str
     reason: str
 
+    @field_validator("domain")
+    @classmethod
+    def validate_domain(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("network permission domain must not be empty")
+        if not _DOMAIN_RE.match(v):
+            raise ValueError(
+                f"Invalid network permission domain: {v!r} — must be a fully qualified domain name "
+                f"(e.g. 'api.example.com'). No IP addresses or single-label hosts."
+            )
+        if not _DOMAIN_HAS_LETTER.search(v):
+            raise ValueError(f"Invalid network permission domain: {v!r} — IP addresses are not allowed")
+        return v
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("network permission reason must not be empty")
+        if len(v) > 200:
+            raise ValueError(
+                f"network permission reason is too long ({len(v)} chars) — must be 200 characters or fewer"
+            )
+        return v
+
 
 class FilesystemPermission(BaseModel):
     workspace: str = "readwrite"
