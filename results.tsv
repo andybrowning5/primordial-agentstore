@@ -12,3 +12,4 @@ iteration	commit	score	status	description
 11	83b7964	100.0000	keep	Add validation for the website field in AuthorInfo to reject empty strings if provided
 12	ee3d7cf	100.0000	keep	Add validation for the KeyRequirement.passthrough field to warn when domain is empty but passthrough is False
 13	f59330f	100.0000	keep	Add model validation for ResourceLimits.max_memory and max_cpu fields to reject invalid values
+14	e85e5de	100.0000	keep	Add model_validator to AgentManifest to reject duplicate env_var or base_url_env values across keys list
