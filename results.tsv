@@ -16,3 +16,4 @@ iteration	commit	score	status	description
 15	290de17	100.0000	keep	Add validation for NetworkPermission.domain and NetworkPermission.reason fields to reject empty strings
 16	fe084f1	100.0000	keep	Add validation for the run_command field in RuntimeConfig to reject empty strings if provided
 17	8902095	100.0000	keep	Add validation for the RuntimeConfig.language field to reject empty or unsupported language values
+18	7269232	100.0000	keep	Add validation for the version field in AgentManifest to reject pre-release or build metadata suffixes that go beyond basic semver
