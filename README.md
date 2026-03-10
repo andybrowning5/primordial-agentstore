@@ -81,3 +81,9 @@ AgentStore/
 └── CHANGELOG.md                   # Release notes
 ```
 
+---
+
+## Disclaimer
+
+This project is in **beta**. Every reasonable effort has been made to keep it secure — agents run in sandboxed Firecracker microVMs, API keys are injected via a reverse proxy and never exposed to agent code, and all permissions require explicit user approval. That said, this is open-source software under active development. **Use at your own risk.** Review agent permissions before approving them, and don't run untrusted agents with access to sensitive data or keys you can't rotate.
+
