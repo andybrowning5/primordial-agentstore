@@ -173,6 +173,22 @@ class AgentManifest(BaseModel):
             )
         return v
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        if len(v) < 3 or len(v) > 40:
+            raise ValueError(
+                f"Invalid name: {v!r} — must be 3-40 characters long"
+            )
+        if not re.match(r"^[a-z][a-z0-9-]*[a-z0-9]$", v):
+            suggestion = re.sub(r"[^a-z0-9-]", "-", v.lower()).strip("-")
+            hint = f" — try: {suggestion!r}" if suggestion != v else ""
+            raise ValueError(
+                f"Invalid name: {v!r} — must be lowercase letters, numbers, and hyphens only"
+                f", starting and ending with a letter or number{hint}"
+            )
+        return v
+
     @field_validator("version")
     @classmethod
     def validate_version(cls, v: str) -> str:
