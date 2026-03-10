@@ -213,6 +213,23 @@ class AgentManifest(BaseModel):
                 f"Invalid version: {v!r} — must follow semantic versioning (e.g. '1.0.0')"
             )
         return v
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not v:
+            raise ValueError("category must not be empty")
+        _VALID_CATEGORIES = {
+            "general", "coding", "data", "writing", "research",
+            "devops", "security", "finance", "science", "productivity",
+        }
+        if v not in _VALID_CATEGORIES:
+            suggestion = ", ".join(sorted(_VALID_CATEGORIES))
+            raise ValueError(
+                f"Invalid category: {v!r} — must be one of: {suggestion}"
+            )
+        return v
     category: str = "general"
     tags: list[str] = Field(default_factory=list)
     author: AuthorInfo
