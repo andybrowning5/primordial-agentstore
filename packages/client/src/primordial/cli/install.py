@@ -81,7 +81,7 @@ export PRIMORDIAL_VAULT_PASSWORD='{password}'
 exec "{real_binary}" "$@"
 """
     _WRAPPER_PATH.write_text(script)
-    _WRAPPER_PATH.chmod(0o755)
+    _WRAPPER_PATH.chmod(0o700)
     return True
 
 

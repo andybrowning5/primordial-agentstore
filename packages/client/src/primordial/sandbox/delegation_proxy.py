@@ -59,7 +59,7 @@ def main():
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(SOCK_PATH)
     # Allow agent user to connect
-    os.chmod(SOCK_PATH, 0o777)
+    os.chmod(SOCK_PATH, 0o770)
     server.listen(1)
 
     # Signal ready to host
