@@ -189,6 +189,22 @@ class AgentManifest(BaseModel):
             )
         return v
 
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, v: list) -> list:
+        if len(v) > 20:
+            raise ValueError(
+                f"Too many tags ({len(v)}) — must be 20 or fewer"
+            )
+        for tag in v:
+            if not isinstance(tag, str) or not tag.strip():
+                raise ValueError("Each tag must be a non-empty string")
+            if len(tag) > 40:
+                raise ValueError(
+                    f"Tag {tag!r} is too long ({len(tag)} chars) — must be 40 characters or fewer"
+                )
+        return [t.strip() for t in v]
+
     @field_validator("version")
     @classmethod
     def validate_version(cls, v: str) -> str:
