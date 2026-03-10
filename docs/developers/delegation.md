@@ -4,8 +4,6 @@ Agents can discover, spawn, and interact with other agents on the Primordial Age
 
 ## How It Works
 
-![Delegation Flow](../diagrams/delegation-flow.png)
-
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │  HOST MACHINE                                                       │
