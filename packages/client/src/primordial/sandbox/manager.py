@@ -378,14 +378,24 @@ class SandboxManager:
             )
 
     def _extract_workspace_patch(self, sandbox: Sandbox) -> bytes | None:
-        """Run git diff in sandbox workspace, return patch bytes or None."""
-        # Stage all changes (including new files) so diff captures everything
+        """Run git diff in sandbox workspace, return patch bytes or None.
+
+        Compares current state against the initial 'snapshot' commit so we
+        capture all changes even if the agent made its own git commits.
+        """
+        # Stage any uncommitted changes so they're included in the diff
         sandbox.commands.run(
-            f"cd {WORKSPACE_DIR_IN_SANDBOX} && git add -A",
+            f"cd {WORKSPACE_DIR_IN_SANDBOX} && git add -A && "
+            f"git -c user.name=primordial -c user.email=noreply "
+            f"diff-index --quiet HEAD || "
+            f"git -c user.name=primordial -c user.email=noreply "
+            f"commit -q -m 'primordial: uncommitted changes' --allow-empty",
             user="user",
         )
+        # Diff HEAD against the first commit (the snapshot baseline)
         result = sandbox.commands.run(
-            f"cd {WORKSPACE_DIR_IN_SANDBOX} && git diff --cached HEAD",
+            f"cd {WORKSPACE_DIR_IN_SANDBOX} && "
+            f"git diff $(git rev-list --max-parents=0 HEAD)..HEAD",
             user="user",
         )
         if result.exit_code != 0 or not result.stdout:
@@ -400,14 +410,14 @@ class SandboxManager:
         agent_envs: dict[str, str],
     ) -> str:
         """Build the command to start the agent, injecting proxy env vars."""
-        if not agent_envs:
-            return f"cd {AGENT_DIR_IN_SANDBOX} && {manifest.runtime.run_command}"
+        # Always set WORKSPACE so agents know where the host code lives
+        base_envs = {
+            "WORKSPACE": WORKSPACE_DIR_IN_SANDBOX,
+        }
+        all_envs = {**base_envs, **agent_envs}
 
-        # SECURITY: Use inline env assignment instead of a persistent wrapper
-        # script. This prevents the agent from reading proxy config from disk.
-        # Values are shell-escaped to prevent injection via env_var names.
         env_prefix = " ".join(
-            f"{k}={_shell_escape(v)}" for k, v in agent_envs.items()
+            f"{k}={_shell_escape(v)}" for k, v in all_envs.items()
         )
         return f"cd {AGENT_DIR_IN_SANDBOX} && {env_prefix} exec {manifest.runtime.run_command}"
 
@@ -416,6 +426,7 @@ class SandboxManager:
         sandbox: Sandbox,
         manifest: AgentManifest,
         env_vars: dict[str, str],
+        worktree_mgr: Optional[Any] = None,
     ) -> Optional["DelegationHandler"]:
         """Start the delegation proxy if delegation is enabled.
 
@@ -452,6 +463,7 @@ class SandboxManager:
             manifest=manifest,
             env_vars=env_vars,
             manager=self,
+            worktree_mgr=worktree_mgr,
         )
         handler.start()
 
@@ -469,6 +481,7 @@ class SandboxManager:
         env_vars: dict[str, str],
         state_dir: Optional[Path] = None,
         on_status: Optional[Callable[[str], None]] = None,
+        worktree_mgr: Optional[Any] = None,
     ) -> AgentSession:
         """Start an agent session in an E2B sandbox."""
         self._ensure_e2b_api_key(env_vars)
@@ -561,7 +574,7 @@ class SandboxManager:
                 def _start_del():
                     try:
                         deleg_result[0] = self._start_delegation_proxy(
-                            sandbox, manifest, env_vars,
+                            sandbox, manifest, env_vars, worktree_mgr,
                         )
                     except Exception as e:
                         errors.append(e)
@@ -582,7 +595,7 @@ class SandboxManager:
             elif needs_delegation:
                 _status("Starting delegation proxy...")
                 delegation_handler = self._start_delegation_proxy(
-                    sandbox, manifest, env_vars,
+                    sandbox, manifest, env_vars, worktree_mgr,
                 )
 
             if manifest.runtime.setup_command:
@@ -655,6 +668,7 @@ class SandboxManager:
         on_data: Optional[Callable[[bytes], None]] = None,
         state_dir: Optional[Path] = None,
         on_status: Optional[Callable[[str], None]] = None,
+        worktree_mgr: Optional[Any] = None,
     ) -> "TerminalSession":
         """Start an agent in terminal passthrough mode using E2B PTY.
 
@@ -720,7 +734,7 @@ class SandboxManager:
             if manifest.permissions.delegation.enabled:
                 _status("Starting delegation proxy...")
                 delegation_handler = self._start_delegation_proxy(
-                    sandbox, manifest, env_vars,
+                    sandbox, manifest, env_vars, worktree_mgr,
                 )
 
             if manifest.runtime.setup_command:
@@ -1052,12 +1066,14 @@ class DelegationHandler:
         manifest: AgentManifest,
         env_vars: dict[str, str],
         manager: SandboxManager,
+        worktree_mgr: Optional[Any] = None,
     ):
         self._sandbox = sandbox
         self._deleg_handle = deleg_handle
         self._manifest = manifest
         self._env_vars = env_vars
         self._manager = manager
+        self._worktree_mgr = worktree_mgr
         self._sessions: dict[str, AgentSession] = {}
         self._output_buffers: dict[str, list[str]] = {}
         self._session_meta: dict[str, dict] = {}  # session_id -> {agent_url, session_name}
@@ -1429,10 +1445,22 @@ class DelegationHandler:
                     "request_id": req_id,
                 })
 
+            # Create a worktree for the sub-agent if worktree isolation is active
+            sub_workspace: Optional[Path] = None
+            if self._worktree_mgr:
+                sub_fs_perm = sub_manifest.permissions.filesystem.workspace
+                if sub_fs_perm in ("readonly", "readwrite"):
+                    try:
+                        sub_workspace = self._worktree_mgr.create(sub_manifest.name)
+                        _on_status(f"Worktree: {sub_workspace}")
+                    except Exception as e:
+                        logger.warning("Failed to create worktree for sub-agent %s: %s",
+                                       sub_manifest.name, e)
+
             sub_session = self._manager.run_agent(
                 agent_dir=agent_dir,
                 manifest=sub_manifest,
-                workspace=None,
+                workspace=sub_workspace,
                 env_vars=sub_env_vars,
                 state_dir=sub_state_dir,
                 on_status=_on_status,
@@ -1446,6 +1474,9 @@ class DelegationHandler:
                     "request_id": req_id,
                 })
                 return
+
+            # Store agent name for worktree lookup on shutdown
+            sub_session._agent_name = sub_manifest.name
 
             with self._lock:
                 self._sessions[session_id] = sub_session
@@ -1574,7 +1605,7 @@ class DelegationHandler:
         with self._lock:
             session = self._sessions.pop(session_id, None)
             self._output_buffers.pop(session_id, None)
-            self._session_meta.pop(session_id, None)
+            meta = self._session_meta.pop(session_id, None)
         if not session:
             self._send_to_proxy({
                 "type": "error",
@@ -1583,7 +1614,22 @@ class DelegationHandler:
             })
             return
         try:
-            session.shutdown()
+            patch = session.shutdown()
+            # Apply patch to sub-agent's worktree and commit
+            if patch and self._worktree_mgr:
+                agent_name = getattr(session, "_agent_name", None)
+                if agent_name:
+                    wt_path = self._worktree_mgr._worktree_path(agent_name)
+                    if wt_path.exists():
+                        import subprocess as _sp
+                        apply = _sp.run(
+                            ["git", "apply", "-"],
+                            input=patch, capture_output=True, cwd=str(wt_path),
+                        )
+                        if apply.returncode == 0:
+                            self._worktree_mgr.commit_worktree(
+                                agent_name, f"primordial: {agent_name} changes",
+                            )
         except Exception as e:
             logger.warning("Error shutting down sub-agent %s: %s", session_id, e)
         self._send_to_proxy({
@@ -1611,10 +1657,25 @@ class DelegationHandler:
         """Shutdown all sub-agent sessions and stop the handler."""
         self._stop.set()
         with self._lock:
-            for sid, session in list(self._sessions.items()):
-                try:
-                    session.shutdown()
-                except Exception as e:
-                    logger.warning("Error shutting down sub-agent %s: %s", sid, e)
+            sessions_copy = list(self._sessions.items())
             self._sessions.clear()
             self._output_buffers.clear()
+        for sid, session in sessions_copy:
+            try:
+                patch = session.shutdown()
+                if patch and self._worktree_mgr:
+                    agent_name = getattr(session, "_agent_name", None)
+                    if agent_name:
+                        wt_path = self._worktree_mgr._worktree_path(agent_name)
+                        if wt_path.exists():
+                            import subprocess as _sp
+                            apply = _sp.run(
+                                ["git", "apply", "-"],
+                                input=patch, capture_output=True, cwd=str(wt_path),
+                            )
+                            if apply.returncode == 0:
+                                self._worktree_mgr.commit_worktree(
+                                    agent_name, f"primordial: {agent_name} changes",
+                                )
+            except Exception as e:
+                logger.warning("Error shutting down sub-agent %s: %s", sid, e)

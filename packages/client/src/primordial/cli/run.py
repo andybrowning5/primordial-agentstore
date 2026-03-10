@@ -147,6 +147,8 @@ def _pick_session(config, agent_name: str, agent_mode: bool = False) -> Path:
 @click.option("--ref", default=None, help="Git ref (branch, tag, commit) for GitHub agents")
 @click.option("--refresh", is_flag=True, help="Force re-fetch of GitHub agent (ignore cache)")
 @click.option("--session", "session_name", default=None, help="Session name to resume (skips prompt)")
+@click.option("--no-worktree", "no_worktree", is_flag=True,
+              help="Skip worktree isolation — bundle the working directory directly")
 def run(
     agent_path: str,
     agent_mode: bool,
@@ -154,6 +156,7 @@ def run(
     ref: str | None,
     refresh: bool,
     session_name: str | None,
+    no_worktree: bool = False,
 ):
     """Run an agent in a sandbox.
 
@@ -338,14 +341,34 @@ def run(
                 "but no git repo found. Workspace will be empty."
             )
 
+    # Worktree isolation — automatic when agent requests workspace access
+    worktree_mgr = None
+    if host_workspace and not no_worktree:
+        from primordial.worktree import WorktreeManager, WorktreeError
+        try:
+            worktree_mgr = WorktreeManager(host_workspace, session_name=state_dir.name)
+            wt_path = worktree_mgr.create(manifest.name)
+            branch = worktree_mgr._branch_name(manifest.name)
+            host_workspace = wt_path
+            console.print(
+                f"[dim]Worktree: {wt_path} "
+                f"(branch: {branch})[/dim]"
+            )
+        except WorktreeError as e:
+            console.print(f"[red]Failed to create worktree:[/red] {e}")
+            raise SystemExit(1)
+
     manager = SandboxManager()
 
     if agent_mode:
-        _run_agent(manager, agent_dir, manifest, host_workspace, env_vars, state_dir)
+        _run_agent(manager, agent_dir, manifest, host_workspace, env_vars, state_dir,
+                   worktree_mgr=worktree_mgr)
     elif manifest.runtime.mode == "terminal":
-        _run_terminal(manager, agent_dir, manifest, host_workspace, env_vars, state_dir)
+        _run_terminal(manager, agent_dir, manifest, host_workspace, env_vars, state_dir,
+                      worktree_mgr=worktree_mgr)
     else:
-        _run_chat(manager, agent_dir, manifest, host_workspace, env_vars, state_dir)
+        _run_chat(manager, agent_dir, manifest, host_workspace, env_vars, state_dir,
+                  worktree_mgr=worktree_mgr)
 
 
 _MINI_ROWS = 3
@@ -599,8 +622,14 @@ def _show_sub_spawn(console: Console, session, sid: str, first_status: str) -> N
             )
 
 
-def _present_workspace_patch(console: Console, patch: bytes, manifest) -> None:
-    """Show the workspace diff and optionally apply it."""
+def _present_workspace_patch(
+    console: Console, patch: bytes, manifest, worktree_mgr=None,
+) -> None:
+    """Show the workspace diff and optionally apply it.
+
+    In worktree mode: applies to the worktree and commits to its branch.
+    Otherwise: prompts the user to apply to their working directory.
+    """
     console.print(f"\n[bold yellow]Workspace changes from {manifest.display_name}:[/bold yellow]")
     # Show diff stat summary
     stat = subprocess.run(
@@ -610,7 +639,33 @@ def _present_workspace_patch(console: Console, patch: bytes, manifest) -> None:
     if stat.stdout:
         console.print(f"[dim]{stat.stdout.decode(errors='replace').strip()}[/dim]")
 
-    if click.confirm("\nApply these changes to your working directory?", default=False):
+    if worktree_mgr:
+        # Worktree mode — apply to worktree and commit
+        from primordial.worktree import WorktreeManager
+        wt_path = worktree_mgr._worktree_path(manifest.name)
+        branch = worktree_mgr._branch_name(manifest.name)
+        apply = subprocess.run(
+            ["git", "apply", "-"],
+            input=patch, capture_output=True, cwd=str(wt_path),
+        )
+        if apply.returncode == 0:
+            worktree_mgr.commit_worktree(
+                manifest.name, f"primordial: {manifest.display_name} changes",
+            )
+            diff_stat = worktree_mgr.diff_summary(manifest.name)
+            console.print(f"[green]Changes committed to branch {branch}[/green]")
+            if diff_stat:
+                console.print(f"[dim]{diff_stat}[/dim]")
+            console.print()
+            console.print(f"[dim]Review:  git diff main..{branch}[/dim]")
+            console.print(f"[dim]Merge:   git merge {branch}[/dim]")
+            console.print(f"[dim]Cleanup: git worktree remove {wt_path}[/dim]")
+        else:
+            console.print(f"[red]git apply failed:[/red] {apply.stderr.decode(errors='replace')}")
+            patch_path = Path(f".agent-patch-{manifest.name}.patch")
+            patch_path.write_bytes(patch)
+            console.print(f"[dim]Patch saved to {patch_path}[/dim]")
+    elif click.confirm("\nApply these changes to your working directory?", default=False):
         apply = subprocess.run(
             ["git", "apply", "-"],
             input=patch, capture_output=True,
@@ -635,6 +690,7 @@ def _run_terminal(
     workspace: Path | None,
     env_vars: dict,
     state_dir: Path | None = None,
+    worktree_mgr=None,
 ) -> None:
     """Run an agent in terminal passthrough mode (raw PTY)."""
     import signal
@@ -668,6 +724,7 @@ def _run_terminal(
                 on_data=on_data,
                 state_dir=state_dir,
                 on_status=spinner.set_phase,
+                worktree_mgr=worktree_mgr,
             )
         except Exception as e:
             console.print(f"\n[red]Failed to start agent:[/red] {e}")
@@ -715,7 +772,7 @@ def _run_terminal(
 
         patch = session.shutdown()
         if patch:
-            _present_workspace_patch(console, patch, manifest)
+            _present_workspace_patch(console, patch, manifest, worktree_mgr)
         console.print("[dim]Session ended.[/dim]")
 
 
@@ -726,6 +783,7 @@ def _run_chat(
     workspace: Path | None,
     env_vars: dict,
     state_dir: Path | None = None,
+    worktree_mgr=None,
 ) -> None:
     """Run an agent with a human-friendly chat loop."""
     agent_subtitle = f"Starting {manifest.display_name} v{manifest.version}"
@@ -739,6 +797,7 @@ def _run_chat(
                 env_vars=env_vars,
                 state_dir=state_dir,
                 on_status=spinner.set_phase,
+                worktree_mgr=worktree_mgr,
             )
         except Exception as e:
             console.print(f"\n[red]Failed to start agent:[/red] {e}")
@@ -900,7 +959,7 @@ def _run_chat(
     finally:
         patch = session.shutdown()
         if patch:
-            _present_workspace_patch(console, patch, manifest)
+            _present_workspace_patch(console, patch, manifest, worktree_mgr)
         console.print("[dim]Session ended.[/dim]")
 
 
@@ -911,6 +970,7 @@ def _run_agent(
     workspace: Path | None,
     env_vars: dict,
     state_dir: Path | None = None,
+    worktree_mgr=None,
 ) -> None:
     """Run an agent with JSON pipe I/O (for agent-to-agent)."""
     session = manager.run_agent(
@@ -919,6 +979,7 @@ def _run_agent(
         workspace=workspace,
         env_vars=env_vars,
         state_dir=state_dir,
+        worktree_mgr=worktree_mgr,
     )
 
     try:
@@ -928,13 +989,7 @@ def _run_agent(
 
         _json_line({"type": "ready"})
 
-        import sys as _sys
-        _sys.stderr.write("[_run_agent] entering stdin loop\n")
-        _sys.stderr.flush()
-
         for line in sys.stdin:
-            _sys.stderr.write(f"[_run_agent] got stdin line: {line[:80]!r}\n")
-            _sys.stderr.flush()
             line = line.strip()
             if not line:
                 continue
@@ -944,8 +999,6 @@ def _run_agent(
                 continue
 
             msg_type = incoming.get("type")
-            _sys.stderr.write(f"[_run_agent] msg_type={msg_type}\n")
-            _sys.stderr.flush()
             if msg_type == "shutdown":
                 break
 
@@ -953,16 +1006,15 @@ def _run_agent(
                 content = incoming.get("content", "")
                 message_id = incoming.get("message_id", f"auto_{uuid.uuid4().hex[:8]}")
                 session.send_message(content, message_id)
-                _sys.stderr.write(f"[_run_agent] sent message to agent, waiting for responses\n")
-                _sys.stderr.flush()
 
                 while True:
-                    msg = session.receive(timeout=300)
+                    msg = session.receive(timeout=600)
                     if msg is None:
-                        _json_line({"type": "error", "error": "timeout", "message_id": message_id})
+                        stderr = session.stderr.strip()
+                        _json_line({"type": "error", "error": "timeout",
+                                    "message_id": message_id,
+                                    "stderr": stderr[-2000:] if stderr else ""})
                         break
-                    _sys.stderr.write(f"[_run_agent] agent msg: type={msg.get('type')} done={msg.get('done')}\n")
-                    _sys.stderr.flush()
                     _json_line(msg)
                     if msg.get("type") == "response" and msg.get("done", False):
                         break
@@ -970,12 +1022,26 @@ def _run_agent(
                         break
 
             if not session.is_alive:
-                _json_line({"type": "error", "error": "Agent process exited"})
+                stderr = session.stderr.strip()
+                _json_line({"type": "error", "error": "Agent process exited",
+                            "stderr": stderr[-2000:] if stderr else ""})
                 break
 
     finally:
         patch = session.shutdown()
         if patch:
+            # In worktree mode, apply patch to the worktree branch
+            if worktree_mgr:
+                wt_path = worktree_mgr._worktree_path(manifest.name)
+                apply = subprocess.run(
+                    ["git", "apply", "-"],
+                    input=patch, capture_output=True, cwd=str(wt_path),
+                )
+                if apply.returncode == 0:
+                    worktree_mgr.commit_worktree(
+                        manifest.name,
+                        f"primordial: {manifest.display_name} changes",
+                    )
             _json_line({
                 "type": "workspace_patch",
                 "patch": patch.decode(errors="replace"),
