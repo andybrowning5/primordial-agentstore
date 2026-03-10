@@ -4,6 +4,8 @@ When you run an agent from inside a git repo, Primordial can share your code wit
 
 ## How It Works
 
+![Workspace Isolation](../diagrams/workspace-isolation.png)
+
 ```
 Your repo (main)                    E2B Sandbox
 ┌──────────────┐    snapshot     ┌──────────────────┐

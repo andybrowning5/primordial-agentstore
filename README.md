@@ -74,6 +74,14 @@ Use `--workspace <path>` with `primordial run` to give the agent read access to 
 
 ---
 
+## Architecture
+
+![System Architecture](docs/diagrams/system-architecture.png)
+
+## How It Works
+
+![Agent Execution Flow](docs/diagrams/agent-execution-flow.png)
+
 ## Project Structure
 
 ```

@@ -6,6 +6,8 @@ The Primordial Protocol is how agents communicate with the platform. It's **NDJS
 
 Your agent is a process that passes messages back and forth through stdin/stdout:
 
+![Protocol Messages](../diagrams/protocol-messages.png)
+
 ```
 ┌─────────────────┐                    ┌─────────────────┐
 │   AgentStore     │   stdin (notes →)  │    Your Agent    │

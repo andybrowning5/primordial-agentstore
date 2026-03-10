@@ -1,0 +1,53 @@
+graph TB
+    subgraph User["User Layer"]
+        CLI["primordial CLI"]
+        CC["Claude Code / OpenClaw / Codex"]
+    end
+
+    subgraph Host["Host Layer"]
+        Daemon["HTTP Daemon<br/>localhost:19400"]
+        Vault["Key Vault<br/>AES-128 Encrypted"]
+        GH["GitHub Resolver<br/>& Cache"]
+        Manifest["Manifest Loader<br/>& Validator"]
+        WT["Worktree Manager<br/>Git Isolation"]
+    end
+
+    subgraph Cloud["Cloud Sandbox (E2B Firecracker microVM)"]
+        subgraph Root["Root Context (privileged)"]
+            Hardening["VM Hardening<br/>remove sudo, hidepid=2"]
+            Proxy["API Key Proxy<br/>localhost:9001-900N"]
+        end
+        subgraph Unprivileged["Agent Context (user)"]
+            Agent["Agent Process<br/>stdin/stdout NDJSON"]
+            WS["workspace/"]
+            Data["data/ &bull; output/ &bull; state/"]
+        end
+    end
+
+    subgraph External["External APIs"]
+        Anthropic["api.anthropic.com"]
+        Other["Other APIs"]
+    end
+
+    CLI -->|"interactive"| Manifest
+    CC -->|"HTTP + Bearer token"| Daemon
+    Daemon --> Manifest
+    Manifest --> GH
+    GH -->|"clone & cache"| Manifest
+    Daemon --> Vault
+    CLI --> Vault
+    Vault -->|"decrypted keys"| Proxy
+    WT -->|"snapshot tar.gz"| WS
+    Agent -->|"fake session token"| Proxy
+    Proxy -->|"real API key"| Anthropic
+    Proxy -->|"real API key"| Other
+    Agent --> WS
+    Agent --> Data
+    WS -->|"diff patch"| WT
+
+    style User fill:#4A90D9,color:#fff
+    style Host fill:#7B68EE,color:#fff
+    style Cloud fill:#2C3E50,color:#fff
+    style Root fill:#E74C3C,color:#fff
+    style Unprivileged fill:#27AE60,color:#fff
+    style External fill:#F39C12,color:#fff

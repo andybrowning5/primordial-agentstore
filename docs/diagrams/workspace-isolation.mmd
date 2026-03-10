@@ -1,0 +1,34 @@
+graph LR
+    subgraph Local["Your Local Machine"]
+        Main["Your Repo<br/>(main branch)"]
+        WT["Git Worktree<br/>myproject--agent--session/<br/>branch: primordial/agent--session"]
+    end
+
+    subgraph Cloud["E2B Sandbox"]
+        Snapshot["Workspace Snapshot<br/>(tar.gz upload)"]
+        AgentWork["Agent modifies files<br/>/home/user/workspace/"]
+        Diff["git diff captured<br/>on shutdown"]
+    end
+
+    subgraph Review["Review & Merge"]
+        GitDiff["git diff main..branch"]
+        Approve{Approve?}
+        Merge["git merge<br/>primordial/agent--session"]
+        Cleanup["git worktree remove<br/>git branch -d"]
+    end
+
+    Main -->|"1. Snapshot"| Snapshot
+    Main -->|"1. Create worktree"| WT
+    Snapshot -->|"2. Agent runs"| AgentWork
+    AgentWork -->|"3. Capture changes"| Diff
+    Diff -->|"4. Apply patch"| WT
+    WT -->|"5. Review"| GitDiff
+    GitDiff --> Approve
+    Approve -->|Yes| Merge
+    Merge --> Cleanup
+    Approve -->|No| Cleanup
+    Cleanup -->|"Clean state"| Main
+
+    style Local fill:#3498DB,color:#fff
+    style Cloud fill:#2C3E50,color:#fff
+    style Review fill:#27AE60,color:#fff

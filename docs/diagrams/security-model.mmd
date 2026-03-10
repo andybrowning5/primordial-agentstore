@@ -1,0 +1,83 @@
+graph TB
+    subgraph Layer1["Layer 1: Key Storage"]
+        direction LR
+        Keys["API Keys<br/>(plaintext)"]
+        HW["Hardware UUID"]
+        KC["macOS Keychain Secret"]
+        PW["Optional Password"]
+        Fernet["AES-128-CBC + HMAC-SHA256<br/>(Fernet)"]
+        EncFile["keys.enc<br/>(encrypted file)"]
+
+        Keys --> Fernet
+        HW --> Fernet
+        KC --> Fernet
+        PW -.-> Fernet
+        Fernet --> EncFile
+    end
+
+    subgraph Layer2["Layer 2: VM Isolation"]
+        direction LR
+        FC["Firecracker microVM"]
+        NoSudo["sudo/su removed"]
+        HidePid["hidepid=2<br/>(proc hidden)"]
+        NetLock["Network locked<br/>to declared domains"]
+
+        FC --- NoSudo
+        FC --- HidePid
+        FC --- NetLock
+    end
+
+    subgraph Layer3["Layer 3: API Key Proxy"]
+        direction LR
+        ProxyProc["Root-owned proxy<br/>(700 permissions)"]
+        SessToken["Session tokens<br/>(per-request validation)"]
+        HeaderFilter["Response header<br/>filtering"]
+        PortBind["Port binding<br/>before agent starts"]
+
+        ProxyProc --- SessToken
+        ProxyProc --- HeaderFilter
+        ProxyProc --- PortBind
+    end
+
+    subgraph Layer4["Layer 4: State Isolation"]
+        direction LR
+        Allowed["Persisted:<br/>workspace/ data/<br/>output/ state/"]
+        Denied["Wiped:<br/>dotfiles, .config,<br/>.ssh, everything else"]
+        TarVal["Tar validation:<br/>no symlinks, no ..,<br/>no device files"]
+
+        Allowed --- Denied
+        Allowed --- TarVal
+    end
+
+    subgraph Layer5["Layer 5: Workspace Isolation"]
+        direction LR
+        Worktree["Git worktree<br/>(separate branch)"]
+        DiffReview["Changes captured<br/>as git diff"]
+        MergeGate["Manual review<br/>before merge to main"]
+
+        Worktree --- DiffReview
+        DiffReview --- MergeGate
+    end
+
+    Layer1 --> Layer2
+    Layer2 --> Layer3
+    Layer3 --> Layer4
+    Layer4 --> Layer5
+
+    subgraph Blocked["What Agents CANNOT Do"]
+        B1["Read real API keys"]
+        B2["Escalate to root"]
+        B3["See proxy process"]
+        B4["Exfiltrate data"]
+        B5["Poison state files"]
+        B6["Modify main branch"]
+    end
+
+    Layer5 -.->|"Prevented by"| Blocked
+
+    style Layer1 fill:#8E44AD,color:#fff
+    style Layer2 fill:#2980B9,color:#fff
+    style Layer3 fill:#E74C3C,color:#fff
+    style Layer4 fill:#E67E22,color:#fff
+    style Layer5 fill:#27AE60,color:#fff
+    style Blocked fill:#7F8C8D,color:#fff
