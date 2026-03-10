@@ -61,6 +61,20 @@ def _input_with_placeholder(prompt: str, placeholder: str) -> str:
     return first + rest
 
 
+def _detect_git_root() -> Path | None:
+    """Return the root of the current git repo, or None."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            return Path(result.stdout.strip())
+    except Exception:
+        pass
+    return None
+
+
 def _detect_host_tz() -> str | None:
     """Detect the host machine's IANA timezone (e.g. 'America/New_York')."""
     if tz := os.environ.get("TZ"):
@@ -313,15 +327,25 @@ def run(
                 env_vars["TZ"] = tz
         except Exception:
             pass
-    workspace = "."
+    # Detect host workspace for agents that request filesystem access
+    host_workspace: Path | None = None
+    fs_perm = manifest.permissions.filesystem.workspace
+    if fs_perm in ("readonly", "readwrite"):
+        host_workspace = _detect_git_root()
+        if host_workspace is None:
+            console.print(
+                "[yellow]Warning:[/yellow] Agent requests workspace access "
+                "but no git repo found. Workspace will be empty."
+            )
+
     manager = SandboxManager()
 
     if agent_mode:
-        _run_agent(manager, agent_dir, manifest, workspace, env_vars, state_dir)
+        _run_agent(manager, agent_dir, manifest, host_workspace, env_vars, state_dir)
     elif manifest.runtime.mode == "terminal":
-        _run_terminal(manager, agent_dir, manifest, workspace, env_vars, state_dir)
+        _run_terminal(manager, agent_dir, manifest, host_workspace, env_vars, state_dir)
     else:
-        _run_chat(manager, agent_dir, manifest, workspace, env_vars, state_dir)
+        _run_chat(manager, agent_dir, manifest, host_workspace, env_vars, state_dir)
 
 
 _MINI_ROWS = 3
@@ -575,11 +599,40 @@ def _show_sub_spawn(console: Console, session, sid: str, first_status: str) -> N
             )
 
 
+def _present_workspace_patch(console: Console, patch: bytes, manifest) -> None:
+    """Show the workspace diff and optionally apply it."""
+    console.print(f"\n[bold yellow]Workspace changes from {manifest.display_name}:[/bold yellow]")
+    # Show diff stat summary
+    stat = subprocess.run(
+        ["git", "apply", "--stat", "-"],
+        input=patch, capture_output=True,
+    )
+    if stat.stdout:
+        console.print(f"[dim]{stat.stdout.decode(errors='replace').strip()}[/dim]")
+
+    if click.confirm("\nApply these changes to your working directory?", default=False):
+        apply = subprocess.run(
+            ["git", "apply", "-"],
+            input=patch, capture_output=True,
+        )
+        if apply.returncode == 0:
+            console.print("[green]Changes applied.[/green]")
+        else:
+            console.print(f"[red]git apply failed:[/red] {apply.stderr.decode(errors='replace')}")
+            patch_path = Path(f".agent-patch-{manifest.name}.patch")
+            patch_path.write_bytes(patch)
+            console.print(f"[dim]Patch saved to {patch_path}[/dim]")
+    else:
+        patch_path = Path(f".agent-patch-{manifest.name}.patch")
+        patch_path.write_bytes(patch)
+        console.print(f"[dim]Patch saved to {patch_path} — apply with: git apply {patch_path}[/dim]")
+
+
 def _run_terminal(
     manager: SandboxManager,
     agent_dir: Path,
     manifest,
-    workspace: str,
+    workspace: Path | None,
     env_vars: dict,
     state_dir: Path | None = None,
 ) -> None:
@@ -608,7 +661,7 @@ def _run_terminal(
             session = manager.run_agent_terminal(
                 agent_dir=agent_dir,
                 manifest=manifest,
-                workspace=Path(workspace).resolve(),
+                workspace=workspace,
                 env_vars=env_vars,
                 cols=cols,
                 rows=rows,
@@ -659,16 +712,18 @@ def _run_terminal(
 
         # Print newline so prompt doesn't overlap
         print()
-        console.print("[dim]Session ended.[/dim]")
 
-        session.shutdown()
+        patch = session.shutdown()
+        if patch:
+            _present_workspace_patch(console, patch, manifest)
+        console.print("[dim]Session ended.[/dim]")
 
 
 def _run_chat(
     manager: SandboxManager,
     agent_dir: Path,
     manifest,
-    workspace: str,
+    workspace: Path | None,
     env_vars: dict,
     state_dir: Path | None = None,
 ) -> None:
@@ -680,7 +735,7 @@ def _run_chat(
             session = manager.run_agent(
                 agent_dir=agent_dir,
                 manifest=manifest,
-                workspace=Path(workspace).resolve(),
+                workspace=workspace,
                 env_vars=env_vars,
                 state_dir=state_dir,
                 on_status=spinner.set_phase,
@@ -843,7 +898,9 @@ def _run_chat(
                 break
 
     finally:
-        session.shutdown()
+        patch = session.shutdown()
+        if patch:
+            _present_workspace_patch(console, patch, manifest)
         console.print("[dim]Session ended.[/dim]")
 
 
@@ -851,7 +908,7 @@ def _run_agent(
     manager: SandboxManager,
     agent_dir: Path,
     manifest,
-    workspace: str,
+    workspace: Path | None,
     env_vars: dict,
     state_dir: Path | None = None,
 ) -> None:
@@ -859,7 +916,7 @@ def _run_agent(
     session = manager.run_agent(
         agent_dir=agent_dir,
         manifest=manifest,
-        workspace=Path(workspace).resolve(),
+        workspace=workspace,
         env_vars=env_vars,
         state_dir=state_dir,
     )
@@ -871,7 +928,13 @@ def _run_agent(
 
         _json_line({"type": "ready"})
 
+        import sys as _sys
+        _sys.stderr.write("[_run_agent] entering stdin loop\n")
+        _sys.stderr.flush()
+
         for line in sys.stdin:
+            _sys.stderr.write(f"[_run_agent] got stdin line: {line[:80]!r}\n")
+            _sys.stderr.flush()
             line = line.strip()
             if not line:
                 continue
@@ -881,6 +944,8 @@ def _run_agent(
                 continue
 
             msg_type = incoming.get("type")
+            _sys.stderr.write(f"[_run_agent] msg_type={msg_type}\n")
+            _sys.stderr.flush()
             if msg_type == "shutdown":
                 break
 
@@ -888,12 +953,16 @@ def _run_agent(
                 content = incoming.get("content", "")
                 message_id = incoming.get("message_id", f"auto_{uuid.uuid4().hex[:8]}")
                 session.send_message(content, message_id)
+                _sys.stderr.write(f"[_run_agent] sent message to agent, waiting for responses\n")
+                _sys.stderr.flush()
 
                 while True:
                     msg = session.receive(timeout=300)
                     if msg is None:
                         _json_line({"type": "error", "error": "timeout", "message_id": message_id})
                         break
+                    _sys.stderr.write(f"[_run_agent] agent msg: type={msg.get('type')} done={msg.get('done')}\n")
+                    _sys.stderr.flush()
                     _json_line(msg)
                     if msg.get("type") == "response" and msg.get("done", False):
                         break
@@ -905,7 +974,13 @@ def _run_agent(
                 break
 
     finally:
-        session.shutdown()
+        patch = session.shutdown()
+        if patch:
+            _json_line({
+                "type": "workspace_patch",
+                "patch": patch.decode(errors="replace"),
+                "agent": manifest.name,
+            })
 
 
 def _json_line(data: dict) -> None:

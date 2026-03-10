@@ -24,6 +24,7 @@ class ModelConfig(BaseModel):
 class ResourceLimits(BaseModel):
     max_memory: str = "2GB"
     max_cpu: int = 2
+    max_time: str = "30m"  # sandbox timeout, e.g. "30m", "2h", "6h"
 
 
 class RuntimeConfig(BaseModel):
@@ -147,6 +148,15 @@ class AgentManifest(BaseModel):
     display_name: str
     version: str
     description: str
+
+    @field_validator("version")
+    @classmethod
+    def validate_version(cls, v: str) -> str:
+        if not re.match(r"^\d+\.\d+\.\d+", v):
+            raise ValueError(
+                f"Invalid version: {v!r} — must follow semantic versioning (e.g. '1.0.0')"
+            )
+        return v
     category: str = "general"
     tags: list[str] = Field(default_factory=list)
     author: AuthorInfo

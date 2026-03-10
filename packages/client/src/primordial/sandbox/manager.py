@@ -8,7 +8,9 @@ import logging
 import os
 import queue
 import secrets
+import subprocess
 import tarfile
+import tempfile
 import threading
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -24,6 +26,18 @@ _PROXY_SCRIPT = Path(__file__).parent / "proxy_script.py"
 _PROXY_PATH_IN_SANDBOX = "/opt/_primordial_proxy.py"
 _DELEGATION_PROXY_SCRIPT = Path(__file__).parent / "delegation_proxy.py"
 _DELEGATION_PROXY_PATH = "/opt/_primordial_delegation.py"
+
+def _parse_max_time(value: str) -> int:
+    """Parse a max_time string like '30m', '2h', '6h' into seconds."""
+    value = value.strip().lower()
+    if value.endswith("h"):
+        return int(float(value[:-1]) * 3600)
+    if value.endswith("m"):
+        return int(float(value[:-1]) * 60)
+    if value.endswith("s"):
+        return int(float(value[:-1]))
+    return int(value)  # assume seconds
+
 
 AGENT_HOME_IN_SANDBOX = "/home/user"
 AGENT_DIR_IN_SANDBOX = "/home/user/agent"
@@ -293,6 +307,92 @@ class SandboxManager:
 
         return proxy_pid, agent_envs
 
+    def _snapshot_workspace(self, host_workspace: Path) -> bytes | None:
+        """Create a tar.gz snapshot of the host working tree.
+
+        Captures all tracked files (at their current on-disk state, including
+        uncommitted changes) plus untracked non-ignored files.  Respects
+        .gitignore.  Does not modify the host repo in any way.
+        """
+        cwd = str(host_workspace)
+        try:
+            # Get all files git tracks + untracked non-ignored files
+            result = subprocess.run(
+                ["git", "ls-files", "--cached", "--others",
+                 "--exclude-standard", "-z"],
+                cwd=cwd, capture_output=True, timeout=30,
+            )
+            if result.returncode != 0:
+                logger.warning("git ls-files failed: %s",
+                               result.stderr.decode(errors="replace"))
+                return None
+
+            files = [f for f in result.stdout.decode().split("\0") if f]
+            if not files:
+                return None
+
+            buf = io.BytesIO()
+            with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+                for f in files:
+                    full = host_workspace / f
+                    if full.is_file():
+                        tar.add(str(full), arcname=f)
+            return buf.getvalue()
+        except Exception as e:
+            logger.warning("Failed to snapshot workspace: %s", e)
+            return None
+
+    def _upload_workspace_snapshot(
+        self,
+        sandbox: Sandbox,
+        snapshot_bytes: bytes,
+        readonly: bool,
+    ) -> None:
+        """Upload workspace snapshot to sandbox and init a git baseline."""
+        tmp = f"/tmp/_workspace_{secrets.token_hex(8)}.tar.gz"
+        sandbox.files.write(tmp, snapshot_bytes)
+
+        result = sandbox.commands.run(
+            f"rm -rf {WORKSPACE_DIR_IN_SANDBOX} && "
+            f"mkdir -p {WORKSPACE_DIR_IN_SANDBOX} && "
+            f"cd {WORKSPACE_DIR_IN_SANDBOX} && "
+            f"tar xzf {tmp} && rm -f {tmp} && "
+            # Generate a file tree map so LLM-based agents can navigate selectively
+            f"find . -not -path './.git/*' -type f "
+            f"-exec ls -lh {{}} \\; 2>/dev/null | "
+            f"awk '{{printf \"%s\\t%s\\n\", $5, $NF}}' | sort -k2 "
+            f"> WORKSPACE_MAP && "
+            f"git init -q && git add -A && "
+            f"git -c user.name=primordial -c user.email=noreply "
+            f"commit -q -m snapshot --allow-empty",
+            user="user",
+        )
+        if result.exit_code != 0:
+            logger.warning("workspace snapshot extract failed: %s", result.stderr)
+            return
+
+        if readonly:
+            sandbox.commands.run(
+                f"chmod -R a-w {WORKSPACE_DIR_IN_SANDBOX}",
+                user="root",
+            )
+
+    def _extract_workspace_patch(self, sandbox: Sandbox) -> bytes | None:
+        """Run git diff in sandbox workspace, return patch bytes or None."""
+        # Stage all changes (including new files) so diff captures everything
+        sandbox.commands.run(
+            f"cd {WORKSPACE_DIR_IN_SANDBOX} && git add -A",
+            user="user",
+        )
+        result = sandbox.commands.run(
+            f"cd {WORKSPACE_DIR_IN_SANDBOX} && git diff --cached HEAD",
+            user="user",
+        )
+        if result.exit_code != 0 or not result.stdout:
+            return None
+        patch = result.stdout.encode() if isinstance(result.stdout, str) else result.stdout
+        return patch if patch.strip() else None
+
     def _build_run_command(
         self,
         sandbox: Sandbox,
@@ -365,7 +465,7 @@ class SandboxManager:
         self,
         agent_dir: Path,
         manifest: AgentManifest,
-        workspace: Path,
+        workspace: Optional[Path],
         env_vars: dict[str, str],
         state_dir: Optional[Path] = None,
         on_status: Optional[Callable[[str], None]] = None,
@@ -391,12 +491,11 @@ class SandboxManager:
             k: v for k, v in env_vars.items()
             if k in _SAFE_ENV_ALLOWLIST
         }
-        # 30 min timeout — delegation scenarios with nested sub-agents
-        # can take several minutes just for setup.
+        timeout = _parse_max_time(manifest.runtime.resources.max_time)
         sandbox = Sandbox.create(
             template="base",
             envs=safe_envs,
-            timeout=1800,
+            timeout=timeout,
             **network_kwargs,
         )
 
@@ -406,9 +505,31 @@ class SandboxManager:
 
             sandbox.commands.run(f"mkdir -p {WORKSPACE_DIR_IN_SANDBOX}")
 
+            # Detect if this is a resumed session (state_dir has content)
+            _is_resumed = (
+                state_dir is not None
+                and state_dir.exists()
+                and any(state_dir.iterdir())
+            )
+
             if state_dir:
                 _status("Restoring state...")
                 self._restore_state(sandbox, state_dir)
+
+            # Upload host workspace snapshot — only for NEW sessions.
+            # Resumed sessions keep their workspace from the previous run
+            # so iterative agents don't lose progress.
+            fs_perm = manifest.permissions.filesystem.workspace
+            _workspace_bundle_uploaded = False
+            if workspace and fs_perm in ("readonly", "readwrite") and not _is_resumed:
+                _status("Snapshotting workspace...")
+                snapshot = self._snapshot_workspace(workspace)
+                if snapshot:
+                    _status("Uploading workspace...")
+                    self._upload_workspace_snapshot(
+                        sandbox, snapshot, readonly=(fs_perm == "readonly"),
+                    )
+                    _workspace_bundle_uploaded = True
 
             # SECURITY: Apply hardening BEFORE setup_command runs.
             # This prevents malicious setup commands from reading /proc,
@@ -513,6 +634,8 @@ class SandboxManager:
                 state_dir=state_dir,
                 proxy_pid=proxy_pid,
                 delegation_handler=delegation_handler,
+                workspace_uploaded=_workspace_bundle_uploaded,
+                workspace_readonly=(fs_perm == "readonly"),
             )
         except Exception:
             try:
@@ -525,7 +648,7 @@ class SandboxManager:
         self,
         agent_dir: Path,
         manifest: AgentManifest,
-        workspace: Path,
+        workspace: Optional[Path],
         env_vars: dict[str, str],
         cols: int = 80,
         rows: int = 24,
@@ -555,12 +678,11 @@ class SandboxManager:
             k: v for k, v in env_vars.items()
             if k in _SAFE_ENV_ALLOWLIST
         }
-        # 30 min timeout — delegation scenarios with nested sub-agents
-        # can take several minutes just for setup.
+        timeout = _parse_max_time(manifest.runtime.resources.max_time)
         sandbox = Sandbox.create(
             template="base",
             envs=safe_envs,
-            timeout=1800,
+            timeout=timeout,
             **network_kwargs,
         )
 
@@ -572,6 +694,19 @@ class SandboxManager:
             if state_dir:
                 _status("Restoring state...")
                 self._restore_state(sandbox, state_dir)
+
+            # Upload host workspace bundle
+            fs_perm = manifest.permissions.filesystem.workspace
+            _workspace_bundle_uploaded = False
+            if workspace and fs_perm in ("readonly", "readwrite"):
+                _status("Snapshotting workspace...")
+                snapshot = self._snapshot_workspace(workspace)
+                if snapshot:
+                    _status("Uploading workspace...")
+                    self._upload_workspace_snapshot(
+                        sandbox, snapshot, readonly=(fs_perm == "readonly"),
+                    )
+                    _workspace_bundle_uploaded = True
 
             _status("Hardening sandbox...")
             self._apply_hardening(sandbox, needs_proxy=bool(manifest.keys))
@@ -659,6 +794,8 @@ class SandboxManager:
                 proxy_pid=proxy_pid,
                 delegation_handler=delegation_handler,
                 on_data=on_data,
+                workspace_uploaded=_workspace_bundle_uploaded,
+                workspace_readonly=(fs_perm == "readonly"),
             )
 
             # Type the run command into bash with env vars
@@ -691,6 +828,8 @@ class AgentSession:
         on_stderr: Optional[Any] = None,
         proxy_pid: Optional[int] = None,
         delegation_handler: Optional["DelegationHandler"] = None,
+        workspace_uploaded: bool = False,
+        workspace_readonly: bool = False,
     ):
         self._sandbox = sandbox
         self._cmd_handle = cmd_handle
@@ -702,6 +841,8 @@ class AgentSession:
         self._on_stderr = on_stderr
         self._proxy_pid = proxy_pid
         self._delegation_handler = delegation_handler
+        self._workspace_uploaded = workspace_uploaded
+        self._workspace_readonly = workspace_readonly
         self._alive = True
 
         # Drive the event loop in a background thread — this is what
@@ -755,7 +896,9 @@ class AgentSession:
                 return True
             # Non-ready messages (logs, early errors) — keep draining
 
-    def shutdown(self) -> None:
+    def shutdown(self) -> bytes | None:
+        """Shutdown the agent, extract workspace patch if applicable."""
+        patch: bytes | None = None
         try:
             # Shutdown delegation handler first (saves sub-agent state)
             if self._delegation_handler:
@@ -768,6 +911,13 @@ class AgentSession:
                 shutdown_msg = json.dumps({"type": "shutdown"})
                 self._sandbox.commands.send_stdin(self._cmd_handle.pid, shutdown_msg + "\n")
                 self._reader_thread.join(timeout=3)
+
+            # Extract workspace patch before saving state / killing sandbox
+            if self._workspace_uploaded and not self._workspace_readonly:
+                try:
+                    patch = self._manager._extract_workspace_patch(self._sandbox)
+                except Exception as e:
+                    logger.warning("Failed to extract workspace patch: %s", e)
         except Exception:
             pass
         finally:
@@ -788,6 +938,7 @@ class AgentSession:
                 self._sandbox.kill()
             except Exception:
                 pass
+        return patch
 
 
 class TerminalSession:
@@ -802,6 +953,8 @@ class TerminalSession:
         proxy_pid: Optional[int] = None,
         delegation_handler: Optional["DelegationHandler"] = None,
         on_data: Optional[Callable[[bytes], None]] = None,
+        workspace_uploaded: bool = False,
+        workspace_readonly: bool = False,
     ):
         self._sandbox = sandbox
         self._pty = pty_handle
@@ -810,6 +963,8 @@ class TerminalSession:
         self._proxy_pid = proxy_pid
         self._delegation_handler = delegation_handler
         self._on_data = on_data
+        self._workspace_uploaded = workspace_uploaded
+        self._workspace_readonly = workspace_readonly
         self._alive = True
 
         self._wait_thread: Optional[threading.Thread] = None
@@ -842,13 +997,22 @@ class TerminalSession:
         except Exception:
             pass
 
-    def shutdown(self) -> None:
+    def shutdown(self) -> bytes | None:
+        """Shutdown the terminal session, extract workspace patch if applicable."""
+        patch: bytes | None = None
         try:
             if self._delegation_handler:
                 try:
                     self._delegation_handler.shutdown()
                 except Exception as e:
                     logger.warning("Failed to shutdown delegation handler: %s", e)
+
+            # Extract workspace patch before killing sandbox
+            if self._workspace_uploaded and not self._workspace_readonly:
+                try:
+                    patch = self._manager._extract_workspace_patch(self._sandbox)
+                except Exception as e:
+                    logger.warning("Failed to extract workspace patch: %s", e)
         except Exception:
             pass
         finally:
@@ -868,6 +1032,7 @@ class TerminalSession:
                 self._sandbox.kill()
             except Exception:
                 pass
+        return patch
 
 
 class DelegationHandler:
@@ -1267,7 +1432,7 @@ class DelegationHandler:
             sub_session = self._manager.run_agent(
                 agent_dir=agent_dir,
                 manifest=sub_manifest,
-                workspace=Path("."),
+                workspace=None,
                 env_vars=sub_env_vars,
                 state_dir=sub_state_dir,
                 on_status=_on_status,

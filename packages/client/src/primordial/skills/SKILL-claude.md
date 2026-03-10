@@ -50,11 +50,12 @@ curl -s -H "Authorization: Bearer $TOKEN" http://localhost:19400/search -d '{}'
 
 ## Step 3: Spawn an Agent
 
-Use the `url` from search results:
+Use the `url` from search results. Pass your current project directory as `workspace` so the agent can read and modify your code:
 
 ```bash
 TOKEN=$(cat ~/.primordial-daemon-token 2>/dev/null)
-curl -s --max-time 120 -H "Authorization: Bearer $TOKEN" http://localhost:19400/run -d '{"url":"https://github.com/user/agent"}'
+WORKSPACE=$(git rev-parse --show-toplevel 2>/dev/null)
+curl -s --max-time 120 -H "Authorization: Bearer $TOKEN" http://localhost:19400/run -d "{\"url\":\"https://github.com/user/agent\",\"workspace\":\"$WORKSPACE\"}"
 ```
 
 Returns:
@@ -62,7 +63,7 @@ Returns:
 {"session_id": "abc123def456"}
 ```
 
-This may take 30-60 seconds (sandbox boot + setup).
+This may take 30-60 seconds (sandbox boot + setup). The agent receives a snapshot of your working directory (including uncommitted changes) in its sandbox workspace. It cannot modify your files directly — changes come back as a patch on shutdown.
 
 ## Step 4: Send Messages
 
@@ -90,7 +91,12 @@ TOKEN=$(cat ~/.primordial-daemon-token 2>/dev/null)
 curl -s -H "Authorization: Bearer $TOKEN" http://localhost:19400/shutdown -d '{"session_id":"abc123def456"}'
 ```
 
-Always end sessions when done to free resources.
+If the agent modified files in its workspace, the response includes a patch:
+```json
+{"ok": true, "workspace_patch": "diff --git a/file.py b/file.py\n..."}
+```
+
+Review the patch and apply it with `git apply` if the changes look good. Always end sessions when done to free resources.
 
 ## Error Handling
 
@@ -102,4 +108,5 @@ Always end sessions when done to free resources.
 ## Important Notes
 
 - The agent sees its own permissions and API keys — you don't need to provide them
-- Each agent runs in full isolation — it cannot access your local filesystem
+- Agents receive a read-only snapshot of your project when `workspace` is provided — they cannot modify your files directly
+- Changes come back as a `workspace_patch` on shutdown for you to review and apply

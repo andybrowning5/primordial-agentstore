@@ -7,6 +7,7 @@ so hosts like OpenClaw can interact without managing child processes.
 import json
 import logging
 import secrets
+import subprocess
 import uuid
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -29,12 +30,13 @@ _TOKEN_FILE = Path.home() / ".primordial-daemon-token"
 
 
 class _SessionEntry:
-    __slots__ = ("session", "manifest", "agent_dir")
+    __slots__ = ("session", "manifest", "agent_dir", "workspace")
 
-    def __init__(self, session, manifest, agent_dir):
+    def __init__(self, session, manifest, agent_dir, workspace=None):
         self.session = session
         self.manifest = manifest
         self.agent_dir = agent_dir
+        self.workspace = workspace
 
 
 # Module-level state shared across request handlers
@@ -130,6 +132,7 @@ class DaemonHandler(BaseHTTPRequestHandler):
     def _handle_run(self, body: dict):
         url = body.get("url")
         ref = body.get("ref")
+        workspace_path = body.get("workspace")
         if not url:
             _respond_error(self, "Missing 'url' field")
             return
@@ -188,6 +191,22 @@ class DaemonHandler(BaseHTTPRequestHandler):
         allowed.append("e2b")
         env_vars = vault.get_env_vars(providers=allowed)
 
+        # Resolve workspace path — validate it's a real git repo
+        workspace: Path | None = None
+        if workspace_path:
+            wp = Path(workspace_path)
+            if wp.is_dir():
+                try:
+                    check = subprocess.run(
+                        ["git", "rev-parse", "--show-toplevel"],
+                        cwd=str(wp),
+                        capture_output=True, text=True, timeout=5,
+                    )
+                    if check.returncode == 0:
+                        workspace = Path(check.stdout.strip())
+                except Exception:
+                    pass
+
         # Session
         session_id = uuid.uuid4().hex[:12]
         session_name = f"daemon-{session_id}"
@@ -197,7 +216,7 @@ class DaemonHandler(BaseHTTPRequestHandler):
             session = _manager.run_agent(
                 agent_dir=agent_dir,
                 manifest=manifest,
-                workspace=Path(".").resolve(),
+                workspace=workspace,
                 env_vars=env_vars,
                 state_dir=state_dir,
             )
@@ -211,7 +230,7 @@ class DaemonHandler(BaseHTTPRequestHandler):
             return
 
         with _sessions_lock:
-            _sessions[session_id] = _SessionEntry(session, manifest, agent_dir)
+            _sessions[session_id] = _SessionEntry(session, manifest, agent_dir, workspace)
 
         _respond_json(self, {"session_id": session_id})
 
@@ -280,8 +299,11 @@ class DaemonHandler(BaseHTTPRequestHandler):
             _respond_error(self, f"Unknown session: {session_id}", 404)
             return
 
-        entry.session.shutdown()
-        _respond_json(self, {"ok": True})
+        patch = entry.session.shutdown()
+        result: dict = {"ok": True}
+        if patch:
+            result["workspace_patch"] = patch.decode(errors="replace")
+        _respond_json(self, result)
 
 
 @click.command()
