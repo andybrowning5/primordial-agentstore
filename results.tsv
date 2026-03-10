@@ -8,3 +8,4 @@ iteration	commit	score	status	description
 6	dba7e14	100.0000	keep	Add validation for the category field in AgentManifest to ensure it is a non-empty lowercase string with allowed values
 7	efbd97e	100.0000	keep	Add validation for the author.name field in AuthorInfo to ensure it is non-empty and not excessively long
 8	f294cc7	100.0000	keep	Add validation for the github field in AuthorInfo to ensure it is a valid GitHub URL or username handle
+10	5f62240	100.0000	keep	Add validation for the website field in AuthorInfo to ensure it is a valid HTTP/HTTPS URL
