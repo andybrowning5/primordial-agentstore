@@ -149,6 +149,8 @@ def _pick_session(config, agent_name: str, agent_mode: bool = False) -> Path:
 @click.option("--session", "session_name", default=None, help="Session name to resume (skips prompt)")
 @click.option("--no-worktree", "no_worktree", is_flag=True,
               help="Skip worktree isolation — bundle the working directory directly")
+@click.option("--workspace", "workspace_path", default=None, type=click.Path(exists=True),
+              help="Path to the git repo or subdirectory to use as workspace")
 def run(
     agent_path: str,
     agent_mode: bool,
@@ -157,6 +159,7 @@ def run(
     refresh: bool,
     session_name: str | None,
     no_worktree: bool = False,
+    workspace_path: str | None = None,
 ):
     """Run an agent in a sandbox.
 
@@ -334,8 +337,26 @@ def run(
     host_workspace: Path | None = None
     fs_perm = manifest.permissions.filesystem.workspace
     if fs_perm in ("readonly", "readwrite"):
-        host_workspace = _detect_git_root()
-        if host_workspace is None:
+        if workspace_path:
+            # Explicit --workspace: resolve to its git root
+            wp = Path(workspace_path).resolve()
+            try:
+                result = subprocess.run(
+                    ["git", "rev-parse", "--show-toplevel"],
+                    capture_output=True, text=True, timeout=5, cwd=str(wp),
+                )
+                if result.returncode == 0:
+                    host_workspace = Path(result.stdout.strip())
+                else:
+                    console.print(
+                        f"[yellow]Warning:[/yellow] {wp} is not inside a git repo. "
+                        "Workspace will be empty."
+                    )
+            except Exception:
+                host_workspace = None
+        else:
+            host_workspace = _detect_git_root()
+        if host_workspace is None and not workspace_path:
             console.print(
                 "[yellow]Warning:[/yellow] Agent requests workspace access "
                 "but no git repo found. Workspace will be empty."
