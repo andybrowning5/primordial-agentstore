@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # === Manifest Models ===
@@ -315,6 +315,25 @@ class AgentManifest(BaseModel):
                 f"Invalid category: {v!r} — must be one of: {suggestion}"
             )
         return v
+    @model_validator(mode="after")
+    def validate_no_duplicate_key_env_vars(self) -> "AgentManifest":
+        seen_env_vars: set[str] = set()
+        seen_base_url_envs: set[str] = set()
+        for key_req in self.keys:
+            env_var = key_req.resolved_env_var()
+            if env_var in seen_env_vars:
+                raise ValueError(
+                    f"Duplicate env_var {env_var!r} across keys — each key must use a unique environment variable"
+                )
+            seen_env_vars.add(env_var)
+            if key_req.base_url_env:
+                if key_req.base_url_env in seen_base_url_envs:
+                    raise ValueError(
+                        f"Duplicate base_url_env {key_req.base_url_env!r} across keys — each key must use a unique base URL variable"
+                    )
+                seen_base_url_envs.add(key_req.base_url_env)
+        return self
+
     category: str = "general"
     tags: list[str] = Field(default_factory=list)
     author: AuthorInfo

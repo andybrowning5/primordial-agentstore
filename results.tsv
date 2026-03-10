@@ -11,3 +11,4 @@ iteration	commit	score	status	description
 10	5f62240	100.0000	keep	Add validation for the website field in AuthorInfo to ensure it is a valid HTTP/HTTPS URL
 11	83b7964	100.0000	keep	Add validation for the website field in AuthorInfo to reject empty strings if provided
 12	ee3d7cf	100.0000	keep	Add validation for the KeyRequirement.passthrough field to warn when domain is empty but passthrough is False
+13	f59330f	100.0000	keep	Add model validation for ResourceLimits.max_memory and max_cpu fields to reject invalid values
