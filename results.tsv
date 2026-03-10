@@ -2,3 +2,4 @@ iteration	commit	score	status	description
 0	31a562c	100.0000	baseline	initial state
 1	329a009	100.0000	keep	Add version constraint validation for AgentManifest.version field using a field_validator
 2	309362e	100.0000	keep	Add validation for display_name field in AgentManifest to ensure it is non-empty and not excessively long
+3	5077fb6	100.0000	keep	Add validation for description field in AgentManifest to ensure it is non-empty and not excessively long
