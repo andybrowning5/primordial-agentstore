@@ -28,6 +28,21 @@ class AuthorInfo(BaseModel):
             )
         return v
 
+    @field_validator("website")
+    @classmethod
+    def validate_website(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            raise ValueError("author.website must not be empty if provided")
+        if not re.match(r"^https?://", v, re.IGNORECASE):
+            raise ValueError(
+                f"Invalid author.website: {v!r} — must be a full HTTP/HTTPS URL "
+                f"(e.g. 'https://example.com')"
+            )
+        return v
+
     @field_validator("github")
     @classmethod
     def validate_github(cls, v: Optional[str]) -> Optional[str]:
