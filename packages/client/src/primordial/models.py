@@ -133,6 +133,18 @@ class RuntimeConfig(BaseModel):
             )
         return v
 
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, v: str) -> str:
+        v = v.strip().lower()
+        _VALID_MODES = {"agent", "terminal"}
+        if v not in _VALID_MODES:
+            suggestion = ", ".join(sorted(_VALID_MODES))
+            raise ValueError(
+                f"Invalid runtime.mode: {v!r} — must be one of: {suggestion}"
+            )
+        return v
+
     @field_validator("run_command")
     @classmethod
     def validate_run_command(cls, v: Optional[str]) -> Optional[str]:
