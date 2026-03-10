@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, field_validator
 class AuthorInfo(BaseModel):
     name: str
     github: Optional[str] = None
+    website: Optional[str] = None
 
     @field_validator("name")
     @classmethod

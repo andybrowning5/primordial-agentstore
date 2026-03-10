@@ -7,3 +7,4 @@ iteration	commit	score	status	description
 5	d9325c4	100.0000	keep	Add validation for the tags field in AgentManifest to ensure tag entries are non-empty, not too long, and the list is not excessively large
 6	dba7e14	100.0000	keep	Add validation for the category field in AgentManifest to ensure it is a non-empty lowercase string with allowed values
 7	efbd97e	100.0000	keep	Add validation for the author.name field in AuthorInfo to ensure it is non-empty and not excessively long
+8	f294cc7	100.0000	keep	Add validation for the github field in AuthorInfo to ensure it is a valid GitHub URL or username handle
