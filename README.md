@@ -22,6 +22,11 @@ One integration, instant access to a growing ecosystem of purpose-built agents. 
 
 https://github.com/user-attachments/assets/226805a6-ef8b-49d3-9643-34d730727f33
 
+## Primordial Sub-Agents Demo
+
+
+https://github.com/user-attachments/assets/d5315a85-5ee8-410f-977b-3927207ade38
+
 
 ---
 
