@@ -50,6 +50,7 @@ primordial cache list|clear    # View or clear cached agent repos
 | [Getting Started](docs/users/getting-started.md) | Install Primordial and run your first agent |
 | [Background Service](docs/users/background-service.md) | How the background service works, logs, and troubleshooting |
 | [Security](docs/users/security.md) | How your API keys and data are protected |
+| [Workspace Isolation](docs/users/workspace-isolation.md) | How agents read and modify your code safely via git worktrees |
 
 ### For Agent Developers
 
