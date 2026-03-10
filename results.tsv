@@ -17,3 +17,4 @@ iteration	commit	score	status	description
 16	fe084f1	100.0000	keep	Add validation for the run_command field in RuntimeConfig to reject empty strings if provided
 17	8902095	100.0000	keep	Add validation for the RuntimeConfig.language field to reject empty or unsupported language values
 18	7269232	100.0000	keep	Add validation for the version field in AgentManifest to reject pre-release or build metadata suffixes that go beyond basic semver
+19	c198a4f	100.0000	keep	Add validation for the display_name field in AgentManifest to reject names that are only whitespace or contain only punctuation/digits with no letters
