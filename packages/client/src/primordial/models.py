@@ -27,6 +27,27 @@ class AuthorInfo(BaseModel):
             )
         return v
 
+    @field_validator("github")
+    @classmethod
+    def validate_github(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            raise ValueError("author.github must not be empty if provided")
+        # Accept full GitHub URLs or bare username/org handles
+        if v.startswith(("https://github.com/", "http://github.com/", "github.com/")):
+            # Normalize to bare handle
+            handle = re.split(r"github\.com/", v, maxsplit=1)[-1].rstrip("/")
+        else:
+            handle = v.lstrip("@")
+        if not re.match(r"^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$", handle):
+            raise ValueError(
+                f"Invalid author.github: {v!r} — must be a GitHub username or URL "
+                f"(e.g. 'octocat' or 'https://github.com/octocat')"
+            )
+        return handle
+
 
 class ModelConfig(BaseModel):
     provider: str = "anthropic"
