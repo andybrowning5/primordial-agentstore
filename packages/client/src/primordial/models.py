@@ -149,6 +149,18 @@ class AgentManifest(BaseModel):
     version: str
     description: str
 
+    @field_validator("display_name")
+    @classmethod
+    def validate_display_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("display_name must not be empty")
+        if len(v) > 80:
+            raise ValueError(
+                f"display_name is too long ({len(v)} chars) — must be 80 characters or fewer"
+            )
+        return v
+
     @field_validator("version")
     @classmethod
     def validate_version(cls, v: str) -> str:
