@@ -349,11 +349,12 @@ def run(
             worktree_mgr = WorktreeManager(host_workspace, session_name=state_dir.name)
             wt_path = worktree_mgr.create(manifest.name)
             branch = worktree_mgr._branch_name(manifest.name)
-            host_workspace = wt_path
             console.print(
+                f"[dim]Repo: {host_workspace}[/dim]\n"
                 f"[dim]Worktree: {wt_path} "
                 f"(branch: {branch})[/dim]"
             )
+            host_workspace = wt_path
         except WorktreeError as e:
             console.print(f"[red]Failed to create worktree:[/red] {e}")
             raise SystemExit(1)
