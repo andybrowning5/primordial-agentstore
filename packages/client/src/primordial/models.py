@@ -357,10 +357,20 @@ class AgentManifest(BaseModel):
     @field_validator("version")
     @classmethod
     def validate_version(cls, v: str) -> str:
-        if not re.match(r"^\d+\.\d+\.\d+", v):
+        v = v.strip()
+        if not v:
+            raise ValueError("version must not be empty")
+        if not re.match(r"^\d+\.\d+\.\d+([.+-].+)?$", v):
             raise ValueError(
                 f"Invalid version: {v!r} — must follow semantic versioning (e.g. '1.0.0')"
             )
+        parts = v.split(".", 2)
+        try:
+            major, minor = int(parts[0]), int(parts[1])
+        except (ValueError, IndexError):
+            raise ValueError(f"Invalid version: {v!r} — major and minor must be integers")
+        if major < 0 or minor < 0:
+            raise ValueError(f"Invalid version: {v!r} — version numbers must be non-negative")
         return v
 
     @field_validator("category")
