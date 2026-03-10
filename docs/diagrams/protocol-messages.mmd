@@ -1,25 +1,18 @@
 sequenceDiagram
-    participant Platform as Host Platform
-    participant Agent as Agent Process<br/>(stdin/stdout)
+    participant P as Platform
+    participant A as Agent
 
-    Note over Platform,Agent: NDJSON Protocol<br/>One JSON object per line<br/>Debug → stderr only
+    Note over P,A: NDJSON over stdin/stdout · debug → stderr
 
-    Agent->>Platform: {"type": "ready"}
-    Note right of Agent: Agent signals<br/>it's initialized
+    A->>P: {"type": "ready"}
 
-    Platform->>Agent: {"type": "message",<br/>"content": "Analyze this code",<br/>"message_id": "msg_001"}
+    P->>A: message · "Analyze this code"
 
-    Agent->>Platform: {"type": "activity",<br/>"tool": "file_read",<br/>"description": "Reading main.py",<br/>"message_id": "msg_001"}
-    Note right of Agent: Optional progress<br/>updates
+    A-->>P: activity · file_read
+    A-->>P: activity · code_analysis
+    A->>P: response · "Found 3 issues..." · done: true
 
-    Agent->>Platform: {"type": "activity",<br/>"tool": "code_analysis",<br/>"description": "Analyzing patterns",<br/>"message_id": "msg_001"}
+    P->>A: message · "Fix issue #1"
+    A->>P: response · "Fixed by changing..." · done: true
 
-    Agent->>Platform: {"type": "response",<br/>"content": "Found 3 issues...",<br/>"message_id": "msg_001",<br/>"done": true}
-    Note right of Agent: MUST end with<br/>done: true
-
-    Platform->>Agent: {"type": "message",<br/>"content": "Fix issue #1",<br/>"message_id": "msg_002"}
-
-    Agent->>Platform: {"type": "response",<br/>"content": "Fixed by changing...",<br/>"message_id": "msg_002",<br/>"done": true}
-
-    Platform->>Agent: {"type": "shutdown"}
-    Note right of Agent: Agent exits<br/>cleanly
+    P->>A: shutdown

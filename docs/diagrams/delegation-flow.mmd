@@ -1,56 +1,30 @@
 sequenceDiagram
+    participant Parent as Parent Agent
+    participant Proxy as Delegation Proxy
     participant Host as Host Process
-    participant SandboxA as Sandbox A (Parent Agent)
-    participant DelegateProxy as Delegation Proxy<br/>(root, Unix socket)
-    participant SandboxB as Sandbox B (Sub-Agent)
-    participant SandboxC as Sandbox C (Sub-Agent)
+    participant Sub as Sub-Agent
 
-    Note over Host: Max delegation depth: 3<br/>Max concurrent: 6 per parent
+    Note over Parent,Sub: Max depth: 3 · Max concurrent: 6
 
-    SandboxA->>DelegateProxy: search("web research")
-    DelegateProxy->>Host: Forward search request
-    Host-->>DelegateProxy: Agent list (name, url, description)
-    DelegateProxy-->>SandboxA: Agent results
+    Parent->>Proxy: search("web research")
+    Proxy->>Host: forward
+    Host-->>Parent: agent list
 
-    SandboxA->>DelegateProxy: run_agent(agent_url)
-    DelegateProxy->>Host: Spawn sub-agent request
-    Host->>Host: Load sub-agent manifest<br/>Resolve sub-agent API keys<br/>Create new sandbox
-    Host->>SandboxB: Create Firecracker VM<br/>with sub-agent's own permissions
-    SandboxB-->>Host: {"type": "ready"}
-    Host-->>DelegateProxy: session_id
-    DelegateProxy-->>SandboxA: session_id
+    Parent->>Proxy: run_agent(url)
+    Proxy->>Host: spawn request
+    Host->>Sub: create sandbox + proxy
+    Sub-->>Host: ready
+    Host-->>Parent: session_id
 
-    par Concurrent Sub-Agents
-        SandboxA->>DelegateProxy: message(session_id_1, "Research topic A")
-        DelegateProxy->>Host: Forward message
-        Host->>SandboxB: {"type":"message", ...}
-        SandboxB-->>Host: {"type":"response", "done":true}
-        Host-->>DelegateProxy: Response
-        DelegateProxy-->>SandboxA: Result A
-    and
-        SandboxA->>DelegateProxy: run_agent(agent_url_2)
-        DelegateProxy->>Host: Spawn another sub-agent
-        Host->>SandboxC: Create Firecracker VM
-        SandboxC-->>Host: {"type": "ready"}
-        Host-->>DelegateProxy: session_id_2
-        SandboxA->>DelegateProxy: message(session_id_2, "Research topic B")
-        DelegateProxy->>Host: Forward message
-        Host->>SandboxC: {"type":"message", ...}
-        SandboxC-->>Host: {"type":"response", "done":true}
-        Host-->>DelegateProxy: Response
-        DelegateProxy-->>SandboxA: Result B
-    end
+    Parent->>Proxy: message(id, task)
+    Proxy->>Host: forward
+    Host->>Sub: NDJSON message
+    Sub-->>Host: response
+    Host-->>Parent: result
 
-    SandboxA->>SandboxA: Combine results
+    Parent->>Proxy: stop(id)
+    Proxy->>Host: shutdown
+    Host->>Sub: shutdown
+    Note over Sub: VM destroyed
 
-    SandboxA->>DelegateProxy: stop(session_id_1)
-    DelegateProxy->>Host: Shutdown sub-agent
-    Host->>SandboxB: {"type":"shutdown"}
-    Note over SandboxB: VM destroyed
-
-    SandboxA->>DelegateProxy: stop(session_id_2)
-    DelegateProxy->>Host: Shutdown sub-agent
-    Host->>SandboxC: {"type":"shutdown"}
-    Note over SandboxC: VM destroyed
-
-    Note over SandboxA,SandboxC: Each sub-agent has its own<br/>isolated VM, permissions, and API keys
+    Note over Parent,Sub: Each sub-agent runs in its own<br/>isolated VM with its own keys

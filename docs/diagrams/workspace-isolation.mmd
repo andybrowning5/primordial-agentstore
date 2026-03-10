@@ -1,34 +1,36 @@
 graph LR
-    subgraph Local["Your Local Machine"]
-        Main["Your Repo<br/>(main branch)"]
-        WT["Git Worktree<br/>myproject--agent--session/<br/>branch: primordial/agent--session"]
+    subgraph local ["Local Machine"]
+        repo["Your Repo\nmain branch"]
+        wt["Git Worktree\nprimordial/agent--session"]
     end
 
-    subgraph Cloud["E2B Sandbox"]
-        Snapshot["Workspace Snapshot<br/>(tar.gz upload)"]
-        AgentWork["Agent modifies files<br/>/home/user/workspace/"]
-        Diff["git diff captured<br/>on shutdown"]
+    subgraph cloud ["Firecracker Sandbox"]
+        snap["Workspace\nSnapshot"]
+        work["Agent\nModifies Files"]
+        diff["git diff\nCaptured"]
     end
 
-    subgraph Review["Review & Merge"]
-        GitDiff["git diff main..branch"]
-        Approve{Approve?}
-        Merge["git merge<br/>primordial/agent--session"]
-        Cleanup["git worktree remove<br/>git branch -d"]
+    subgraph review ["Review"]
+        check["git diff\nmain..branch"]
+        decide{Merge?}
+        merge["git merge"]
+        cleanup["worktree remove"]
     end
 
-    Main -->|"1. Snapshot"| Snapshot
-    Main -->|"1. Create worktree"| WT
-    Snapshot -->|"2. Agent runs"| AgentWork
-    AgentWork -->|"3. Capture changes"| Diff
-    Diff -->|"4. Apply patch"| WT
-    WT -->|"5. Review"| GitDiff
-    GitDiff --> Approve
-    Approve -->|Yes| Merge
-    Merge --> Cleanup
-    Approve -->|No| Cleanup
-    Cleanup -->|"Clean state"| Main
+    repo -->|"1 · snapshot"| snap
+    repo -->|"1 · create worktree"| wt
+    snap -->|"2 · agent runs"| work
+    work -->|"3 · capture"| diff
+    diff -->|"4 · apply patch"| wt
+    wt -->|"5 · review"| check
+    check --> decide
+    decide -->|yes| merge
+    decide -->|no| cleanup
+    merge --> cleanup
 
-    style Local fill:#3498DB,color:#fff
-    style Cloud fill:#2C3E50,color:#fff
-    style Review fill:#27AE60,color:#fff
+    classDef default fill:#1e293b,stroke:#334155,color:#e2e8f0
+    classDef accent fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
+    classDef decision fill:#334155,stroke:#3b82f6,color:#e2e8f0
+
+    class snap,work,diff accent
+    class decide decision

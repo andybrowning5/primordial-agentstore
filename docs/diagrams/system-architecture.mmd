@@ -1,53 +1,50 @@
 graph TB
-    subgraph User["User Layer"]
+    subgraph users [" "]
+        direction LR
         CLI["primordial CLI"]
-        CC["Claude Code / OpenClaw / Codex"]
+        CC["Claude Code &middot; OpenClaw &middot; Codex"]
     end
 
-    subgraph Host["Host Layer"]
-        Daemon["HTTP Daemon<br/>localhost:19400"]
-        Vault["Key Vault<br/>AES-128 Encrypted"]
-        GH["GitHub Resolver<br/>& Cache"]
-        Manifest["Manifest Loader<br/>& Validator"]
-        WT["Worktree Manager<br/>Git Isolation"]
+    subgraph host ["Host"]
+        direction LR
+        Daemon["HTTP Daemon\nlocalhost:19400"]
+        Vault["Key Vault\nAES-128"]
+        Manifest["Manifest\nValidator"]
+        GH["GitHub\nResolver"]
+        WT["Worktree\nManager"]
     end
 
-    subgraph Cloud["Cloud Sandbox (E2B Firecracker microVM)"]
-        subgraph Root["Root Context (privileged)"]
-            Hardening["VM Hardening<br/>remove sudo, hidepid=2"]
-            Proxy["API Key Proxy<br/>localhost:9001-900N"]
+    subgraph sandbox ["Firecracker microVM"]
+        subgraph root [" "]
+            Hardening["Hardening\nsudo removed &middot; hidepid=2"]
+            Proxy["API Key Proxy\nlocalhost:9001+"]
         end
-        subgraph Unprivileged["Agent Context (user)"]
-            Agent["Agent Process<br/>stdin/stdout NDJSON"]
+        subgraph agent_ctx [" "]
+            Agent["Agent Process\nstdin/stdout"]
             WS["workspace/"]
-            Data["data/ &bull; output/ &bull; state/"]
+            State["data/ &middot; output/ &middot; state/"]
         end
     end
 
-    subgraph External["External APIs"]
-        Anthropic["api.anthropic.com"]
-        Other["Other APIs"]
-    end
+    APIs["External APIs\napi.anthropic.com &middot; etc."]
 
-    CLI -->|"interactive"| Manifest
-    CC -->|"HTTP + Bearer token"| Daemon
+    CC -->|"HTTP"| Daemon
+    CLI --> Manifest
     Daemon --> Manifest
-    Manifest --> GH
-    GH -->|"clone & cache"| Manifest
     Daemon --> Vault
     CLI --> Vault
-    Vault -->|"decrypted keys"| Proxy
-    WT -->|"snapshot tar.gz"| WS
-    Agent -->|"fake session token"| Proxy
-    Proxy -->|"real API key"| Anthropic
-    Proxy -->|"real API key"| Other
+    Manifest --> GH
+    Vault -->|"keys"| Proxy
+    WT -->|"snapshot"| WS
+    Agent -->|"session token"| Proxy
+    Proxy -->|"real key"| APIs
     Agent --> WS
-    Agent --> Data
-    WS -->|"diff patch"| WT
+    Agent --> State
+    WS -->|"diff"| WT
 
-    style User fill:#4A90D9,color:#fff
-    style Host fill:#7B68EE,color:#fff
-    style Cloud fill:#2C3E50,color:#fff
-    style Root fill:#E74C3C,color:#fff
-    style Unprivileged fill:#27AE60,color:#fff
-    style External fill:#F39C12,color:#fff
+    classDef default fill:#1e293b,stroke:#334155,color:#e2e8f0
+    classDef accent fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
+    classDef dim fill:#0f172a,stroke:#334155,color:#94a3b8
+
+    class Agent,Proxy accent
+    class APIs dim
