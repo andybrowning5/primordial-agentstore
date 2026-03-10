@@ -1,2 +1,3 @@
 iteration	commit	score	status	description
 0	31a562c	100.0000	baseline	initial state
+1	329a009	100.0000	keep	Add version constraint validation for AgentManifest.version field using a field_validator
