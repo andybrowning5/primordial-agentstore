@@ -675,6 +675,7 @@ class SandboxManager:
         state_dir: Optional[Path] = None,
         on_status: Optional[Callable[[str], None]] = None,
         worktree_mgr: Optional[Any] = None,
+        delegation_depth: int = 0,
     ) -> "TerminalSession":
         """Start an agent in terminal passthrough mode using E2B PTY.
 

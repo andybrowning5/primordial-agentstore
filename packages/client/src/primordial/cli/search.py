@@ -36,20 +36,20 @@ def search(query: str | None, as_agent: bool = False):
         console.print("[yellow]No agents found.[/yellow]")
         return
 
-    table = Table(title="Primordial Agents")
+    table = Table(title="Primordial Agents", show_lines=True)
     table.add_column("#", style="dim", width=3)
-    table.add_column("Name", style="cyan")
-    table.add_column("Description", max_width=50)
-    table.add_column("Stars", justify="right", style="yellow")
-    table.add_column("URL", style="blue")
+    table.add_column("Agent", style="cyan", no_wrap=True)
+    table.add_column("Description")
+    table.add_column("Stars", justify="right", style="yellow", width=5)
 
     for i, repo in enumerate(agents, 1):
+        # Show just the repo name, not owner/repo
+        short_name = repo["name"].split("/")[-1] if "/" in repo["name"] else repo["name"]
         table.add_row(
             str(i),
-            repo["name"],
-            repo["description"][:50],
+            short_name,
+            repo["description"],
             str(repo["stars"]),
-            repo["url"],
         )
 
     console.print(table)
