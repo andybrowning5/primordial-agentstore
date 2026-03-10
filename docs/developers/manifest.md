@@ -114,7 +114,7 @@ List of allowed outbound domains. Each entry:
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `network_unrestricted` | bool | `false` | Full internet access (requires user approval) |
-| `filesystem.workspace` | string | `"readwrite"` | `"none"`, `"readonly"`, or `"readwrite"` |
+| `filesystem.workspace` | string | `"readwrite"` | `"none"`, `"readonly"`, or `"readwrite"` — see [Workspace Isolation](../users/workspace-isolation.md) |
 | `delegation.enabled` | bool | `false` | Can this agent spawn sub-agents? |
 | `delegation.allowed_agents` | list[string] | `[]` | Restrict which agents can be delegated to |
 

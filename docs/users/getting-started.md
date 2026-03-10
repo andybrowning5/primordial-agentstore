@@ -73,6 +73,7 @@ primordial install --all
 
 ## Next Steps
 
+- [Workspace isolation](workspace-isolation.md) — how agents read and modify your code safely
 - [Build your own agent](../developers/building-agents.md)
 - [Understand the protocol](../developers/protocol.md)
 - [Publish an agent](../developers/publishing.md)

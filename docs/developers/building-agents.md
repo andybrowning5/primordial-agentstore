@@ -199,7 +199,7 @@ Your agent runs inside a Firecracker microVM:
 Best practices:
 - Request the minimum permissions your agent needs
 - Explain *why* in the `reason` field for each network domain
-- Use `workspace: readonly` unless you genuinely need to write
+- Use `workspace: readonly` unless you genuinely need to write — see [Workspace Isolation](../users/workspace-isolation.md)
 - Never store secrets in state — use the `keys` mechanism
 
 ## Debugging
