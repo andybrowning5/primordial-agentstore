@@ -161,8 +161,10 @@ The VM is destroyed. Keys are gone from memory. Nothing persists except the allo
 | Inject headers to leak keys | Response headers filtered through safe allowlist |
 | Smuggle requests via HTTP tricks | CRLF injection and chunked encoding are blocked |
 | Poison state for next session | Only 4 specific directories persist, no dotfiles |
-| Access host env vars (AWS keys, etc.) | Only 10 safe env vars forwarded to VM |
-| Escalate via sub-agents | Each sub-agent gets its own isolated VM |
+| Access host env vars (AWS keys, etc.) | Only 11 safe env vars forwarded to VM (PATH, HOME, USER, SHELL, LANG, LC_ALL, LC_CTYPE, TERM, TZ, PYTHONPATH, NODE_PATH) |
+| Escalate via sub-agents | Each sub-agent gets its own isolated VM with a max delegation depth of 3 and max 6 concurrent sub-agents per parent |
+
+Host environment variables like `AWS_SECRET_ACCESS_KEY`, `GITHUB_TOKEN`, `WORKSPACE`, and `E2B_API_KEY` are never forwarded to the VM. Only the 11 safe vars listed above are passed through.
 
 ---
 

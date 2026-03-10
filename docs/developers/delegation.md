@@ -93,7 +93,7 @@ permissions:
 
 ### Python SDK
 
-Copy [`primordial_delegate.py`](../packages/client/src/primordial/sandbox/primordial_delegate.py) into your agent's source directory. **Stdlib-only — no dependencies.**
+Copy [`primordial_delegate.py`](../../packages/client/src/primordial/sandbox/primordial_delegate.py) into your agent's source directory. **Stdlib-only — no dependencies.**
 
 ```python
 from primordial_delegate import (
@@ -149,7 +149,7 @@ for event in message_agent_stream(session_id, "Do research"):
 
 ### Node.js SDK
 
-Copy [`primordial_delegate.mjs`](../packages/client/src/primordial/sandbox/primordial_delegate.mjs) into your agent's source directory. **Zero dependencies — uses built-in `net`.**
+Copy [`primordial_delegate.mjs`](../../packages/client/src/primordial/sandbox/primordial_delegate.mjs) into your agent's source directory. **Zero dependencies — uses built-in `net`.**
 
 ```javascript
 import {
@@ -188,7 +188,7 @@ await stopAgent(sessionId);
 
 ### CLI (any language)
 
-Copy [`delegate_cli.py`](../packages/client/src/primordial/sandbox/delegate_cli.py) into your agent and install it as an executable. Any agent that can run shell commands can use it.
+Copy [`delegate_cli.py`](../../packages/client/src/primordial/sandbox/delegate_cli.py) into your agent and install it as an executable. Any agent that can run shell commands can use it.
 
 ```bash
 # Search for agents
@@ -213,6 +213,15 @@ To show sub-agent progress in the parent TUI in real-time, emit activity events 
 ```
 
 Both SDKs include `emit_activity()` / `emitActivity()` helpers. The `message_id` should match the message you're currently responding to.
+
+## Delegation Limits
+
+The host-side DelegationHandler enforces two hard limits to prevent runaway delegation chains:
+
+- **Max delegation depth: 3** — An agent can delegate to a sub-agent, which can delegate to its own sub-agent, up to 3 levels deep. Attempts to delegate beyond depth 3 return an error.
+- **Max concurrent sub-agents per parent: 6** — A single parent agent can run at most 6 sub-agents simultaneously. Additional `run_agent` calls will fail until an existing sub-agent is stopped.
+
+These limits apply regardless of what the agent's manifest declares. They are enforced on the host side, so a malicious agent cannot bypass them.
 
 ## Security
 

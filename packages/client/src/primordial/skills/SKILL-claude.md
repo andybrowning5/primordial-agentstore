@@ -55,7 +55,7 @@ Use the `url` from search results. Pass your current project directory as `works
 ```bash
 TOKEN=$(cat ~/.primordial-daemon-token 2>/dev/null)
 WORKSPACE=$(git rev-parse --show-toplevel 2>/dev/null)
-curl -s --max-time 120 -H "Authorization: Bearer $TOKEN" http://localhost:19400/run -d "{\"url\":\"https://github.com/user/agent\",\"workspace\":\"$WORKSPACE\"}"
+curl -s --max-time 120 -H "Authorization: Bearer $TOKEN" http://localhost:19400/run -d "{\"url\":\"https://github.com/user/agent\",\"ref\":\"main\",\"workspace\":\"$WORKSPACE\"}"
 ```
 
 Returns:

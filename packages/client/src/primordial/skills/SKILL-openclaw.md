@@ -46,11 +46,12 @@ curl -s -H "Authorization: Bearer $TOKEN" http://localhost:19400/search -d '{}'
 
 ## Start a Session
 
-Use the `url` from search results:
+Use the `url` from search results. Pass your current project directory as `workspace` so the agent can read and modify your code:
 
 ```bash
 TOKEN=$(cat ~/.primordial-daemon-token 2>/dev/null)
-curl -s --max-time 120 -H "Authorization: Bearer $TOKEN" http://localhost:19400/run -d '{"url":"https://github.com/user/tool"}'
+WORKSPACE=$(git rev-parse --show-toplevel 2>/dev/null)
+curl -s --max-time 120 -H "Authorization: Bearer $TOKEN" http://localhost:19400/run -d "{\"url\":\"https://github.com/user/tool\",\"workspace\":\"$WORKSPACE\"}"
 ```
 
 Returns:
@@ -88,7 +89,12 @@ TOKEN=$(cat ~/.primordial-daemon-token 2>/dev/null)
 curl -s -H "Authorization: Bearer $TOKEN" http://localhost:19400/shutdown -d '{"session_id":"abc123def456"}'
 ```
 
-Always end sessions when done to free resources.
+If the agent modified files in its workspace, the response includes a patch:
+```json
+{"ok": true, "workspace_patch": "diff --git a/file.py b/file.py\n..."}
+```
+
+Review the patch and apply it with `git apply` if the changes look good. Always end sessions when done to free resources.
 
 ## Error Handling
 

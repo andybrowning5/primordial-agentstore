@@ -58,10 +58,12 @@ Platform → stdin: {"type": "shutdown"}                                    ← 
 |------|--------|-------------|
 | `message` | `content`, `message_id` | User's question or task |
 | `shutdown` | — | Clean up and exit |
+| `workspace_patch` | `patch`, `agent` | Sent by the CLI on shutdown when the agent modified workspace files |
 
 ```json
 {"type": "message", "content": "User's question", "message_id": "msg_001"}
 {"type": "shutdown"}
+{"type": "workspace_patch", "patch": "diff --git a/...", "agent": "agent-name"}
 ```
 
 ### Outbound (stdout — agent → platform)

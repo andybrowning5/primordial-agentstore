@@ -60,7 +60,7 @@ permissions:
 | `display_name` | string | yes | — | Human-readable name |
 | `version` | string | yes | — | Semver version |
 | `description` | string | yes | — | What the agent does. Write for humans and AI callers. |
-| `category` | string | no | `"general"` | Category for discovery |
+| `category` | string | no | `"general"` | Category for discovery. See [valid categories](#valid-categories). |
 | `tags` | list[string] | no | `[]` | Tags for discovery |
 
 ### `author`
@@ -69,12 +69,14 @@ permissions:
 |-------|------|----------|---------|
 | `name` | string | yes | — |
 | `github` | string | no | `null` |
+| `website` | string | no | `null` | Optional URL (`http://` or `https://`). |
 
 ### `runtime`
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `language` | string | no | `"python"` | Language identifier (`python`, `node`, etc.) |
+| `language` | string | no | `"python"` | Language identifier. See [valid languages](#valid-languages). |
+| `mode` | string | no | `"agent"` | `"agent"` (NDJSON protocol) or `"terminal"` (raw PTY passthrough) |
 | `run_command` | string | no | `null` | Agent entrypoint command |
 | `setup_command` | string | no | `null` | Runs once at sandbox startup |
 | `dependencies` | string | no | `null` | Dependencies file (checked for existence) |
@@ -82,6 +84,7 @@ permissions:
 | `default_model.model` | string | no | `"claude-sonnet-4-5-20250929"` | Model ID |
 | `resources.max_memory` | string | no | `"2GB"` | Memory limit |
 | `resources.max_cpu` | int | no | `2` | CPU limit |
+| `resources.max_time` | string | no | `"30m"` | Sandbox timeout. Examples: `"30m"`, `"2h"`, `"6h"`. |
 
 ### `keys`
 
@@ -92,8 +95,9 @@ Each entry declares an API key the agent needs. Keys are injected as environment
 | `provider` | string | yes | — | Provider name. Lowercase letters, numbers, hyphens. |
 | `env_var` | string | no | `<PROVIDER>_API_KEY` | Env var name for the session token |
 | `required` | bool | no | `true` | Whether this key must be present |
-| `domain` | string | yes | — | API domain for the proxy to connect to |
-| `auth_style` | string | no | `"bearer"` | How the proxy sends the key upstream |
+| `domain` | string | yes* | — | API domain for the proxy to connect to. *Not required when `passthrough` is true. |
+| `auth_style` | string | no | `"bearer"` | How the proxy sends the key upstream. One of: `bearer`, `x-api-key`, `x-subscription-token`. |
+| `passthrough` | bool | no | `false` | When true, the real API key is passed directly as an env var, bypassing the security proxy. Use for keys without an HTTP API domain. |
 | `base_url_env` | string | no | `<PROVIDER>_BASE_URL` | Env var for the proxy's localhost URL |
 
 Every provider declares its `domain` and `auth_style` explicitly. See [Setting Up APIs](api-setup.md) for examples.
@@ -126,7 +130,7 @@ List of allowed outbound domains. Each entry:
 | `env_var` | `^[A-Z][A-Z0-9_]*$` — cannot be a protected name (`PATH`, `HOME`, etc.) |
 | `domain` | FQDN with at least one dot and one letter. No IP literals. |
 | `base_url_env` | `^[A-Z][A-Z0-9_]*$` — cannot be a protected name |
-| `auth_style` | Any valid header name (`^[a-z][a-z0-9-]*$`) |
+| `auth_style` | One of: `bearer`, `x-api-key`, `x-subscription-token` |
 
 ### Protected Environment Variables
 
@@ -135,5 +139,17 @@ These names cannot be used for `env_var` or `base_url_env`:
 ```
 PATH, HOME, USER, SHELL, LANG, LC_ALL, LC_CTYPE, TERM, TZ,
 PYTHONPATH, NODE_PATH, LD_PRELOAD, LD_LIBRARY_PATH,
-DYLD_LIBRARY_PATH, DYLD_INSERT_LIBRARIES
+DYLD_LIBRARY_PATH, DYLD_INSERT_LIBRARIES, WORKSPACE, E2B_API_KEY
+```
+
+### Valid Categories
+
+```
+general, coding, data, writing, research, devops, security, finance, science, productivity
+```
+
+### Valid Languages
+
+```
+python, node, javascript, typescript, ruby, go, rust, java, bash, sh
 ```

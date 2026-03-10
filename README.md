@@ -37,12 +37,16 @@ primordial search              # Browse and run agents from the marketplace
 primordial search --agent      # JSON output for host agents (Claude Code, etc.)
 primordial run <agent>         # Run an agent directly by GitHub URL or path
 primordial run <agent> --agent # Host-agent mode (NDJSON conversation)
+primordial install <agent>     # Pre-cache an agent for faster startup
+primordial serve               # Start the background daemon (HTTP API on localhost)
 primordial setup               # Configure API keys interactively
 primordial keys add <provider> # Add a specific API key
 primordial keys list           # List stored keys
 primordial sessions <agent>    # Manage chat sessions for an agent
 primordial cache list|clear    # View or clear cached agent repos
 ```
+
+Use `--workspace <path>` with `primordial run` to give the agent read access to your project directory.
 
 ---
 
@@ -83,8 +87,7 @@ AgentStore/
 │           ├── config.py          # Platform-specific paths
 │           ├── github.py          # GitHub URL resolver + caching
 │           └── manifest.py        # agent.yaml loader + validation
-├── docs/                          # Documentation
-└── CHANGELOG.md                   # Release notes
+└── docs/                          # Documentation
 ```
 
 ---
