@@ -75,6 +75,37 @@ class ResourceLimits(BaseModel):
     max_cpu: int = 2
     max_time: str = "30m"  # sandbox timeout, e.g. "30m", "2h", "6h"
 
+    @field_validator("max_memory")
+    @classmethod
+    def validate_max_memory(cls, v: str) -> str:
+        v = v.strip()
+        if not re.match(r"^\d+(\.\d+)?\s*(MB|GB|TB)$", v, re.IGNORECASE):
+            raise ValueError(
+                f"Invalid max_memory: {v!r} — must be a number followed by MB, GB, or TB "
+                f"(e.g. '512MB', '2GB')"
+            )
+        return v
+
+    @field_validator("max_cpu")
+    @classmethod
+    def validate_max_cpu(cls, v: int) -> int:
+        if v < 1 or v > 32:
+            raise ValueError(
+                f"Invalid max_cpu: {v} — must be between 1 and 32"
+            )
+        return v
+
+    @field_validator("max_time")
+    @classmethod
+    def validate_max_time(cls, v: str) -> str:
+        v = v.strip()
+        if not re.match(r"^\d+(\.\d+)?\s*(s|m|h)$", v, re.IGNORECASE):
+            raise ValueError(
+                f"Invalid max_time: {v!r} — must be a number followed by s, m, or h "
+                f"(e.g. '30m', '2h', '3600s')"
+            )
+        return v
+
 
 class RuntimeConfig(BaseModel):
     language: str = "python"
