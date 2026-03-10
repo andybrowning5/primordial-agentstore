@@ -42,7 +42,7 @@ class WorktreeManager:
 
     def _branch_name(self, agent_name: str) -> str:
         if self.session_name:
-            return f"primordial/{agent_name}/{self.session_name}"
+            return f"primordial/{agent_name}--{self.session_name}"
         return f"primordial/{agent_name}"
 
     def create(self, agent_name: str) -> Path:
