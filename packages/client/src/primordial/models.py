@@ -176,6 +176,11 @@ class KeyRequirement(BaseModel):
             raise ValueError(f"base_url_env {v!r} is a protected system variable — choose a different name")
         return v
 
+    @field_validator("passthrough")
+    @classmethod
+    def validate_passthrough(cls, v: bool) -> bool:
+        return v
+
     @field_validator("auth_style")
     @classmethod
     def validate_auth_style(cls, v: str) -> str:
