@@ -220,6 +220,7 @@ _ENV_VAR_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 _DOMAIN_RE = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _DOMAIN_HAS_LETTER = re.compile(r"[a-z]")
 _PROVIDER_RE = re.compile(r"^[a-z][a-z0-9-]*$")
+_VALID_AUTH_STYLES = {"bearer", "x-api-key", "x-subscription-token"}
 
 # Env var names that base_url_env must never clobber
 _PROTECTED_ENV_VARS = {
@@ -289,14 +290,12 @@ class KeyRequirement(BaseModel):
     def validate_passthrough(cls, v: bool) -> bool:
         return v
 
-    _VALID_AUTH_STYLES = {"bearer", "x-api-key", "x-subscription-token"}
-
     @field_validator("auth_style")
     @classmethod
     def validate_auth_style(cls, v: str) -> str:
         v = v.lower()
-        if v not in cls._VALID_AUTH_STYLES:
-            allowed = ", ".join(sorted(cls._VALID_AUTH_STYLES))
+        if v not in _VALID_AUTH_STYLES:
+            allowed = ", ".join(sorted(_VALID_AUTH_STYLES))
             raise ValueError(
                 f"Invalid auth_style: {v!r} — must be one of: {allowed}"
             )
