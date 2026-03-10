@@ -23,7 +23,7 @@ One integration, instant access to a growing ecosystem of purpose-built agents. 
 https://github.com/user-attachments/assets/226805a6-ef8b-49d3-9643-34d730727f33
 
 ## Primordial Sub-Agents Demo
-Here, we spawn 3 web research agents as sub agents. Any Agents can be configured to delegate tasks to other agents available on Primordial AgentStore!
+Here, we spawn 3 web research agents as sub agents. Any agents can be configured to delegate tasks to other agents available on Primordial AgentStore!
 
 https://github.com/user-attachments/assets/d5315a85-5ee8-410f-977b-3927207ade38
 
