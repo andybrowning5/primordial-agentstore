@@ -48,6 +48,7 @@ def main():
     sends NDJSON commands; the proxy relays responses back.
     """
     import os
+    import pwd
     import socket
 
     SOCK_PATH = "/tmp/_primordial_delegate.sock"
@@ -58,7 +59,12 @@ def main():
 
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(SOCK_PATH)
-    # Allow agent user to connect
+    # Allow agent user to connect: set group to "user" so 0o770 works
+    try:
+        agent_gid = pwd.getpwnam("user").pw_gid
+        os.chown(SOCK_PATH, 0, agent_gid)
+    except KeyError:
+        pass  # fallback: group stays as root
     os.chmod(SOCK_PATH, 0o770)
     server.listen(1)
 
