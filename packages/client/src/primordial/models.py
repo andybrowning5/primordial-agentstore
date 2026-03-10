@@ -161,6 +161,18 @@ class AgentManifest(BaseModel):
             )
         return v
 
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("description must not be empty")
+        if len(v) > 500:
+            raise ValueError(
+                f"description is too long ({len(v)} chars) — must be 500 characters or fewer"
+            )
+        return v
+
     @field_validator("version")
     @classmethod
     def validate_version(cls, v: str) -> str:
