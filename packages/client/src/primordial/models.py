@@ -116,6 +116,26 @@ class RuntimeConfig(BaseModel):
     default_model: ModelConfig = Field(default_factory=ModelConfig)
     resources: ResourceLimits = Field(default_factory=ResourceLimits)
 
+    @field_validator("run_command")
+    @classmethod
+    def validate_run_command(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            raise ValueError("runtime.run_command must not be empty if provided")
+        return v
+
+    @field_validator("setup_command")
+    @classmethod
+    def validate_setup_command(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            raise ValueError("runtime.setup_command must not be empty if provided")
+        return v
+
 
 class NetworkPermission(BaseModel):
     domain: str
