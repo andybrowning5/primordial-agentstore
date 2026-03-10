@@ -308,6 +308,10 @@ class AgentManifest(BaseModel):
             raise ValueError(
                 f"display_name is too long ({len(v)} chars) — must be 80 characters or fewer"
             )
+        if not re.search(r"[a-zA-Z]", v):
+            raise ValueError(
+                f"display_name must contain at least one letter: {v!r}"
+            )
         return v
 
     @field_validator("description")
