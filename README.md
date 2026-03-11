@@ -33,11 +33,13 @@ https://github.com/user-attachments/assets/d5315a85-5ee8-410f-977b-3927207ade38
 ## CLI Commands
 
 ```bash
-primordial search              # Browse and run agents from the marketplace
+primordial search              # Browse all agents on the marketplace
+primordial search "query"      # Semantic search by capability (e.g. "web research")
 primordial search --agent      # JSON output for host agents (Claude Code, etc.)
-primordial run <agent>         # Run an agent directly by GitHub URL or path
-primordial run <agent> --agent # Host-agent mode (NDJSON conversation)
-primordial install <agent>     # Pre-cache an agent for faster startup
+primordial run <agent>                    # Run an agent by GitHub URL or path
+primordial run <agent> --workspace .     # Give the agent read access to your project
+primordial run <agent> --agent           # Host-agent mode (NDJSON conversation)
+primordial install --claude    # Set up Claude Code integration (skill + daemon)
 primordial serve               # Start the background daemon (HTTP API on localhost)
 primordial setup               # Configure API keys interactively
 primordial keys add <provider> # Add a specific API key

@@ -33,6 +33,8 @@ gh repo edit --add-topic primordial-agent
 
 This is how `primordial search` discovers agents.
 
+> **Testing topic:** Use `primordial-agent-test` instead during development. Primordial indexes both topics, so your agent will appear in search results without polluting the production listing. Switch to `primordial-agent` when you're ready to publish.
+
 ### 3. Write a good README
 
 Include:
@@ -115,7 +117,7 @@ See [Manifest Reference](manifest.md) for the full field reference.
 - [ ] Every API key declared in `keys` with `provider`, `domain`, and `auth_style`
 - [ ] `provider` matches `^[a-z][a-z0-9-]*$` (no underscores)
 - [ ] `domain` is a valid FQDN (not an IP address or `localhost`)
-- [ ] `auth_style` is correct for each API (`bearer`, `x-api-key`, `x-subscription-token`, or custom header)
+- [ ] `auth_style` is correct for each API (`bearer`, `x-api-key`, or `x-subscription-token`)
 - [ ] `env_var` / `base_url_env` don't collide with protected system variables (`PATH`, `HOME`, `SHELL`, etc.)
 - [ ] Agent code reads `<PROVIDER>_BASE_URL` env var for all HTTP calls (required for proxy routing)
 

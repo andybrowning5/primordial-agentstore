@@ -68,9 +68,8 @@ The `auth_style` field tells the proxy which HTTP header to use for authenticati
 | `bearer` (default) | `Authorization: Bearer <key>` | OpenAI, Google, most APIs |
 | `x-api-key` | `x-api-key: <key>` | Anthropic |
 | `x-subscription-token` | `X-Subscription-Token: <key>` | Brave Search |
-| Any header name | `<header>: <key>` | Custom APIs |
 
-You can use any valid HTTP header name. The proxy will send the real key in that header.
+These are the only supported values. If your API uses a different auth header, use `passthrough: true` in your key entry to bypass the proxy entirely (see [Manifest Reference](manifest.md)).
 
 ## Example: Brave Search Agent
 

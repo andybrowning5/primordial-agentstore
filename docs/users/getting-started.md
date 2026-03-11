@@ -16,10 +16,18 @@ pip install primordial-agentstore
 ### Search for agents
 
 ```bash
-primordial search
+primordial search                        # Browse all agents
+primordial search "web research"         # Semantic search by capability
 ```
 
 Browse available agents on the marketplace. Pick one to run.
+
+### Run an agent
+
+```bash
+primordial run <github-url>              # Run by URL
+primordial run <github-url> --workspace . # Give the agent access to your project
+```
 
 ---
 

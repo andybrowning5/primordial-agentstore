@@ -119,6 +119,12 @@ List of allowed outbound domains. Each entry:
 | `delegation.enabled` | bool | `false` | Can this agent spawn sub-agents? |
 | `delegation.allowed_agents` | list[string] | `[]` | Restrict which agents can be delegated to |
 
+**Delegation limits (enforced host-side, cannot be overridden):**
+- Max delegation depth: **3** — agents can delegate up to 3 levels deep
+- Max concurrent sub-agents per parent: **6**
+
+See [Delegation](delegation.md) for the full delegation guide.
+
 ## Validation Rules
 
 | Field | Rule |
