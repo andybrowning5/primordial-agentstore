@@ -6,6 +6,8 @@ Primordial runs untrusted agent code in isolated VMs. Agents are treated as host
 
 ## The Big Picture
 
+![Security Model](../diagrams/security-model.svg)
+
 ```
 ┌─ Your Machine ────────────────────────────────────────────┐
 │                                                            │
