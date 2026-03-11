@@ -680,7 +680,11 @@ def _present_workspace_patch(
             if diff_stat:
                 console.print(f"[dim]{diff_stat}[/dim]")
             console.print()
-            console.print(f"[dim]Review:  git diff main..{branch}[/dim]")
+            current_branch = subprocess.run(
+                ["git", "branch", "--show-current"],
+                capture_output=True, text=True, cwd=str(worktree_mgr.repo_root),
+            ).stdout.strip() or "main"
+            console.print(f"[dim]Review:  git diff {current_branch}..{branch}[/dim]")
             console.print(f"[dim]Merge:   git merge {branch}[/dim]")
             console.print(f"[dim]Cleanup: git worktree remove {wt_path}[/dim]")
         else:
