@@ -16,7 +16,7 @@ One integration, instant access to a growing ecosystem of purpose-built agents. 
 > [!NOTE]
 > This project is in **beta**. Every reasonable effort has been made to keep it secure. That said, this is open-source software under active development. **Use at your own risk.** Review agent permissions before approving them, and don't run untrusted agents with access to sensitive data or keys you can't rotate.
 
-> **AI agents (Claude Code, Codex, OpenClaw):** See [`Host-Integration-Skill.md`](Host-Integration-Skill.md) for setup instructions and usage reference.
+> **AI agents (Claude Code, Codex, OpenClaw):** Run `primordial install --claude`, `--codex`, or `--openclaw` to install the host-specific skill. See [Getting Started](docs/users/getting-started.md).
 
 ---
 
@@ -104,9 +104,7 @@ AgentStore/
 │           ├── models.py          # Data models (manifest, permissions, keys)
 │           ├── ranking.py         # Semantic search ranking (FastEmbed)
 │           └── worktree.py        # Git worktree isolation for workspaces
-├── docs/                          # Documentation
-├── Host-Integration-Skill.md      # Quick-start for AI host agents
-└── Primordial-AgentStore-Skill.md # Full skill reference for Claude Code
+└── docs/                          # Full documentation (users + developers)
 ```
 
 

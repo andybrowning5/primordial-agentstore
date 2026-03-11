@@ -20,3 +20,4 @@
 | [API Setup](developers/api-setup.md) | Configuring API keys and the security proxy |
 | [Delegation](developers/delegation.md) | Spawning and coordinating sub-agents |
 | [Publishing](developers/publishing.md) | Share your agent with the world |
+| [Agent Developer Skill](developers/Primordial-Agent-Developer-Skill.md) | Self-contained reference for AI assistants helping build agents |

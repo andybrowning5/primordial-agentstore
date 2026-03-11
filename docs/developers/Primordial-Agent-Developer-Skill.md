@@ -1,8 +1,10 @@
-# Primordial AgentStore Skill
+# Primordial Agent Developer Skill
 
-You are an expert at building and modifying agents for the Primordial AgentStore platform. When asked to create or update an agent, follow these specifications exactly.
+You are an expert at building agents for the Primordial AgentStore platform. This skill is for AI coding assistants (Claude Code, Codex, etc.) helping developers create, modify, debug, and publish Primordial agents. When asked to create or update an agent, follow these specifications exactly.
 
-**Always use Node.js** — it has the fastest sandbox setup time (~0.2s with esbuild bundling vs 10+s for Python/pip).
+For full documentation, see the [developer docs](../README.md). This file is a self-contained reference covering everything needed to build a working agent.
+
+**Prefer Node.js** — it has the fastest sandbox setup time (~0.2s with esbuild bundling vs 10+s for Python/pip). All languages are supported, but Node.js with esbuild is the fastest path.
 
 ---
 
@@ -13,9 +15,19 @@ Every agent needs at minimum:
 ```
 my-agent/
 ├── agent.yaml          # Manifest — identity, runtime, permissions
-├── package.json        # Dependencies
 └── src/
-    └── agent.js        # Entrypoint
+    └── agent.js        # Entrypoint (or agent.py, etc.)
+```
+
+With dependencies and bundling (recommended for Node.js):
+
+```
+my-agent/
+├── agent.yaml
+├── package.json
+├── bundle.mjs          # esbuild bundle (committed to repo)
+└── src/
+    └── agent.js
 ```
 
 ---
@@ -27,17 +39,17 @@ name: my-agent                    # 3-40 chars, lowercase + hyphens only
 display_name: My Agent
 version: 0.1.0
 description: >
-  What this agent does. Write for humans and AI callers.
+  What this agent does. Write for humans AND AI callers (other agents read this for delegation).
 
-category: general                 # For discovery
-tags: [research, code]            # For discovery
+category: general                 # general, coding, data, writing, research, devops, security, finance, science, productivity
+tags: [research, code]
 
 author:
   name: Your Name
   github: your-handle
 
 runtime:
-  language: node
+  language: node                  # python, node, javascript, typescript, ruby, go, rust, java, bash, sh
   run_command: node bundle.mjs 2>/dev/null || node src/agent.js
   setup_command: test -f bundle.mjs || npm install
   dependencies: package.json
@@ -45,6 +57,7 @@ runtime:
   resources:
     max_memory: 2GB
     max_cpu: 2
+    max_time: 30m                 # Examples: "30m", "2h", "6h"
 
 keys:
   - provider: anthropic
@@ -56,8 +69,9 @@ permissions:
   network:
     - domain: api.anthropic.com
       reason: LLM inference
+  network_unrestricted: false
   filesystem:
-    workspace: readwrite
+    workspace: readwrite          # "none", "readonly", or "readwrite"
   delegation:
     enabled: false
 ```
@@ -86,11 +100,12 @@ keys:
 
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `provider` | yes | — | Lowercase name: `^[a-z][a-z0-9-]*$` |
-| `domain` | yes | — | Upstream API host (FQDN, must have a dot, must have a letter) |
+| `provider` | yes | — | Lowercase name: `^[a-z][a-z0-9-]*$` (no underscores) |
+| `domain` | yes* | — | Upstream API host (FQDN, must have a dot, must have a letter). *Not required when `passthrough` is true. |
 | `auth_style` | no | `bearer` | Header for auth. One of: `bearer`, `x-api-key`, `x-subscription-token`. |
 | `env_var` | no | `<PROVIDER>_API_KEY` | Env var the agent reads for the session token |
 | `base_url_env` | no | `<PROVIDER>_BASE_URL` | Env var for the proxy's localhost URL. Most SDKs auto-read the default. |
+| `passthrough` | no | `false` | When true, the real API key is passed directly as an env var, bypassing the security proxy. Use for keys without an HTTP API domain. |
 | `required` | no | `true` | Whether the key must be present |
 
 **Common auth_style values:**
@@ -134,17 +149,30 @@ permissions:
       reason: Web search
 ```
 
-Domains declared in `keys` are auto-allowed. Additional domains (webhooks, etc.) must be listed here. Use `network_unrestricted: true` only if absolutely necessary.
+Domains declared in `keys` are auto-allowed. Additional domains (webhooks, etc.) must be listed here.
+
+> **Note:** When `runtime.setup_command` is specified, package registries (pypi.org, registry.npmjs.org, etc.) are automatically allowed so dependency installation works. You don't need to declare them in `permissions.network`.
+
+Use `network_unrestricted: true` only if absolutely necessary — it requires user approval.
 
 ### Validation Rules
 
 | Field | Rule |
 |-------|------|
 | `name` | 3-40 chars, `^[a-z][a-z0-9-]*$` |
-| `provider` | `^[a-z][a-z0-9-]*$` |
-| `env_var` | `^[A-Z][A-Z0-9_]*$`, cannot be `PATH`, `HOME`, `SHELL`, etc. |
+| `provider` | `^[a-z][a-z0-9-]*$` — no underscores |
+| `env_var` | `^[A-Z][A-Z0-9_]*$` — cannot be a protected name |
+| `base_url_env` | `^[A-Z][A-Z0-9_]*$` — cannot be a protected name |
 | `domain` | FQDN with at least one dot and one letter. No IP literals. |
 | `auth_style` | One of: `bearer`, `x-api-key`, `x-subscription-token` |
+
+**Protected env var names** (cannot be used for `env_var` or `base_url_env`):
+
+```
+PATH, HOME, USER, SHELL, LANG, LC_ALL, LC_CTYPE, TERM, TZ,
+PYTHONPATH, NODE_PATH, LD_PRELOAD, LD_LIBRARY_PATH,
+DYLD_LIBRARY_PATH, DYLD_INSERT_LIBRARIES, WORKSPACE, E2B_API_KEY
+```
 
 ---
 
@@ -165,9 +193,16 @@ Agents communicate via **NDJSON over stdin/stdout**. One JSON object per line.
 
 ### Inbound Messages (stdin — platform → agent)
 
+| Type | Fields | Description |
+|------|--------|-------------|
+| `message` | `content`, `message_id` | User's question or task |
+| `shutdown` | — | Clean up and exit |
+| `workspace_patch` | `patch`, `agent` | Sent by the CLI on shutdown when the agent modified workspace files |
+
 ```json
 {"type": "message", "content": "User's question", "message_id": "msg_001"}
 {"type": "shutdown"}
+{"type": "workspace_patch", "patch": "diff --git a/...", "agent": "agent-name"}
 ```
 
 ### Outbound Messages (stdout — agent → platform)
@@ -198,10 +233,11 @@ Agents communicate via **NDJSON over stdin/stdout**. One JSON object per line.
 - **stdout = protocol only.** Debug logs go to stderr.
 - **Every message must get a `done: true` response.** No exceptions.
 - **`message_id` must match** between request and response.
+- Use `python -u` (unbuffered) or `flush=True` for Python to avoid stdout buffering.
 
 ---
 
-## Minimal Agent Template
+## Minimal Agent Template (Node.js)
 
 ```javascript
 import { createInterface } from "readline";
@@ -256,9 +292,50 @@ rl.on("line", (line) => {
 });
 ```
 
+## Minimal Agent Template (Python)
+
+```python
+import json
+import sys
+
+def send(msg):
+    sys.stdout.write(json.dumps(msg) + "\n")
+    sys.stdout.flush()
+
+send({"type": "ready"})
+
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    msg = json.loads(line)
+
+    if msg["type"] == "shutdown":
+        break
+
+    if msg["type"] == "message":
+        mid = msg["message_id"]
+
+        # Show progress
+        send({"type": "activity", "tool": "thinking", "description": "Processing...", "message_id": mid})
+
+        # Final response
+        send({"type": "response", "content": f"You said: {msg['content']}", "message_id": mid, "done": True})
+```
+
+**Manifest for Python:**
+
+```yaml
+runtime:
+  language: python
+  run_command: python -u src/agent.py
+  setup_command: pip install -r requirements.txt
+  dependencies: requirements.txt
+```
+
 ---
 
-## LLM Agent Template (with Anthropic SDK)
+## LLM Agent Template (Node.js with Anthropic SDK)
 
 Uses `@anthropic-ai/sdk` with native tool use for an agentic loop.
 
@@ -293,7 +370,7 @@ function runTool(name, input) {
   return "tool result";
 }
 
-async function process(query, messageId) {
+async function handleMessage(query, messageId) {
   send({ type: "activity", tool: "thinking", description: "Thinking...", message_id: messageId });
 
   let messages = [{ role: "user", content: query }];
@@ -354,7 +431,7 @@ rl.on("line", async (line) => {
   if (msg.type === "message") {
     const mid = msg.message_id;
     try {
-      const result = await process(msg.content, mid);
+      const result = await handleMessage(msg.content, mid);
       send({ type: "response", content: result, message_id: mid, done: true });
     } catch (e) {
       log(`Error: ${e.message}`);
@@ -377,16 +454,17 @@ rl.on("line", async (line) => {
 
 ---
 
-## esbuild Bundling (Recommended)
+## esbuild Bundling (Recommended for Node.js)
 
 Bundle your agent into a single file to skip `npm install` entirely in the sandbox (~0.2s setup vs 10+s for pip):
 
 ```bash
+npm install --save-dev esbuild
 npx esbuild src/agent.js --bundle --platform=node --format=esm --outfile=bundle.mjs \
   --banner:js="import{createRequire}from'module';const require=createRequire(import.meta.url);"
 ```
 
-The `--banner` flag adds a `require()` shim needed for CommonJS modules in ESM bundles.
+The `--banner` flag is required — it creates a `require()` shim so bundled CommonJS modules work in ESM format.
 
 Add a build script to `package.json`:
 
@@ -421,22 +499,29 @@ Only these directories under `/home/user/` survive between sessions:
 
 Everything else (dotfiles, `.config/`, `.local/`, `.ssh/`) is wiped for security. The `agent/` directory contains your code but is not persisted — it's re-uploaded each run.
 
+Users can maintain **multiple sessions** per agent. Each session gets its own isolated filesystem snapshot.
+
 ---
 
 ## Delegating to Other Agents
 
-If your agent needs to call another agent, use the delegation SDK (communicates via Unix socket inside the sandbox):
+If your agent needs to call another agent, use the delegation SDK (communicates via Unix socket inside the sandbox).
 
-**Manifest:**
+### Manifest
+
 ```yaml
 permissions:
   delegation:
     enabled: true
     allowed_agents:          # optional — omit to allow all agents
-      - owner/agent-name
+      - https://github.com/owner/agent-a
+      - https://github.com/owner/agent-b
 ```
 
-**Code (Node.js):** Copy `primordial_delegate.mjs` into your source directory.
+### Node.js SDK
+
+Copy `primordial_delegate.mjs` into your source directory. **Zero dependencies — uses built-in `net`.**
+
 ```javascript
 import { search, runAgent, messageAgent, stopAgent, emitActivity } from './primordial_delegate.mjs';
 
@@ -458,14 +543,93 @@ console.log(result.response);
 await stopAgent(sessionId);
 ```
 
-See [Delegation docs](docs/developers/delegation.md) for the Python SDK, CLI wrapper, and streaming API.
+### Python SDK
+
+Copy `primordial_delegate.py` into your source directory. **Stdlib-only — no dependencies.**
+
+```python
+from primordial_delegate import search, run_agent, message_agent, stop_agent, emit_activity
+
+# Find an agent
+agents = search("web research")
+agent_url = agents[0]["url"]
+
+# Spawn it
+def on_status(event):
+    emit_activity("sub:setup", event.get("status", ""))
+
+session_id = run_agent(agent_url, on_status=on_status)
+
+# Send a task
+def on_activity(tool, description):
+    emit_activity(f"sub:{tool}", description)
+
+result = message_agent(session_id, "Research topic X", on_activity=on_activity)
+print(result["response"])
+
+# Clean up
+stop_agent(session_id)
+```
+
+### CLI (any language)
+
+Copy `delegate_cli.py` into your agent and install it as an executable. Any agent that can run shell commands can use it.
+
+```bash
+# Search for agents
+delegate search "web research"
+
+# Spawn (prints session_id to stdout, progress to stderr)
+SESSION_ID=$(delegate run https://github.com/owner/repo)
+
+# Send a message (response to stdout, activity to stderr)
+delegate message $SESSION_ID "Research topic X"
+
+# Clean up
+delegate stop $SESSION_ID
+```
+
+### Delegation Limits (enforced host-side, cannot be overridden)
+
+- **Max delegation depth: 3** — agents can delegate up to 3 levels deep
+- **Max concurrent sub-agents per parent: 6**
+
+See [Delegation docs](delegation.md) for the streaming API and full reference.
+
+---
+
+## Wrapping CLI Tools
+
+Any CLI tool becomes an agent with a thin bridge:
+
+```python
+import json, subprocess, sys
+
+def send(msg):
+    sys.stdout.write(json.dumps(msg) + "\n")
+    sys.stdout.flush()
+
+send({"type": "ready"})
+
+for line in sys.stdin:
+    msg = json.loads(line.strip())
+    if msg["type"] == "shutdown":
+        break
+    if msg["type"] == "message":
+        result = subprocess.run(
+            ["some-cli-tool", "--message", msg["content"]],
+            capture_output=True, text=True, timeout=280,
+        )
+        send({"type": "response", "content": result.stdout.strip(),
+              "message_id": msg["message_id"], "done": True})
+```
 
 ---
 
 ## Debugging
 
 - Use `primordial run ./my-agent` to test locally
-- Debug logs go to **stderr** (`process.stderr.write(...)`)
+- Debug logs go to **stderr** (`process.stderr.write(...)` or `sys.stderr.write(...)`)
 - Send `activity` messages so the UI shows progress
 
 **Common issues:**
@@ -478,17 +642,57 @@ See [Delegation docs](docs/developers/delegation.md) for the Python SDK, CLI wra
 | Module not found | Check `setup_command` installs dependencies |
 | SSL/connection errors | Declare domain in `permissions.network` |
 | esbuild "Dynamic require" error | Add the `--banner:js` createRequire shim |
+| stdout buffering (Python) | Use `python -u` in `run_command` or `flush=True` |
+
+---
+
+## Publishing
+
+1. Create a **public GitHub repo** with your agent code
+2. Add `agent.yaml` at the repo root
+3. Add the `primordial-agent` topic to the repo (Settings → Topics, or `gh repo edit --add-topic primordial-agent`)
+4. Write a good README (what it does, required API keys, usage command, example conversation)
+5. Test locally: `primordial run ./my-agent`
+6. Test from URL: `primordial run https://github.com/you/my-agent`
+7. Verify discovery: `primordial search`
+
+> **Testing topic:** Use `primordial-agent-test` instead during development. Primordial indexes both topics, so your agent will appear in search results without polluting the production listing. Switch to `primordial-agent` when you're ready to publish.
+
+See [Publishing docs](publishing.md) for the full developer checklist.
 
 ---
 
 ## Checklist for New Agents
 
+### Manifest
 - [ ] `agent.yaml` has `name`, `display_name`, `version`, `description`, `author`
-- [ ] `run_command` uses `node bundle.mjs 2>/dev/null || node src/agent.js`
+- [ ] `name` — lowercase + hyphens only, 3-40 chars, matches `^[a-z][a-z0-9-]*$`
+- [ ] `description` — clear and informative (written for humans AND AI callers)
+
+### Runtime
+- [ ] `run_command` set — uses `node bundle.mjs 2>/dev/null || node src/agent.js` for Node.js, `python -u src/agent.py` for Python
+- [ ] `setup_command` installs all dependencies
+- [ ] `bundle.mjs` committed to repo for fastest setup (Node.js)
+
+### API Keys
 - [ ] Every API key has `provider`, `domain`, and `auth_style`
+- [ ] Agent code reads `<PROVIDER>_BASE_URL` env var for all HTTP calls (required for proxy routing)
+
+### Permissions
 - [ ] Every outbound domain is in `permissions.network` with a `reason`
+- [ ] `filesystem.workspace` set to minimum needed (`readonly` if possible)
+
+### Protocol Compliance
 - [ ] Agent sends `{"type": "ready"}` immediately on startup
-- [ ] Every message gets a response with `"done": true`
-- [ ] Debug output goes to stderr, not stdout
+- [ ] Every message gets a response with matching `message_id` and `done: true`
+- [ ] Agent handles `{"type": "shutdown"}` gracefully
+- [ ] All debug output goes to stderr, not stdout
+
+### Persistence
 - [ ] Persistent data goes to `workspace/`, `data/`, `output/`, or `state/`
-- [ ] `bundle.mjs` committed to repo for fastest setup
+- [ ] No reliance on dotfiles or `/tmp/` (wiped between sessions)
+
+### Testing
+- [ ] `primordial run ./my-agent` passes locally
+- [ ] `primordial run https://github.com/you/my-agent` passes from URL
+- [ ] Fresh session test: `primordial cache clear --all` then run again
