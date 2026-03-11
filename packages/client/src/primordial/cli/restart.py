@@ -1,6 +1,7 @@
 """CLI command to restart the Primordial background daemon."""
 
 import os
+import platform
 import subprocess
 import sys
 
@@ -18,6 +19,11 @@ def restart():
 
     Useful after upgrading: pip install --upgrade primordial-agentstore && primordial restart
     """
+    if platform.system() == "Windows":
+        console.print("[yellow]The restart command uses macOS launchd and is not supported on Windows.[/yellow]")
+        console.print("Run the daemon manually: [bold]primordial serve[/bold]")
+        raise SystemExit(1)
+
     uid = os.getuid()
     domain_target = f"gui/{uid}/{_LAUNCHD_LABEL}"
 
