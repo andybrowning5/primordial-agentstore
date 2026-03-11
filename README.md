@@ -28,6 +28,7 @@ Here, we spawn 3 web research agents as sub agents. Any agents can be configured
 https://github.com/user-attachments/assets/d5315a85-5ee8-410f-977b-3927207ade38
 
 ## Running Primordial Agents From Claude Code
+Here, we have Claude Code delegate a task to a Primordial agent. The Primordial Agent checks codebases for documentation drift away from the grounf truth of the code. Primordial agents get access to the git repos from the root directory they are called from. Here, Claude Code calls the code drift agent from the Primordial AgentStore Directory/Repo to evaluate documentation drift. See Workspace Isolation docs for more info on how Primordial Agents can get access to your codebase.
 
 https://github.com/user-attachments/assets/60934ffe-1a1c-4afc-b156-8f56e1e7a0ce
 
