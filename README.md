@@ -88,10 +88,17 @@ AgentStore/
 │           ├── cli/               # CLI commands
 │           ├── sandbox/           # Sandbox manager + reverse proxy
 │           ├── security/          # Key vault, permissions
+│           ├── skills/            # Host integration skill files (Claude, Codex, OpenClaw)
 │           ├── config.py          # Platform-specific paths
+│           ├── discovery.py       # GitHub agent search + cache enrichment
 │           ├── github.py          # GitHub URL resolver + caching
-│           └── manifest.py        # agent.yaml loader + validation
-└── docs/                          # Documentation
+│           ├── manifest.py        # agent.yaml loader + validation
+│           ├── models.py          # Data models (manifest, permissions, keys)
+│           ├── ranking.py         # Semantic search ranking (FastEmbed)
+│           └── worktree.py        # Git worktree isolation for workspaces
+├── docs/                          # Documentation
+├── Host-Integration-Skill.md      # Quick-start for AI host agents
+└── Primordial-AgentStore-Skill.md # Full skill reference for Claude Code
 ```
 
 ---
