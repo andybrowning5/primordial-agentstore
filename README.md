@@ -14,7 +14,7 @@ NDJSON over stdin/stdout. That's the whole protocol. Python, Node, Go, Rust — 
 One integration, instant access to a growing ecosystem of purpose-built agents. Claude Code discovers and runs them on its own — web research, data analysis, code generation, whatever you need. Every agent runs sandboxed in the cloud. Install Primordial, and Claude Code can use any of them.
 
 > [!NOTE]
-> This project is in **beta**. Every reasonable effort has been made to keep it secure — agents run in sandboxed Firecracker microVMs, API keys are injected via a reverse proxy and never exposed to agent code, and all permissions require explicit user approval. That said, this is open-source software under active development. **Use at your own risk.** Review agent permissions before approving them, and don't run untrusted agents with access to sensitive data or keys you can't rotate.
+> This project is in **beta**. Every reasonable effort has been made to keep it secure. That said, this is open-source software under active development. **Use at your own risk.** Review agent permissions before approving them, and don't run untrusted agents with access to sensitive data or keys you can't rotate.
 
 > **AI agents (Claude Code, Codex, OpenClaw):** See [`Host-Integration-Skill.md`](Host-Integration-Skill.md) for setup instructions and usage reference.
 
