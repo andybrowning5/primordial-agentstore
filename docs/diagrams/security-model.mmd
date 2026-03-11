@@ -1,4 +1,4 @@
-graph LR
+graph TB
     subgraph you ["You"]
         approve["Approve permissions\nbefore anything runs"]
     end
@@ -8,24 +8,27 @@ graph LR
     end
 
     subgraph cloud ["Throwaway Cloud VM — destroyed after every run"]
-        middleman["Middleman\nholds real keys in memory\nagent can't see or reach it"]
-        agent["Agent\ngets fake credentials only\nnetwork locked to approved domains"]
+        agent["Agent\ngets a session token\nnever sees real keys"]
+        proxy["Security Proxy\nholds real keys in memory\nvalidates every request"]
+        agent -->|"API call +\nsession token"| proxy
     end
 
-    subgraph after ["After"]
-        branch["Changes land on a\nseparate branch\nyou review before merge"]
-    end
+    apis["External APIs\nonly approved domains reachable"]
+
+    branch["Code changes land on a\nseparate branch for review"]
 
     approve -->|"decrypt only\nwhat's needed"| vault
-    vault -->|"real keys"| middleman
-    middleman <-->|"fake token ↔ real key"| agent
-    agent -.->|"code changes"| branch
+    vault -->|"real keys"| proxy
+    proxy -->|"swaps token for\nreal key · forwards"| apis
+    agent -.->|"diff"| branch
 
     classDef default fill:#1e293b,stroke:#334155,color:#e2e8f0
     classDef green fill:#0f2a1f,stroke:#22c55e,color:#d1fae5
     classDef amber fill:#2a1f0f,stroke:#f59e0b,color:#fef3c7
     classDef blue fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
+    classDef dim fill:#1e293b,stroke:#475569,color:#94a3b8
 
     class vault,branch green
     class agent amber
     class approve blue
+    class apis dim
