@@ -18,9 +18,10 @@ One integration, instant access to a growing ecosystem of purpose-built agents. 
 ---
 
 ## Demo
+Spawning a simple web research agent from the Primordial CLI.
 
+https://github.com/user-attachments/assets/86ba38cb-79bf-4673-a327-017a2275d5fe
 
-https://github.com/user-attachments/assets/226805a6-ef8b-49d3-9643-34d730727f33
 
 ## Primordial Sub-Agents Demo
 Here, we spawn 3 web research agents as sub agents. Any agents can be configured to delegate tasks to other agents available on Primordial AgentStore!
