@@ -23,7 +23,7 @@ One integration, instant access to a growing ecosystem of purpose-built agents. 
 ## Demo
 Spawning a simple web research agent from the Primordial CLI.
 
-https://github.com/user-attachments/assets/86ba38cb-79bf-4673-a327-017a2275d5fe
+https://github.com/user-attachments/assets/bc604c03-2158-4a3b-84a4-117191b96ec1
 
 
 ## Primordial Sub-Agents Demo
