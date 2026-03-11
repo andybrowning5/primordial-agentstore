@@ -1,6 +1,7 @@
 """One-command setup for host agent integration."""
 
 import os
+import platform
 import secrets
 import shutil
 import subprocess
@@ -61,7 +62,8 @@ def _get_or_create_password() -> tuple[str, bool]:
         return _PASSWORD_FILE.read_text().strip(), False
     password = secrets.token_urlsafe(32)
     _PASSWORD_FILE.write_text(password)
-    _PASSWORD_FILE.chmod(0o600)
+    if platform.system() != "Windows":
+        _PASSWORD_FILE.chmod(0o600)
     return password, True
 
 
@@ -81,7 +83,8 @@ export PRIMORDIAL_VAULT_PASSWORD='{password}'
 exec "{real_binary}" "$@"
 """
     _WRAPPER_PATH.write_text(script)
-    _WRAPPER_PATH.chmod(0o700)
+    if platform.system() != "Windows":
+        _WRAPPER_PATH.chmod(0o700)
     return True
 
 

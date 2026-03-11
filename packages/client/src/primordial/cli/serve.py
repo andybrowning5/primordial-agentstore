@@ -6,6 +6,7 @@ so hosts like OpenClaw can interact without managing child processes.
 
 import json
 import logging
+import platform
 import secrets
 import subprocess
 import uuid
@@ -50,7 +51,8 @@ def _generate_daemon_token() -> str:
     """Generate a random bearer token and write to ~/.primordial-daemon-token."""
     token = secrets.token_urlsafe(32)
     _TOKEN_FILE.write_text(token)
-    _TOKEN_FILE.chmod(0o600)
+    if platform.system() != "Windows":
+        _TOKEN_FILE.chmod(0o600)
     return token
 
 

@@ -31,6 +31,9 @@ class KeyVaultData(BaseModel):
     entries: list[KeyEntry] = []
 
 
+_IS_WINDOWS = platform.system() == "Windows"
+
+
 class KeyVault:
     """Encrypted local storage for API keys.
 
@@ -61,6 +64,19 @@ class KeyVault:
                 for line in result.stdout.splitlines():
                     if "IOPlatformUUID" in line:
                         return line.split('"')[-2]
+            except Exception:
+                pass
+        elif system == "Windows":
+            try:
+                result = subprocess.run(
+                    ["reg", "query",
+                     r"HKLM\SOFTWARE\Microsoft\Cryptography",
+                     "/v", "MachineGuid"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                for line in result.stdout.splitlines():
+                    if "MachineGuid" in line:
+                        return line.split()[-1]
             except Exception:
                 pass
         elif system == "Linux":
@@ -120,21 +136,23 @@ class KeyVault:
                 "Or set a PRIMORDIAL_VAULT_PASSWORD environment variable."
             )
 
-        # Linux: use a file-based secret with restricted permissions.
-        # This is the only option on non-macOS platforms.
+        # Non-macOS: use a file-based secret with restricted permissions.
         secret_path = self._path.parent / ".vault_secret"
         if secret_path.exists():
-            # SECURITY: Verify permissions haven't been loosened
-            mode = secret_path.stat().st_mode & 0o777
-            if mode != 0o600:
-                raise RuntimeError(
-                    f"Vault secret file has unsafe permissions ({oct(mode)}). "
-                    f"Expected 0600. Fix with: chmod 600 {secret_path}"
-                )
+            if not _IS_WINDOWS:
+                # SECURITY: Verify permissions haven't been loosened
+                mode = secret_path.stat().st_mode & 0o777
+                if mode != 0o600:
+                    raise RuntimeError(
+                        f"Vault secret file has unsafe permissions ({oct(mode)}). "
+                        f"Expected 0600. Fix with: chmod 600 {secret_path}"
+                    )
             return secret_path.read_text().strip()
         secret = base64.urlsafe_b64encode(os.urandom(32)).decode()
-        secret_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        # SECURITY: Create file with 0600 atomically to prevent TOCTOU race.
+        secret_path.parent.mkdir(parents=True, exist_ok=True)
+        if not _IS_WINDOWS:
+            secret_path.parent.chmod(0o700)
+        # SECURITY: Create file atomically to prevent TOCTOU race.
         fd = os.open(str(secret_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         try:
             os.write(fd, secret.encode())
@@ -167,13 +185,14 @@ class KeyVault:
         if self._data is not None:
             return self._data
         if self._path.exists():
-            # SECURITY: Verify vault file permissions haven't been loosened
-            mode = self._path.stat().st_mode & 0o777
-            if mode != 0o600:
-                raise RuntimeError(
-                    f"Vault file has unsafe permissions ({oct(mode)}). "
-                    f"Expected 0600. Fix with: chmod 600 {self._path}"
-                )
+            if not _IS_WINDOWS:
+                # SECURITY: Verify vault file permissions haven't been loosened
+                mode = self._path.stat().st_mode & 0o777
+                if mode != 0o600:
+                    raise RuntimeError(
+                        f"Vault file has unsafe permissions ({oct(mode)}). "
+                        f"Expected 0600. Fix with: chmod 600 {self._path}"
+                    )
             raw = self._path.read_text()
             self._data = KeyVaultData.model_validate_json(raw)
         else:
@@ -185,14 +204,18 @@ class KeyVault:
     def _save(self) -> None:
         if self._data is None:
             return
-        self._path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        # Enforce permissions even if dir already existed (mkdir ignores mode with exist_ok)
-        self._path.parent.chmod(0o700)
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        if not _IS_WINDOWS:
+            # Enforce permissions even if dir already existed (mkdir ignores mode with exist_ok)
+            self._path.parent.chmod(0o700)
         # SECURITY: Atomic write via temp file + rename to prevent
         # corruption races and brief world-readable windows.
         tmp_path = self._path.with_suffix(".tmp")
-        # SECURITY: O_NOFOLLOW prevents symlink attacks on the temp file
-        fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+        # SECURITY: O_NOFOLLOW prevents symlink attacks on the temp file (Unix only)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        if not _IS_WINDOWS:
+            flags |= os.O_NOFOLLOW
+        fd = os.open(str(tmp_path), flags, 0o600)
         try:
             os.write(fd, self._data.model_dump_json(indent=2).encode())
         finally:
