@@ -14,7 +14,7 @@ from primordial.cli.setup import setup
 
 
 @click.group()
-@click.version_option(version="0.9.1", prog_name="primordial")
+@click.version_option(version="1.0.0", prog_name="primordial")
 def cli():
     """Primordial AgentStore - The digital soup from which agents emerge."""
     pass
