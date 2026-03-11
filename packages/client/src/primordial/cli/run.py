@@ -3,7 +3,7 @@
 import json
 import math
 import os
-import select
+import platform
 import subprocess
 import sys
 import uuid
@@ -28,6 +28,10 @@ console = Console()
 
 def _input_with_placeholder(prompt: str, placeholder: str) -> str:
     """Show a prompt with dim placeholder text that vanishes on first keystroke."""
+    if platform.system() == "Windows":
+        # Windows lacks readline/termios/tty — use simple input() fallback
+        return input(f"\033[1m{prompt}\033[0m")
+
     import readline  # noqa: F401 — ensures line editing works for input()
     import termios
     import tty
@@ -778,16 +782,19 @@ def _run_chat(
 
             # Buffer pasted multi-line input: if more lines arrive
             # within a short window they're part of the same paste.
-            paste_lines = [user_input]
-            while True:
-                ready, _, _ = select.select([sys.stdin], [], [], 0.05)
-                if not ready:
-                    break
-                extra = sys.stdin.readline()
-                if not extra:
-                    break
-                paste_lines.append(extra.rstrip("\n"))
-            user_input = "\n".join(paste_lines)
+            # select.select on stdin only works on Unix.
+            if platform.system() != "Windows":
+                import select
+                paste_lines = [user_input]
+                while True:
+                    ready, _, _ = select.select([sys.stdin], [], [], 0.05)
+                    if not ready:
+                        break
+                    extra = sys.stdin.readline()
+                    if not extra:
+                        break
+                    paste_lines.append(extra.rstrip("\n"))
+                user_input = "\n".join(paste_lines)
 
             if user_input.strip().lower() in ("exit", "quit", "/exit", "/quit"):
                 console.print("[dim]Ending session...[/dim]")
