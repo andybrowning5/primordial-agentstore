@@ -105,6 +105,8 @@ Every provider declares its `domain` and `auth_style` explicitly. See [Setting U
 
 List of allowed outbound domains. Each entry:
 
+> **Note:** When `runtime.setup_command` is specified, package registries (pypi.org, registry.npmjs.org, etc.) are automatically allowed so dependency installation works. You don't need to declare them in `permissions.network`.
+
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `domain` | string | yes | FQDN (must have a dot, must contain a letter) |

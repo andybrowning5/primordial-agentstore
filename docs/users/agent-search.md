@@ -25,7 +25,7 @@ The daemon returns a ranked JSON list of matching agents.
 
 ### Blank search
 
-Omitting the query returns all agents sorted by popularity (stars), capped at 25:
+Omitting the query returns up to 25 agents sorted by popularity (stars). Semantic search returns the top 10 matches by default.
 
 ```bash
 primordial search

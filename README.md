@@ -37,7 +37,7 @@ primordial search              # Browse all agents on the marketplace
 primordial search "query"      # Semantic search by capability (e.g. "web research")
 primordial search --agent      # JSON output for host agents (Claude Code, etc.)
 primordial run <agent>                    # Run an agent by GitHub URL or path
-primordial run <agent> --workspace .     # Give the agent read access to your project
+primordial run <agent> --workspace <path> # Give the agent access to a git repo (resolves to git root)
 primordial run <agent> --agent           # Host-agent mode (NDJSON conversation)
 primordial install --claude    # Set up Claude Code integration (skill + daemon)
 primordial serve               # Start the background daemon (HTTP API on localhost)
