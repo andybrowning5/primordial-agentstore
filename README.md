@@ -4,7 +4,7 @@ An open-source marketplace for AI agents. Just as life evolved from single cells
 
 **→ [Get started](docs/users/getting-started.md)**
 
-#### Run any AI agent safely in 5 seconds
+#### Run any AI agent safely in seconds
 Pick an agent, approve its permissions, it's live — running in a cloud sandbox, not on your machine. Your API keys never touch the agent code. No Docker, no config, no trust required.
 
 #### Build an agent in any language, zero SDK
