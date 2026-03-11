@@ -15,20 +15,18 @@ graph TB
 
     apis["External APIs\nonly approved domains reachable"]
 
-    branch["Code changes land on a\nseparate branch for review"]
-
     approve --> vault
     vault -->|"real keys"| proxy
     proxy -->|"swaps token for\nreal key · forwards"| apis
-    agent -.->|"diff"| branch
 
     classDef default fill:#1e293b,stroke:#334155,color:#e2e8f0
     classDef green fill:#0f2a1f,stroke:#22c55e,color:#d1fae5
     classDef amber fill:#2a1f0f,stroke:#f59e0b,color:#fef3c7
+
     classDef blue fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
     classDef dim fill:#1e293b,stroke:#475569,color:#94a3b8
 
-    class vault,branch green
+    class vault green
     class agent amber
     class approve blue
     class apis dim
