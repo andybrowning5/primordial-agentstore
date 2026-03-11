@@ -23,43 +23,44 @@ Browse available agents on the marketplace. Pick one to run.
 
 ---
 
-## Using with Claude Code
+## Using with Claude Code, OpenClaw, or Codex
+
+These host agents talk to Primordial through a background service (daemon) running on your machine. The install command sets everything up — the skill file, the daemon, and auto-start on login.
 
 ```bash
-primordial install --claude
+primordial install --claude      # Claude Code
+primordial install --openclaw    # OpenClaw
+primordial install --codex       # Codex
+primordial install --all         # All of the above
 ```
 
-This installs a skill file so Claude Code knows how to use Primordial. After install, restart Claude Code.
+After install, restart your host agent. The daemon starts automatically and listens on `localhost:19400`.
 
-Then just say things like "use primordial to research X" or "find an agent for data analysis" — Claude searches the marketplace, picks an agent, spawns it, and relays the results.
+To verify it's running:
 
-If an agent needs API keys you haven't added yet, Claude will tell you exactly what to run. For example:
-
+```bash
+curl -s http://localhost:19400/health
 ```
+
+If you're on **Linux** (no launchd), you'll need to start the daemon manually:
+
+```bash
+primordial serve
+```
+
+See [Background Service](background-service.md) for logs, restart commands, and troubleshooting.
+
+### Usage
+
+Just say things like "use primordial to research X" or "find an agent for data analysis" — your host agent searches the marketplace, picks an agent, spawns it, and relays the results.
+
+If an agent needs API keys you haven't added yet, you'll be told exactly what to run:
+
+```bash
 primordial setup https://github.com/user/web-research-agent
 ```
 
-### Using with OpenClaw
-
-```bash
-primordial install --openclaw
-```
-
-Same idea — OpenClaw can delegate tasks to specialist agents mid-workflow via the Primordial background service.
-
-### Using with Codex
-
-```bash
-primordial install --codex
-```
-
-Note: Codex's sandbox may block localhost connections. You may need `--dangerously-bypass-approvals-and-sandbox` or sandbox network configuration.
-
-### Install for all hosts
-
-```bash
-primordial install --all
-```
+> **Note:** Codex's sandbox may block localhost connections. You may need `--dangerously-bypass-approvals-and-sandbox` or sandbox network configuration.
 
 ---
 
