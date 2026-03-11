@@ -8,59 +8,6 @@ Primordial runs untrusted agent code in isolated VMs. Agents are treated as host
 
 ![Security Model](../diagrams/security-model.svg)
 
-```
-┌─ Your Machine ────────────────────────────────────────────┐
-│                                                            │
-│  You run: primordial keys add anthropic sk-real-key...     │
-│                    │                                       │
-│                    ▼                                       │
-│  ┌─ Key Vault (encrypted file) ───────────────────────┐   │
-│  │  Encrypted with AES-128 + your machine's hardware  │   │
-│  │  ID + macOS Keychain secret. Can't be decrypted    │   │
-│  │  on any other machine.                             │   │
-│  └────────────────────────┬───────────────────────────┘   │
-│                           │                                │
-│  You run: primordial run web-research-agent                │
-│                           │                                │
-│                           ▼                                │
-│  ┌─ CLI ──────────────────────────────────────────────┐   │
-│  │  1. Reads agent.yaml manifest                      │   │
-│  │  2. Shows you what the agent wants (keys, network) │   │
-│  │  3. You approve: [y/N]                             │   │
-│  │  4. Decrypts ONLY the keys the manifest asks for   │   │
-│  └────────────────────────┬───────────────────────────┘   │
-│                           │                                │
-└───────────────────────────┼────────────────────────────────┘
-                            │ Creates VM via E2B API
-                            ▼
-┌─ Firecracker microVM (fresh, isolated, destroyed after) ──┐
-│                                                            │
-│  Network: block everything except approved domains         │
-│                                                            │
-│  Step 1: Lock down the VM (remove sudo, hide /proc)       │
-│  Step 2: Start proxy as root (gets real keys via stdin)    │
-│  Step 3: Run agent setup (pip install, etc.) as user       │
-│  Step 4: Start agent as user                               │
-│                                                            │
-│  ┌─ Proxy (root) ─────────────────────────────────────┐   │
-│  │  Holds real API keys in memory (never on disk)     │   │
-│  │  Listens on localhost:9001, 9002, etc.             │   │
-│  │  Validates session token on every request          │   │
-│  │  Swaps fake token → real key                       │   │
-│  │  Forwards to real API over HTTPS                   │   │
-│  │  Agent can't read this process (/proc is hidden)   │   │
-│  └──────────────────────────▲─────────────────────────┘   │
-│                              │ HTTP on localhost           │
-│  ┌─ Agent (user) ───────────┴─────────────────────────┐   │
-│  │  Sees: ANTHROPIC_API_KEY=sess-abc123 (fake token)  │   │
-│  │  Sees: ANTHROPIC_BASE_URL=http://127.0.0.1:9001    │   │
-│  │  Sends requests to localhost with fake token       │   │
-│  │  Never sees the real key                           │   │
-│  └────────────────────────────────────────────────────┘   │
-│                                                            │
-└────────────────────────────────────────────────────────────┘
-```
-
 ---
 
 ## API Key Lifecycle — Step by Step
