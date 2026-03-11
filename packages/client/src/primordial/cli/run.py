@@ -295,8 +295,8 @@ def run(
             for kr in missing_optional:
                 console.print(f"  [dim]Optional key missing: {kr.provider} ({kr.resolved_env_var()})[/dim]")
     else:
-        # Fallback: check the model provider key exists
-        provider = manifest.runtime.default_model.provider
+        # Fallback: check the default provider key exists
+        provider = manifest.runtime.default_provider
 
         api_key = vault.get_key(provider)
         if not api_key:
@@ -320,7 +320,7 @@ def run(
     if manifest.keys:
         allowed_providers = [kr.provider for kr in manifest.keys]
     else:
-        allowed_providers = [manifest.runtime.default_model.provider]
+        allowed_providers = [manifest.runtime.default_provider]
     # E2B key is always needed for sandbox creation
     allowed_providers.append("e2b")
     env_vars = vault.get_env_vars(providers=allowed_providers)
@@ -385,9 +385,6 @@ def run(
     if agent_mode:
         _run_agent(manager, agent_dir, manifest, host_workspace, env_vars, state_dir,
                    worktree_mgr=worktree_mgr)
-    elif manifest.runtime.mode == "terminal":
-        _run_terminal(manager, agent_dir, manifest, host_workspace, env_vars, state_dir,
-                      worktree_mgr=worktree_mgr)
     else:
         _run_chat(manager, agent_dir, manifest, host_workspace, env_vars, state_dir,
                   worktree_mgr=worktree_mgr)
@@ -704,98 +701,6 @@ def _present_workspace_patch(
         patch_path.write_bytes(patch)
         console.print(f"[dim]Patch saved to {patch_path} — apply with: git apply {patch_path}[/dim]")
 
-
-def _run_terminal(
-    manager: SandboxManager,
-    agent_dir: Path,
-    manifest,
-    workspace: Path | None,
-    env_vars: dict,
-    state_dir: Path | None = None,
-    worktree_mgr=None,
-) -> None:
-    """Run an agent in terminal passthrough mode (raw PTY)."""
-    import signal
-    import termios
-    import tty
-
-    agent_subtitle = f"Starting {manifest.display_name} v{manifest.version}"
-
-    # Get local terminal size
-    try:
-        term_size = os.get_terminal_size()
-        cols, rows = term_size.columns, term_size.lines
-    except OSError:
-        cols, rows = 80, 24
-
-    def on_data(data) -> None:
-        if isinstance(data, (bytes, bytearray)):
-            os.write(sys.stdout.fileno(), data)
-        else:
-            os.write(sys.stdout.fileno(), data.encode() if isinstance(data, str) else bytes(data))
-
-    with HelixSpinner(console, subtitle=agent_subtitle) as spinner:
-        try:
-            session = manager.run_agent_terminal(
-                agent_dir=agent_dir,
-                manifest=manifest,
-                workspace=workspace,
-                env_vars=env_vars,
-                cols=cols,
-                rows=rows,
-                on_data=on_data,
-                state_dir=state_dir,
-                on_status=spinner.set_phase,
-                worktree_mgr=worktree_mgr,
-            )
-        except Exception as e:
-            console.print(f"\n[red]Failed to start agent:[/red] {e}")
-            raise SystemExit(1)
-
-    # Spinner is cleared — now start forwarding PTY output
-    session.start_output()
-
-    # Save and set raw terminal mode
-    fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)
-
-    # Handle terminal resize
-    def handle_winch(signum, frame):
-        try:
-            size = os.get_terminal_size()
-            session.resize(size.columns, size.lines)
-        except Exception:
-            pass
-
-    old_sigwinch = signal.getsignal(signal.SIGWINCH)
-    signal.signal(signal.SIGWINCH, handle_winch)
-
-    try:
-        tty.setraw(fd)
-
-        while session.is_alive:
-            # Check for local input
-            ready, _, _ = select.select([sys.stdin], [], [], 0.05)
-            if ready:
-                data = os.read(fd, 4096)
-                if not data:
-                    break
-                session.send_input(data)
-
-    except (KeyboardInterrupt, EOFError):
-        pass
-    finally:
-        # Restore terminal
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-        signal.signal(signal.SIGWINCH, old_sigwinch)
-
-        # Print newline so prompt doesn't overlap
-        print()
-
-        patch = session.shutdown()
-        if patch:
-            _present_workspace_patch(console, patch, manifest, worktree_mgr)
-        console.print("[dim]Session ended.[/dim]")
 
 
 def _run_chat(

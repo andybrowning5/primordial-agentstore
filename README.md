@@ -44,6 +44,7 @@ primordial keys add <provider> # Add a specific API key
 primordial keys list           # List stored keys
 primordial sessions <agent>    # Manage chat sessions for an agent
 primordial cache list|clear    # View or clear cached agent repos
+primordial restart             # Restart the background daemon (after upgrades)
 ```
 
 Use `--workspace <path>` with `primordial run` to give the agent read access to your project directory.
@@ -57,6 +58,7 @@ Use `--workspace <path>` with `primordial run` to give the agent read access to 
 | Guide | Description |
 |-------|-------------|
 | [Getting Started](docs/users/getting-started.md) | Install Primordial and run your first agent |
+| [Agent Search](docs/users/agent-search.md) | How semantic search works and how to find the right agent |
 | [Background Service](docs/users/background-service.md) | How the background service works, logs, and troubleshooting |
 | [Security](docs/users/security.md) | How your API keys and data are protected |
 | [Workspace Isolation](docs/users/workspace-isolation.md) | How agents read and modify your code safely via git worktrees |

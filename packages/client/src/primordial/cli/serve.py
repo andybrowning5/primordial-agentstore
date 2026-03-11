@@ -120,13 +120,22 @@ class DaemonHandler(BaseHTTPRequestHandler):
             _respond_error(self, "Not found", 404)
 
     def _handle_search(self, body: dict):
-        from primordial.discovery import fetch_agents
+        from primordial.discovery import fetch_agents, enrich_from_cache, MAX_RESULTS
+        from primordial.ranking import semantic_rank
+
         query = body.get("query")
         try:
-            results = fetch_agents(query)
+            agents = fetch_agents()
+            agents = enrich_from_cache(agents)
         except Exception as e:
             _respond_error(self, str(e), 502)
             return
+
+        if query:
+            results = semantic_rank(query, agents)
+        else:
+            results = agents[:MAX_RESULTS]
+
         _respond_json(self, results)
 
     def _handle_run(self, body: dict):
@@ -187,7 +196,7 @@ class DaemonHandler(BaseHTTPRequestHandler):
         if manifest.keys:
             allowed = [kr.provider for kr in manifest.keys]
         else:
-            allowed = [manifest.runtime.default_model.provider]
+            allowed = [manifest.runtime.default_provider]
         allowed.append("e2b")
         env_vars = vault.get_env_vars(providers=allowed)
 

@@ -6,7 +6,8 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from primordial.discovery import fetch_agents
+from primordial.discovery import fetch_agents, enrich_from_cache, MAX_RESULTS
+from primordial.ranking import semantic_rank
 
 console = Console()
 
@@ -18,7 +19,12 @@ def search(query: str | None, as_agent: bool = False):
     """Search for Primordial agents on GitHub."""
     if as_agent:
         try:
-            agents = fetch_agents(query)
+            agents = fetch_agents()
+            agents = enrich_from_cache(agents)
+            if query:
+                agents = semantic_rank(query, agents)
+            else:
+                agents = agents[:MAX_RESULTS]
         except Exception as e:
             click.echo(json_mod.dumps({"error": str(e)}))
             raise SystemExit(1)
@@ -27,7 +33,12 @@ def search(query: str | None, as_agent: bool = False):
 
     with console.status("[bold green]Searching GitHub..."):
         try:
-            agents = fetch_agents(query)
+            agents = fetch_agents()
+            agents = enrich_from_cache(agents)
+            if query:
+                agents = semantic_rank(query, agents)
+            else:
+                agents = agents[:MAX_RESULTS]
         except Exception as e:
             console.print(f"[red]GitHub API error: {e}[/red]")
             return

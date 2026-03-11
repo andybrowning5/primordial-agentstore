@@ -65,11 +65,6 @@ class AuthorInfo(BaseModel):
         return handle
 
 
-class ModelConfig(BaseModel):
-    provider: str = "anthropic"
-    model: str = "claude-sonnet-4-5-20250929"
-
-
 class ResourceLimits(BaseModel):
     max_memory: str = "2GB"
     max_cpu: int = 2
@@ -112,8 +107,8 @@ class RuntimeConfig(BaseModel):
     dependencies: Optional[str] = None
     setup_command: Optional[str] = None
     run_command: Optional[str] = None
-    mode: str = "agent"  # "agent" (NDJSON protocol) or "terminal" (raw PTY passthrough)
-    default_model: ModelConfig = Field(default_factory=ModelConfig)
+    mode: str = "agent"
+    default_provider: str = "anthropic"
     resources: ResourceLimits = Field(default_factory=ResourceLimits)
 
     @field_validator("language")
@@ -137,7 +132,7 @@ class RuntimeConfig(BaseModel):
     @classmethod
     def validate_mode(cls, v: str) -> str:
         v = v.strip().lower()
-        _VALID_MODES = {"agent", "terminal"}
+        _VALID_MODES = {"agent"}
         if v not in _VALID_MODES:
             suggestion = ", ".join(sorted(_VALID_MODES))
             raise ValueError(

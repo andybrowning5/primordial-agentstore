@@ -25,9 +25,7 @@ runtime:
   run_command: python -u src/agent.py
   setup_command: pip install -r requirements.txt
   dependencies: requirements.txt
-  default_model:
-    provider: anthropic
-    model: claude-sonnet-4-5-20250929
+  default_provider: anthropic
   resources:
     max_memory: 2GB
     max_cpu: 2
@@ -76,12 +74,11 @@ permissions:
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `language` | string | no | `"python"` | Language identifier. See [valid languages](#valid-languages). |
-| `mode` | string | no | `"agent"` | `"agent"` (NDJSON protocol) or `"terminal"` (raw PTY passthrough) |
+| `mode` | string | no | `"agent"` | `"agent"` (NDJSON protocol) |
 | `run_command` | string | no | `null` | Agent entrypoint command |
 | `setup_command` | string | no | `null` | Runs once at sandbox startup |
 | `dependencies` | string | no | `null` | Dependencies file (checked for existence) |
-| `default_model.provider` | string | no | `"anthropic"` | LLM provider |
-| `default_model.model` | string | no | `"claude-sonnet-4-5-20250929"` | Model ID |
+| `default_provider` | string | no | `"anthropic"` | LLM provider for key scoping |
 | `resources.max_memory` | string | no | `"2GB"` | Memory limit |
 | `resources.max_cpu` | int | no | `2` | CPU limit |
 | `resources.max_time` | string | no | `"30m"` | Sandbox timeout. Examples: `"30m"`, `"2h"`, `"6h"`. |

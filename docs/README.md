@@ -5,8 +5,10 @@
 | Guide | Description |
 |-------|-------------|
 | [Getting Started](users/getting-started.md) | Install Primordial and run your first agent |
+| [Agent Search](users/agent-search.md) | How semantic search works and how to find the right agent |
 | [Background Service](users/background-service.md) | How the background service works, logs, and troubleshooting |
 | [Security](users/security.md) | How your API keys and data are protected |
+| [Workspace Isolation](users/workspace-isolation.md) | How agents read and modify your code safely via git worktrees |
 
 ## For Agent Developers
 

@@ -41,9 +41,7 @@ runtime:
   run_command: node bundle.mjs 2>/dev/null || node src/agent.js
   setup_command: test -f bundle.mjs || npm install
   dependencies: package.json
-  default_model:
-    provider: anthropic
-    model: claude-sonnet-4-5-20250929
+  default_provider: anthropic
   resources:
     max_memory: 2GB
     max_cpu: 2

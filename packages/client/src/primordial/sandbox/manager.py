@@ -18,7 +18,6 @@ from typing import Any, Callable, Optional
 logger = logging.getLogger(__name__)
 
 from e2b import Sandbox
-from e2b.sandbox.commands.command_handle import PtySize
 
 from primordial.models import AgentManifest, _PROTECTED_ENV_VARS
 
@@ -663,177 +662,6 @@ class SandboxManager:
                 pass
             raise
 
-    def run_agent_terminal(
-        self,
-        agent_dir: Path,
-        manifest: AgentManifest,
-        workspace: Optional[Path],
-        env_vars: dict[str, str],
-        cols: int = 80,
-        rows: int = 24,
-        on_data: Optional[Callable[[bytes], None]] = None,
-        state_dir: Optional[Path] = None,
-        on_status: Optional[Callable[[str], None]] = None,
-        worktree_mgr: Optional[Any] = None,
-        delegation_depth: int = 0,
-    ) -> "TerminalSession":
-        """Start an agent in terminal passthrough mode using E2B PTY.
-
-        Instead of NDJSON protocol, the agent's stdin/stdout are connected
-        directly to a pseudo-terminal for raw interactive use.
-        """
-        self._ensure_e2b_api_key(env_vars)
-
-        def _status(msg: str) -> None:
-            if on_status:
-                on_status(msg)
-
-        _status("Creating sandbox...")
-        network_kwargs = self._build_network_kwargs(manifest)
-
-        _SAFE_ENV_ALLOWLIST = {
-            "PATH", "HOME", "USER", "SHELL", "LANG", "LC_ALL",
-            "LC_CTYPE", "TERM", "TZ", "PYTHONPATH", "NODE_PATH",
-        }
-        safe_envs = {
-            k: v for k, v in env_vars.items()
-            if k in _SAFE_ENV_ALLOWLIST
-        }
-        timeout = _parse_max_time(manifest.runtime.resources.max_time)
-        sandbox = Sandbox.create(
-            template="base",
-            envs=safe_envs,
-            timeout=timeout,
-            **network_kwargs,
-        )
-
-        try:
-            _status("Uploading agent code...")
-            self._upload_directory(sandbox, agent_dir, AGENT_DIR_IN_SANDBOX)
-            sandbox.commands.run(f"mkdir -p {WORKSPACE_DIR_IN_SANDBOX}")
-
-            if state_dir:
-                _status("Restoring state...")
-                self._restore_state(sandbox, state_dir)
-
-            # Upload host workspace bundle
-            fs_perm = manifest.permissions.filesystem.workspace
-            _workspace_bundle_uploaded = False
-            if workspace and fs_perm in ("readonly", "readwrite"):
-                _status("Snapshotting workspace...")
-                snapshot = self._snapshot_workspace(workspace)
-                if snapshot:
-                    _status("Uploading workspace...")
-                    self._upload_workspace_snapshot(
-                        sandbox, snapshot, readonly=(fs_perm == "readonly"),
-                    )
-                    _workspace_bundle_uploaded = True
-
-            _status("Hardening sandbox...")
-            self._apply_hardening(sandbox, needs_proxy=bool(manifest.keys))
-
-            proxy_pid, agent_envs = None, {}
-            if manifest.keys:
-                _status("Starting security proxy...")
-                proxy_pid, agent_envs = self._start_proxy(sandbox, manifest, env_vars)
-
-            delegation_handler = None
-            if manifest.permissions.delegation.enabled:
-                _status("Starting delegation proxy...")
-                delegation_handler = self._start_delegation_proxy(
-                    sandbox, manifest, env_vars, worktree_mgr,
-                    delegation_depth=delegation_depth,
-                )
-
-            if manifest.runtime.setup_command:
-                _status("Running setup command...")
-                result = sandbox.commands.run(
-                    f"cd {AGENT_DIR_IN_SANDBOX} && {manifest.runtime.setup_command}",
-                    timeout=6000,
-                    user="user",
-                )
-                if result.exit_code != 0:
-                    error_detail = (result.stderr or result.stdout or "")[:500]
-                    raise SandboxError(f"Setup command failed: {error_detail}")
-
-            # Pre-configure Claude Code onboarding so it uses ANTHROPIC_API_KEY
-            # without prompting for login (only for claude-code agents)
-            if "claude" in (manifest.runtime.run_command or "").lower():
-                api_key_for_config = agent_envs.get("ANTHROPIC_API_KEY", "")
-                claude_config = json.dumps({
-                    "hasCompletedOnboarding": True,
-                    "primaryApiKey": api_key_for_config,
-                    "apiKeySource": "environment",
-                })
-                sandbox.commands.run(
-                    f"mkdir -p /home/user/.claude && "
-                    f"echo '{claude_config}' > /home/user/.claude.json && "
-                    f"chown user:user /home/user/.claude.json /home/user/.claude",
-                    user="root",
-                )
-
-            _status("Starting terminal...")
-
-            # Build env vars — include proxy vars + terminal-mode extras
-            pty_envs = {
-                **agent_envs,
-                "IS_DEMO": "true",
-                "DISABLE_AUTOUPDATER": "1",
-                "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
-            }
-
-            # Pass through env vars declared in manifest with passthrough=true
-            for key_req in (manifest.keys or []):
-                if getattr(key_req, "passthrough", False):
-                    target_env = key_req.resolved_env_var()
-                    # Vault stores keys as <PROVIDER>_API_KEY
-                    vault_env = f"{key_req.provider.upper().replace('-', '_')}_API_KEY"
-                    val = env_vars.get(vault_env)
-                    if val:
-                        pty_envs[target_env] = val
-
-            # Build the full command with inline env vars for reliable propagation
-            run_cmd = manifest.runtime.run_command or "bash"
-            env_prefix = " ".join(
-                f"{k}={_shell_escape(v)}" for k, v in pty_envs.items()
-            )
-            full_cmd = f"{env_prefix} exec {run_cmd}"
-
-            # Create PTY (starts bash -i -l)
-            pty_handle = sandbox.pty.create(
-                size=PtySize(rows=rows, cols=cols),
-                user="user",
-                cwd=AGENT_DIR_IN_SANDBOX,
-                timeout=0,
-            )
-
-            # Drive PTY output in a background thread
-            session = TerminalSession(
-                sandbox=sandbox,
-                pty_handle=pty_handle,
-                manager=self,
-                state_dir=state_dir,
-                proxy_pid=proxy_pid,
-                delegation_handler=delegation_handler,
-                on_data=on_data,
-                workspace_uploaded=_workspace_bundle_uploaded,
-                workspace_readonly=(fs_perm == "readonly"),
-            )
-
-            # Type the run command into bash with env vars
-            sandbox.pty.send_stdin(
-                pty_handle.pid,
-                f"{full_cmd}\n".encode(),
-            )
-
-            return session
-        except Exception:
-            try:
-                sandbox.kill()
-            except Exception:
-                pass
-            raise
-
 
 class AgentSession:
     """Wraps a running agent process in an E2B sandbox with NDJSON communication."""
@@ -963,98 +791,6 @@ class AgentSession:
         return patch
 
 
-class TerminalSession:
-    """Wraps a PTY session in an E2B sandbox for raw terminal passthrough."""
-
-    def __init__(
-        self,
-        sandbox: Sandbox,
-        pty_handle: Any,
-        manager: SandboxManager,
-        state_dir: Optional[Path] = None,
-        proxy_pid: Optional[int] = None,
-        delegation_handler: Optional["DelegationHandler"] = None,
-        on_data: Optional[Callable[[bytes], None]] = None,
-        workspace_uploaded: bool = False,
-        workspace_readonly: bool = False,
-    ):
-        self._sandbox = sandbox
-        self._pty = pty_handle
-        self._manager = manager
-        self._state_dir = state_dir
-        self._proxy_pid = proxy_pid
-        self._delegation_handler = delegation_handler
-        self._on_data = on_data
-        self._workspace_uploaded = workspace_uploaded
-        self._workspace_readonly = workspace_readonly
-        self._alive = True
-
-        self._wait_thread: Optional[threading.Thread] = None
-
-    def start_output(self) -> None:
-        """Start forwarding PTY output. Call after setup UI is cleared."""
-        self._wait_thread = threading.Thread(target=self._drive_pty, daemon=True)
-        self._wait_thread.start()
-
-    def _drive_pty(self) -> None:
-        try:
-            self._pty.wait(
-                on_pty=self._on_data,
-            )
-        except Exception:
-            pass
-        finally:
-            self._alive = False
-
-    @property
-    def is_alive(self) -> bool:
-        return self._alive
-
-    def send_input(self, data: bytes) -> None:
-        self._sandbox.pty.send_stdin(self._pty.pid, data)
-
-    def resize(self, cols: int, rows: int) -> None:
-        try:
-            self._sandbox.pty.resize(self._pty.pid, size=PtySize(rows=rows, cols=cols))
-        except Exception:
-            pass
-
-    def shutdown(self) -> bytes | None:
-        """Shutdown the terminal session, extract workspace patch if applicable."""
-        patch: bytes | None = None
-        try:
-            if self._delegation_handler:
-                try:
-                    self._delegation_handler.shutdown()
-                except Exception as e:
-                    logger.warning("Failed to shutdown delegation handler: %s", e)
-
-            # Extract workspace patch before killing sandbox
-            if self._workspace_uploaded and not self._workspace_readonly:
-                try:
-                    patch = self._manager._extract_workspace_patch(self._sandbox)
-                except Exception as e:
-                    logger.warning("Failed to extract workspace patch: %s", e)
-        except Exception:
-            pass
-        finally:
-            if self._state_dir:
-                try:
-                    if self._delegation_handler:
-                        self._delegation_handler.save_session_mapping(self._state_dir)
-                    self._manager._save_state(self._sandbox, self._state_dir)
-                except Exception as e:
-                    logger.warning("Failed to save state on shutdown: %s", e)
-            if self._proxy_pid:
-                try:
-                    self._sandbox.commands.run(f"kill {self._proxy_pid}", user="root")
-                except Exception:
-                    pass
-            try:
-                self._sandbox.kill()
-            except Exception:
-                pass
-        return patch
 
 
 class DelegationHandler:
@@ -1094,9 +830,6 @@ class DelegationHandler:
         self._stop = threading.Event()
         self._session_counter = 0
         self._lock = threading.Lock()
-
-        # FastEmbed model (lazy-loaded)
-        self._embed_model = None
 
         # Callbacks for pausing/resuming host UI (e.g. spinners) during input
         self.on_input_needed: Optional[Callable[[], None]] = None
@@ -1215,59 +948,15 @@ class DelegationHandler:
                     logger.warning("Cannot send error to proxy (sandbox may have timed out)")
                     return
 
-    def _fetch_agents(self, query: str | None = None) -> list[dict]:
-        """Fetch agents from GitHub API."""
-        from primordial.discovery import fetch_agents
-        return fetch_agents(query)
-
-    def _get_embed_model(self):
-        """Lazy-load the FastEmbed model."""
-        if self._embed_model is None:
-            try:
-                from fastembed import TextEmbedding
-                self._embed_model = TextEmbedding()
-            except ImportError:
-                logger.warning("fastembed not installed, falling back to keyword search")
-                return None
-        return self._embed_model
-
-    def _semantic_rank(self, query: str, agents: list[dict], top_k: int = 5) -> list[dict]:
-        """Rank agents by semantic similarity to query using FastEmbed."""
-        import numpy as np
-
-        model = self._get_embed_model()
-        if not model or not agents:
-            # Fallback: simple substring matching
-            query_lower = query.lower()
-            scored = []
-            for a in agents:
-                text = f"{a['name']} {a['description']}".lower()
-                score = sum(1 for word in query_lower.split() if word in text)
-                scored.append((score, a))
-            scored.sort(key=lambda x: -x[0])
-            return [a for _, a in scored[:top_k]]
-
-        descriptions = [
-            f"{a['name']}: {a['description']}" for a in agents
-        ]
-        query_emb = list(model.embed([query]))[0]
-        doc_embs = list(model.embed(descriptions))
-        doc_arr = np.array(doc_embs)
-        query_arr = np.array(query_emb)
-
-        # Cosine similarity
-        norms = np.linalg.norm(doc_arr, axis=1) * np.linalg.norm(query_arr)
-        norms[norms == 0] = 1.0
-        similarities = doc_arr @ query_arr / norms
-        top_indices = (-similarities).argsort()[:top_k]
-
-        return [agents[i] for i in top_indices]
-
     def _handle_search(self, msg: dict, req_id: str) -> None:
         """Semantic search for agents."""
+        from primordial.discovery import fetch_agents, enrich_from_cache
+        from primordial.ranking import semantic_rank
+
         query = msg.get("query", "")
-        agents = self._fetch_agents(query)
-        ranked = self._semantic_rank(query, agents, top_k=5)
+        agents = fetch_agents()
+        agents = enrich_from_cache(agents)
+        ranked = semantic_rank(query, agents, top_k=5)
         self._send_to_proxy({
             "type": "search_result",
             "agents": ranked,
@@ -1276,10 +965,12 @@ class DelegationHandler:
 
     def _handle_search_all(self, req_id: str) -> None:
         """List all agents sorted by stars."""
-        agents = self._fetch_agents()
+        from primordial.discovery import fetch_agents, MAX_RESULTS
+
+        agents = fetch_agents()
         self._send_to_proxy({
             "type": "search_result",
-            "agents": agents,
+            "agents": agents[:MAX_RESULTS],
             "request_id": req_id,
         })
 
