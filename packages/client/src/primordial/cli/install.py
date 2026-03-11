@@ -6,6 +6,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import click
@@ -16,11 +17,12 @@ console = Console()
 _PLIST_LABEL = "com.primordial.daemon"
 _PLIST_DIR = Path.home() / "Library" / "LaunchAgents"
 _PLIST_PATH = _PLIST_DIR / f"{_PLIST_LABEL}.plist"
+_IS_WINDOWS = platform.system() == "Windows"
 _PASSWORD_FILE = Path.home() / ".primordial-password"
 _TOKEN_FILE = Path.home() / ".primordial-daemon-token"
 _WRAPPER_DIR = Path.home() / ".local" / "bin"
-_WRAPPER_PATH = _WRAPPER_DIR / "primordial"
-_LOG_PATH = Path("/tmp/primordial-daemon.log")
+_WRAPPER_PATH = _WRAPPER_DIR / ("primordial.cmd" if _IS_WINDOWS else "primordial")
+_LOG_PATH = Path(tempfile.gettempdir()) / "primordial-daemon.log"
 
 # Skill file source (bundled inside the primordial package)
 _SKILL_DIR = Path(__file__).resolve().parent.parent / "skills"
@@ -31,24 +33,26 @@ _CLAUDE_SKILL_DEST = Path.home() / ".claude" / "skills" / "primordial"
 
 def _find_real_binary() -> str:
     """Find the real primordial binary path."""
+    which_cmd = "where" if _IS_WINDOWS else "which"
+    path_sep = ";" if _IS_WINDOWS else ":"
     result = subprocess.run(
-        ["which", "primordial"], capture_output=True, text=True
+        [which_cmd, "primordial"], capture_output=True, text=True
     )
-    path = result.stdout.strip()
+    path = result.stdout.strip().splitlines()[0] if result.stdout.strip() else ""
     if path and Path(path).exists():
         # If it's already our wrapper, find the pip-installed one
         if path == str(_WRAPPER_PATH):
             # Search PATH excluding our wrapper dir
             env = os.environ.copy()
             path_dirs = [
-                d for d in env.get("PATH", "").split(":")
+                d for d in env.get("PATH", "").split(path_sep)
                 if d != str(_WRAPPER_DIR)
             ]
-            env["PATH"] = ":".join(path_dirs)
+            env["PATH"] = path_sep.join(path_dirs)
             result = subprocess.run(
-                ["which", "primordial"], capture_output=True, text=True, env=env
+                [which_cmd, "primordial"], capture_output=True, text=True, env=env
             )
-            return result.stdout.strip()
+            return result.stdout.strip().splitlines()[0] if result.stdout.strip() else "primordial"
         return path
     return "primordial"
 
@@ -74,16 +78,19 @@ def _create_wrapper(real_binary: str, password: str):
     """
     if _WRAPPER_PATH.exists():
         existing = _WRAPPER_PATH.read_text()
-        if f'exec "{real_binary}"' in existing and f"'{password}'" in existing:
+        if real_binary in existing and password in existing:
             return False  # No change needed
 
     _WRAPPER_DIR.mkdir(parents=True, exist_ok=True)
-    script = f"""#!/bin/sh
+    if _IS_WINDOWS:
+        script = f'@echo off\r\nset PRIMORDIAL_VAULT_PASSWORD={password}\r\n"{real_binary}" %*\r\n'
+    else:
+        script = f"""#!/bin/sh
 export PRIMORDIAL_VAULT_PASSWORD='{password}'
 exec "{real_binary}" "$@"
 """
     _WRAPPER_PATH.write_text(script)
-    if platform.system() != "Windows":
+    if not _IS_WINDOWS:
         _WRAPPER_PATH.chmod(0o700)
     return True
 
