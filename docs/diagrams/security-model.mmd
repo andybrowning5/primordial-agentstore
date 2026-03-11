@@ -1,0 +1,31 @@
+graph LR
+    subgraph you ["You"]
+        approve["Approve permissions\nbefore anything runs"]
+    end
+
+    subgraph machine ["Your Machine"]
+        vault["Encrypted vault\nlocked to this device"]
+    end
+
+    subgraph cloud ["Throwaway Cloud VM — destroyed after every run"]
+        middleman["Middleman\nholds real keys in memory\nagent can't see or reach it"]
+        agent["Agent\ngets fake credentials only\nnetwork locked to approved domains"]
+    end
+
+    subgraph after ["After"]
+        branch["Changes land on a\nseparate branch\nyou review before merge"]
+    end
+
+    approve -->|"decrypt only\nwhat's needed"| vault
+    vault -->|"real keys"| middleman
+    middleman <-->|"fake token ↔ real key"| agent
+    agent -.->|"code changes"| branch
+
+    classDef default fill:#1e293b,stroke:#334155,color:#e2e8f0
+    classDef green fill:#0f2a1f,stroke:#22c55e,color:#d1fae5
+    classDef amber fill:#2a1f0f,stroke:#f59e0b,color:#fef3c7
+    classDef blue fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
+
+    class vault,branch green
+    class agent amber
+    class approve blue
