@@ -288,10 +288,12 @@ class DaemonHandler(BaseHTTPRequestHandler):
             if msg is None:
                 _send_chunk({"type": "error", "error": "timeout", "message_id": message_id})
                 break
+
+            msg_type = msg.get("type", "")
             _send_chunk(msg)
-            if msg.get("type") == "response" and msg.get("done", False):
+            if msg_type == "response" and msg.get("done", False):
                 break
-            if msg.get("type") == "error":
+            if msg_type == "error":
                 break
 
         # Send final empty chunk to signal end

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -13,6 +14,23 @@ from pathlib import Path
 from typing import Optional
 
 from primordial.config import get_config
+
+
+def _safe_git_env() -> dict[str, str]:
+    """Return an environment dict that neutralises git hooks and restricts protocols."""
+    env = os.environ.copy()
+    env.update(
+        {
+            "GIT_ALLOW_PROTOCOL": "https",
+            "GIT_TERMINAL_PROMPT": "0",
+        }
+    )
+    return env
+
+
+# Flags injected into every git command that touches a remote repo to disable
+# hooks (post-checkout, post-merge, etc.) that could execute arbitrary code.
+_NO_HOOKS_FLAGS = ["-c", "core.hooksPath=/dev/null"]
 
 
 class GitHubResolverError(Exception):
@@ -251,12 +269,14 @@ class GitHubResolver:
         if target.exists():
             shutil.rmtree(target)
 
-        cmd = ["git", "clone", "--depth", "1"]
+        cmd = ["git", *_NO_HOOKS_FLAGS, "clone", "--depth", "1"]
         if github_ref.ref:
             cmd.extend(["--branch", github_ref.ref])
         cmd.extend([github_ref.clone_url, str(target)])
 
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=120, env=_safe_git_env()
+        )
         if result.returncode != 0:
             # Clean up partial clone
             if target.exists():
@@ -279,15 +299,38 @@ class GitHubResolver:
     def _refresh(self, github_ref: GitHubRef, cache_path: Path) -> None:
         """Update an existing clone by fetching latest."""
         ref = github_ref.ref or "HEAD"
-        fetch_cmd = ["git", "-C", str(cache_path), "fetch", "--depth", "1", "origin", ref]
-        result = subprocess.run(fetch_cmd, capture_output=True, text=True, timeout=60)
+        safe_env = _safe_git_env()
+        fetch_cmd = [
+            "git",
+            *_NO_HOOKS_FLAGS,
+            "-C",
+            str(cache_path),
+            "fetch",
+            "--depth",
+            "1",
+            "origin",
+            ref,
+        ]
+        result = subprocess.run(
+            fetch_cmd, capture_output=True, text=True, timeout=60, env=safe_env
+        )
         if result.returncode != 0:
             # Fetch failed — fall back to full re-clone
             self._clone(github_ref, cache_path)
             return
 
-        reset_cmd = ["git", "-C", str(cache_path), "reset", "--hard", "FETCH_HEAD"]
-        subprocess.run(reset_cmd, capture_output=True, text=True, timeout=30)
+        reset_cmd = [
+            "git",
+            *_NO_HOOKS_FLAGS,
+            "-C",
+            str(cache_path),
+            "reset",
+            "--hard",
+            "FETCH_HEAD",
+        ]
+        subprocess.run(
+            reset_cmd, capture_output=True, text=True, timeout=30, env=safe_env
+        )
         self._write_metadata(github_ref, cache_path)
 
     def _write_metadata(self, github_ref: GitHubRef, cache_path: Path) -> None:

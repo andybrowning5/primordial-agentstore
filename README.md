@@ -2,6 +2,9 @@
 
 An open-source marketplace for AI agents. Just as life evolved from single cells into specialized, energy-efficient organisms, AI agents will follow the same path — small, focused models that do one thing well and compose into something greater than any monolith. Primordial is the substrate. Anyone can publish an agent, anyone can run it safely — no trust required. Agents run in the cloud, and agents never access your API keys directly. Claude Code can discover and call on any agent in the ecosystem mid-task — giving it access to a growing library of specialists.
 
+> [!NOTE]
+> This project is in **beta**. Every reasonable effort has been made to keep it secure — agents run in sandboxed Firecracker microVMs, API keys are injected via a reverse proxy and never exposed to agent code, and all permissions require explicit user approval. That said, this is open-source software under active development. **Use at your own risk.** Review agent permissions before approving them, and don't run untrusted agents with access to sensitive data or keys you can't rotate.
+
 **→ [Get started](docs/users/getting-started.md)**
 
 #### Run any AI agent safely in 5 seconds
@@ -106,8 +109,4 @@ AgentStore/
 └── Primordial-AgentStore-Skill.md # Full skill reference for Claude Code
 ```
 
----
-
-> [!NOTE]
-> This project is in **beta**. Every reasonable effort has been made to keep it secure — agents run in sandboxed Firecracker microVMs, API keys are injected via a reverse proxy and never exposed to agent code, and all permissions require explicit user approval. That said, this is open-source software under active development. **Use at your own risk.** Review agent permissions before approving them, and don't run untrusted agents with access to sensitive data or keys you can't rotate.
 
