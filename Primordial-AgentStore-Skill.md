@@ -88,7 +88,7 @@ keys:
 |-------|----------|---------|-------------|
 | `provider` | yes | — | Lowercase name: `^[a-z][a-z0-9-]*$` |
 | `domain` | yes | — | Upstream API host (FQDN, must have a dot, must have a letter) |
-| `auth_style` | no | `bearer` | Header for auth. `bearer` → `Authorization: Bearer <key>`. Any other value is used as a custom header name. |
+| `auth_style` | no | `bearer` | Header for auth. One of: `bearer`, `x-api-key`, `x-subscription-token`. |
 | `env_var` | no | `<PROVIDER>_API_KEY` | Env var the agent reads for the session token |
 | `base_url_env` | no | `<PROVIDER>_BASE_URL` | Env var for the proxy's localhost URL. Most SDKs auto-read the default. |
 | `required` | no | `true` | Whether the key must be present |
@@ -144,7 +144,7 @@ Domains declared in `keys` are auto-allowed. Additional domains (webhooks, etc.)
 | `provider` | `^[a-z][a-z0-9-]*$` |
 | `env_var` | `^[A-Z][A-Z0-9_]*$`, cannot be `PATH`, `HOME`, `SHELL`, etc. |
 | `domain` | FQDN with at least one dot and one letter. No IP literals. |
-| `auth_style` | `^[a-z][a-z0-9-]*$` |
+| `auth_style` | One of: `bearer`, `x-api-key`, `x-subscription-token` |
 
 ---
 
@@ -425,49 +425,40 @@ Everything else (dotfiles, `.config/`, `.local/`, `.ssh/`) is wiped for security
 
 ## Delegating to Other Agents
 
-If your agent needs to call another agent:
+If your agent needs to call another agent, use the delegation SDK (communicates via Unix socket inside the sandbox):
 
 **Manifest:**
 ```yaml
 permissions:
   delegation:
     enabled: true
-    allowed_agents:
+    allowed_agents:          # optional — omit to allow all agents
       - owner/agent-name
 ```
 
-**Code:**
+**Code (Node.js):** Copy `primordial_delegate.mjs` into your source directory.
 ```javascript
-import { spawn } from "child_process";
+import { search, runAgent, messageAgent, stopAgent, emitActivity } from './primordial_delegate.mjs';
 
-const proc = spawn("primordial", ["run", "https://github.com/owner/repo", "--agent"], {
-  stdio: ["pipe", "pipe", "inherit"],
+// Find an agent
+const agents = await search("web research");
+
+// Spawn it
+const sessionId = await runAgent(agents[0].url, {
+  onStatus: (e) => emitActivity("sub:setup", e.status),
 });
 
-// Wait for ready
-for await (const line of proc.stdout) {
-  const msg = JSON.parse(line.toString().trim());
-  if (msg.type === "ready") break;
-}
+// Send a task
+const result = await messageAgent(sessionId, "Research topic X", {
+  onActivity: (tool, desc) => emitActivity(`sub:${tool}`, desc),
+});
+console.log(result.response);
 
-// Send task
-proc.stdin.write(JSON.stringify({
-  type: "message", content: "Do something", message_id: "task-1",
-}) + "\n");
-
-// Collect response
-for await (const line of proc.stdout) {
-  const msg = JSON.parse(line.toString().trim());
-  if (msg.done) {
-    const result = msg.content;
-    break;
-  }
-}
-
-// Shutdown
-proc.stdin.write(JSON.stringify({ type: "shutdown" }) + "\n");
-proc.stdin.end();
+// Clean up
+await stopAgent(sessionId);
 ```
+
+See [Delegation docs](docs/developers/delegation.md) for the Python SDK, CLI wrapper, and streaming API.
 
 ---
 

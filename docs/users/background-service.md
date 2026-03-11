@@ -38,11 +38,17 @@ If you get back `{"ok": true, ...}`, it's running. If the connection is refused,
 ## Restarting the service
 
 ```bash
+primordial restart
+```
+
+Or manually via launchctl:
+
+```bash
 launchctl stop com.primordial.daemon
 launchctl start com.primordial.daemon
 ```
 
-Or just re-run `primordial install` — it's safe to run multiple times.
+Re-running `primordial install` also works — it's safe to run multiple times.
 
 ## Viewing logs
 
