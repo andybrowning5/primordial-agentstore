@@ -17,7 +17,7 @@ graph TB
 
     branch["Code changes land on a\nseparate branch for review"]
 
-    approve -->|"decrypt only\nwhat's needed"| vault
+    approve --> vault
     vault -->|"real keys"| proxy
     proxy -->|"swaps token for\nreal key · forwards"| apis
     agent -.->|"diff"| branch
