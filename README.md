@@ -27,6 +27,9 @@ Here, we spawn 3 web research agents as sub agents. Any agents can be configured
 
 https://github.com/user-attachments/assets/d5315a85-5ee8-410f-977b-3927207ade38
 
+## Running Primordial Agents From Claude Code
+
+https://github.com/user-attachments/assets/60934ffe-1a1c-4afc-b156-8f56e1e7a0ce
 
 ---
 
