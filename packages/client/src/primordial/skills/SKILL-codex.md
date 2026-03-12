@@ -79,6 +79,10 @@ curl -s --max-time 300 -H "Authorization: Bearer $TOKEN" http://localhost:19400/
 
 ## Step 5: End Session
 
+**IMPORTANT: Always ask the user before shutting down an agent session.** After the agent completes its task, ask the user if they would like to send follow-up messages or end the session. Do NOT automatically shut down the session. Only proceed with shutdown after the user confirms.
+
+Example prompt: "The agent has finished the task. Would you like to ask it anything else, or should I end the session?"
+
 ```bash
 TOKEN=$(cat ~/.primordial-daemon-token 2>/dev/null)
 curl -s -H "Authorization: Bearer $TOKEN" http://localhost:19400/shutdown -d '{"session_id":"abc123def456"}'
@@ -89,7 +93,7 @@ If the agent modified files in its workspace, the response includes a patch:
 {"ok": true, "workspace_patch": "diff --git a/file.py b/file.py\n..."}
 ```
 
-Review the patch and apply it with `git apply` if the changes look good. Always end sessions when done to free resources.
+Review the patch and apply it with `git apply` if the changes look good. End sessions when done to free resources.
 
 ## Error Handling
 
