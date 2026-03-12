@@ -21,10 +21,10 @@ author:
   github: your-handle
 
 runtime:
-  language: python
-  run_command: python -u src/agent.py
-  setup_command: pip install -r requirements.txt
-  dependencies: requirements.txt
+  language: node
+  run_command: node src/agent.mjs
+  setup_command: npm install
+  dependencies: package.json
   default_provider: anthropic
   resources:
     max_memory: 2GB
@@ -54,7 +54,7 @@ permissions:
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `name` | string | yes | — | Agent identifier. 3-40 chars, lowercase + hyphens. |
+| `name` | string | yes | — | Agent identifier. 3-40 chars, lowercase + hyphens. Must match `^[a-z][a-z0-9-]*[a-z0-9]$` (must not end with a hyphen). |
 | `display_name` | string | yes | — | Human-readable name |
 | `version` | string | yes | — | Semver version |
 | `description` | string | yes | — | What the agent does. Write for humans and AI callers. |
@@ -75,12 +75,12 @@ permissions:
 |-------|------|----------|---------|-------------|
 | `language` | string | no | `"python"` | Language identifier. See [valid languages](#valid-languages). |
 | `mode` | string | no | `"agent"` | `"agent"` (NDJSON protocol) |
-| `run_command` | string | no | `null` | Agent entrypoint command |
+| `run_command` | string | yes | — | Agent entrypoint command |
 | `setup_command` | string | no | `null` | Runs once at sandbox startup |
 | `dependencies` | string | no | `null` | Dependencies file (checked for existence) |
 | `default_provider` | string | no | `"anthropic"` | LLM provider for key scoping |
 | `resources.max_memory` | string | no | `"2GB"` | Memory limit |
-| `resources.max_cpu` | int | no | `2` | CPU limit |
+| `resources.max_cpu` | int | no | `2` | CPU limit. Valid range: 1-32. |
 | `resources.max_time` | string | no | `"30m"` | Sandbox timeout. Examples: `"30m"`, `"2h"`, `"6h"`. |
 
 ### `keys`

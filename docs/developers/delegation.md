@@ -73,7 +73,7 @@ Agents can discover, spawn, and interact with other agents on the Primordial Age
 ## Setup Checklist
 
 - [ ] Add `permissions.delegation.enabled: true` to your `agent.yaml`
-- [ ] Choose your SDK: **Python**, **Node.js**, or **CLI**
+- [ ] Choose your SDK: **Node.js** or **CLI**
 - [ ] Copy the SDK file into your agent's source directory
 - [ ] Wire up delegation tools in your agent (see examples below)
 - [ ] Test with `primordial run <your-agent>`
@@ -90,62 +90,6 @@ permissions:
 ```
 
 ## 2. Choose Your SDK
-
-### Python SDK
-
-Copy [`primordial_delegate.py`](../../packages/client/src/primordial/sandbox/primordial_delegate.py) into your agent's source directory. **Stdlib-only — no dependencies.**
-
-```python
-from primordial_delegate import (
-    search,          # Search for agents by capability
-    search_all,      # List all agents
-    run_agent,       # Spawn a sub-agent, get session_id
-    message_agent,   # Send message, get response
-    stop_agent,      # Shut down a sub-agent
-    monitor_agent,   # View sub-agent output history
-    emit_activity,   # Forward progress to parent TUI
-)
-```
-
-**Full example:**
-
-```python
-from primordial_delegate import search, run_agent, message_agent, stop_agent, emit_activity
-
-# Find an agent
-agents = search("web research")
-agent_url = agents[0]["url"]
-
-# Spawn it (on_status callback for setup progress)
-def on_status(event):
-    emit_activity("sub:setup", event.get("status", ""))
-
-session_id = run_agent(agent_url, on_status=on_status)
-
-# Send a task (on_activity callback for tool usage)
-def on_activity(tool, description):
-    emit_activity(f"sub:{tool}", description)
-
-result = message_agent(session_id, "Research Max Verstappen", on_activity=on_activity)
-print(result["response"])       # Final response text
-print(result["activities"])     # List of tools the sub-agent used
-
-# Clean up
-stop_agent(session_id)
-```
-
-**Streaming variant** for real-time event processing:
-
-```python
-from primordial_delegate import message_agent_stream
-
-for event in message_agent_stream(session_id, "Do research"):
-    inner = event.get("event", {})
-    if inner.get("type") == "activity":
-        print(f"  [{inner['tool']}] {inner['description']}")
-    elif inner.get("type") == "response" and inner.get("done"):
-        print(inner["content"])
-```
 
 ### Node.js SDK
 
@@ -186,6 +130,21 @@ console.log(result.response);
 await stopAgent(sessionId);
 ```
 
+**Streaming variant** for real-time event processing:
+
+```javascript
+import { messageAgentStream } from './primordial_delegate.mjs';
+
+for await (const event of messageAgentStream(sessionId, "Do research")) {
+  const inner = event.event ?? {};
+  if (inner.type === "activity") {
+    console.log(`  [${inner.tool}] ${inner.description}`);
+  } else if (inner.type === "response" && inner.done) {
+    console.log(inner.content);
+  }
+}
+```
+
 ### CLI (any language)
 
 Copy [`delegate_cli.py`](../../packages/client/src/primordial/sandbox/delegate_cli.py) into your agent and install it as an executable. Any agent that can run shell commands can use it.
@@ -218,10 +177,31 @@ Both SDKs include `emit_activity()` / `emitActivity()` helpers. The `message_id`
 
 The host-side DelegationHandler enforces two hard limits to prevent runaway delegation chains:
 
-- **Max delegation depth: 3** — An agent can delegate to a sub-agent, which can delegate to its own sub-agent, up to 3 levels deep. Attempts to delegate beyond depth 3 return an error.
+- **Max delegation depth: 3 levels total** — Agents can delegate up to 2 levels deep (3 total levels: parent → sub-agent → sub-sub-agent). The host rejects any `run` command at depth >= 3. Valid depths are 0, 1, and 2.
 - **Max concurrent sub-agents per parent: 6** — A single parent agent can run at most 6 sub-agents simultaneously. Additional `run_agent` calls will fail until an existing sub-agent is stopped.
 
 These limits apply regardless of what the agent's manifest declares. They are enforced on the host side, so a malicious agent cannot bypass them.
+
+## Session Resumption
+
+The `run` command accepts optional `session_id` and `session` parameters to resume a previous agent session with its state. This lets you reconnect to a sub-agent that was previously running without losing its conversation history or context.
+
+```javascript
+import { runAgent, messageAgent, stopAgent } from './primordial_delegate.mjs';
+
+// First run — save the session info
+const sessionId = await runAgent("https://github.com/owner/repo");
+const result = await messageAgent(sessionId, "Start a long task");
+
+// ... later, resume the same session
+const resumedId = await runAgent("https://github.com/owner/repo", {
+  sessionId,          // reconnect to this session
+  session: result.session,  // restore session state
+});
+
+const followUp = await messageAgent(resumedId, "Continue where you left off");
+await stopAgent(resumedId);
+```
 
 ## Security
 
@@ -233,13 +213,13 @@ These limits apply regardless of what the agent's manifest declares. They are en
 
 ## API Reference
 
-| Function (Python) | Function (Node) | Description |
-|---|---|---|
-| `search(query)` | `search(query)` | Search agents by capability |
-| `search_all()` | `searchAll()` | List all agents by popularity |
-| `run_agent(url, on_status=)` | `runAgent(url, {onStatus})` | Spawn a sub-agent |
-| `message_agent(sid, msg, on_activity=)` | `messageAgent(sid, msg, {onActivity})` | Send message, get response |
-| `message_agent_stream(sid, msg)` | `messageAgentStream(sid, msg)` | Stream raw events |
-| `monitor_agent(sid)` | `monitorAgent(sid)` | View output history |
-| `stop_agent(sid)` | `stopAgent(sid)` | Shut down sub-agent |
-| `emit_activity(tool, desc)` | `emitActivity(tool, desc)` | Emit progress event |
+| Function | Description |
+|---|---|
+| `search(query)` | Search agents by capability |
+| `searchAll()` | List all agents by popularity |
+| `runAgent(url, {onStatus, sessionId, session})` | Spawn or resume a sub-agent |
+| `messageAgent(sid, msg, {onActivity})` | Send message, get response |
+| `messageAgentStream(sid, msg)` | Stream raw events |
+| `monitorAgent(sid)` | View output history |
+| `stopAgent(sid)` | Shut down sub-agent |
+| `emitActivity(tool, desc)` | Emit progress event |

@@ -86,9 +86,9 @@ author:
   github: your-handle
 
 runtime:
-  language: python
-  run_command: python -u src/agent.py
-  setup_command: pip install -r requirements.txt
+  language: node
+  run_command: node src/agent.mjs
+  setup_command: npm install
 
 keys:
   - provider: anthropic
@@ -110,23 +110,24 @@ permissions:
       reason: Web search
 ```
 
-**agent.py** (relevant part):
+**agent.mjs** (relevant part):
 
-```python
-import os
-import httpx
+```js
+const BRAVE_API_KEY = process.env.BRAVE_API_KEY ?? "";  // Session token
+const BRAVE_BASE_URL = process.env.BRAVE_BASE_URL ?? "https://api.search.brave.com";
 
-BRAVE_API_KEY = os.environ.get("BRAVE_API_KEY", "")  # Session token
-BRAVE_BASE_URL = os.environ.get("BRAVE_BASE_URL", "https://api.search.brave.com")
+const url = new URL("/res/v1/web/search", BRAVE_BASE_URL);
+url.searchParams.set("q", query);
+url.searchParams.set("count", "10");
 
-resp = httpx.get(
-    f"{BRAVE_BASE_URL}/res/v1/web/search",
-    params={"q": query, "count": 10},
-    headers={
-        "Accept": "application/json",
-        "X-Subscription-Token": BRAVE_API_KEY,  # Proxy swaps this for real key
-    },
-)
+const resp = await fetch(url, {
+  headers: {
+    "Accept": "application/json",
+    "X-Subscription-Token": BRAVE_API_KEY,  // Proxy swaps this for real key
+  },
+});
+
+const data = await resp.json();
 ```
 
 ## What Happens at Runtime

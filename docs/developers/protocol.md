@@ -56,14 +56,13 @@ Platform → stdin: {"type": "shutdown"}                                    ← 
 
 | Type | Fields | Description |
 |------|--------|-------------|
-| `message` | `content`, `message_id` | User's question or task |
+| `message` | `content`, `message_id` (optional) | User's question or task. The runner auto-generates a `message_id` if omitted. |
 | `shutdown` | — | Clean up and exit |
-| `workspace_patch` | `patch`, `agent` | Sent by the CLI on shutdown when the agent modified workspace files |
 
 ```json
 {"type": "message", "content": "User's question", "message_id": "msg_001"}
+{"type": "message", "content": "Another question"}
 {"type": "shutdown"}
-{"type": "workspace_patch", "patch": "diff --git a/...", "agent": "agent-name"}
 ```
 
 ### Outbound (stdout — agent → platform)
@@ -72,15 +71,19 @@ Platform → stdin: {"type": "shutdown"}                                    ← 
 |------|--------|-------------|
 | `ready` | — | Agent is initialized and ready for messages |
 | `response` | `content`, `message_id`, `done` | Answer (partial or final) |
-| `activity` | `tool`, `description`, `message_id` | Progress indicator shown in UI |
-| `error` | `error`, `message_id` | Error report |
+| `activity` | `tool`, `description`, `message_id` (optional) | Progress indicator shown in UI |
+| `error` | `error`, `message_id`, `stderr` (optional) | Error report. `stderr` contains the last 2000 chars of agent stderr. |
+| `workspace_patch` | `patch`, `agent` | Sent by the runner (host-side) when the agent modified workspace files on shutdown |
 
 ```json
 {"type": "ready"}
 {"type": "response", "content": "Answer text", "message_id": "msg_001", "done": true}
 {"type": "response", "content": "Partial...", "message_id": "msg_001", "done": false}
 {"type": "activity", "tool": "web_search", "description": "Searching...", "message_id": "msg_001"}
+{"type": "activity", "tool": "thinking", "description": "Analyzing..."}
 {"type": "error", "error": "Something went wrong", "message_id": "msg_001"}
+{"type": "error", "error": "Process crashed", "message_id": "msg_001", "stderr": "Error: Cannot find module..."}
+{"type": "workspace_patch", "patch": "diff --git a/...", "agent": "agent-name"}
 ```
 
 ## Rules
@@ -88,7 +91,7 @@ Platform → stdin: {"type": "shutdown"}                                    ← 
 - Every message response chain must end with `{"type": "response", ..., "done": true}`
 - Use `activity` messages to show progress (tool usage, loading indicators)
 - Print debug logs to **stderr** — stdout is reserved for the protocol
-- Use `python -u` (unbuffered) or `flush=True` to avoid stdout buffering
+- Ensure stdout is unbuffered or flushed after each write (e.g., in Node.js `process.stdout.write()` flushes automatically)
 - The `message_id` ties responses back to the question that prompted them
 
 ## Language Agnostic

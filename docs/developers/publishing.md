@@ -15,10 +15,10 @@ Share your agent so anyone can discover and run it with `primordial search`.
 ```
 my-agent/
 ├── agent.yaml
-├── requirements.txt       # or package.json, Cargo.toml, etc.
+├── package.json           # or requirements.txt, Cargo.toml, etc.
 ├── README.md
 └── src/
-    └── agent.py
+    └── agent.mjs
 ```
 
 ### 2. Add the `primordial-agent` topic
@@ -65,13 +65,13 @@ Your agent should appear in the list.
 
 Before publishing, verify your `agent.yaml`:
 
-- [ ] `name` — lowercase, hyphens only, 3-40 chars
-- [ ] `display_name` — human-readable
+- [ ] `name` — lowercase, hyphens only, 3-40 chars, must not end with a hyphen
+- [ ] `display_name` — human-readable (max 80 characters)
 - [ ] `version` — semver (e.g., `0.1.0`)
-- [ ] `description` — clear, concise. Write for humans AND AI callers (other agents read this for delegation)
+- [ ] `description` — clear, concise, max 500 characters. Write for humans AND AI callers (other agents read this for delegation)
 - [ ] `author.name` and `author.github` — your identity
-- [ ] `runtime.run_command` — the entrypoint. Use `python -u` for Python (unbuffered stdout)
-- [ ] `runtime.setup_command` — dependency installation (e.g., `pip install -r requirements.txt`)
+- [ ] `runtime.run_command` — the entrypoint (e.g., `node src/agent.mjs`; for Python use `python -u` for unbuffered stdout)
+- [ ] `runtime.setup_command` — dependency installation (e.g., `npm install`; or `pip install -r requirements.txt` for Python)
 - [ ] `keys` — every API key the agent needs, with correct `provider`
 - [ ] `permissions.network` — every domain, with a clear `reason`
 - [ ] `permissions.filesystem.workspace` — minimum needed (`readonly` if possible)
@@ -97,25 +97,25 @@ Complete every item before publishing. Each section links to the relevant doc fo
 ### Manifest (`agent.yaml`)
 
 - [ ] File exists at **repo root**
-- [ ] `name` — lowercase + hyphens only, 3–40 chars, matches `^[a-z][a-z0-9-]*$`
-- [ ] `display_name` — human-readable name
+- [ ] `name` — lowercase + hyphens only, 3–40 chars, must not end with a hyphen, matches `^[a-z][a-z0-9-]*[a-z0-9]$`
+- [ ] `display_name` — human-readable name (max 80 characters)
 - [ ] `version` — valid semver (e.g., `0.1.0`)
-- [ ] `description` — clear and informative (written for humans AND AI callers)
+- [ ] `description` — clear and informative, max 500 characters (written for humans AND AI callers)
 - [ ] `author.name` filled in (and ideally `author.github`)
 
 See [Manifest Reference](manifest.md) for the full field reference.
 
 ### Runtime
 
-- [ ] `runtime.run_command` set — uses `python -u` for Python (unbuffered stdout is **required**)
-- [ ] `runtime.setup_command` installs all deps (e.g., `pip install -r requirements.txt`)
-- [ ] `runtime.dependencies` points to an existing file (`requirements.txt`, `package.json`, etc.)
+- [ ] `runtime.run_command` set (e.g., `node src/agent.mjs`; for Python use `python -u` — unbuffered stdout is **required**)
+- [ ] `runtime.setup_command` installs all deps (e.g., `npm install`; or `pip install -r requirements.txt` for Python)
+- [ ] `runtime.dependencies` points to an existing file (`package.json`, `requirements.txt`, etc.)
 - [ ] `runtime.resources` — memory/CPU limits are reasonable (defaults: 2GB / 2 CPU)
 
 ### API Keys
 
 - [ ] Every API key declared in `keys` with `provider`, `domain`, and `auth_style`
-- [ ] `provider` matches `^[a-z][a-z0-9-]*$` (no underscores)
+- [ ] `provider` matches `^[a-z][a-z0-9-]*[a-z0-9]$` (no underscores)
 - [ ] `domain` is a valid FQDN (not an IP address or `localhost`)
 - [ ] `auth_style` is correct for each API (`bearer`, `x-api-key`, or `x-subscription-token`)
 - [ ] `env_var` / `base_url_env` don't collide with protected system variables (`PATH`, `HOME`, `SHELL`, etc.)

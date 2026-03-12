@@ -50,8 +50,8 @@ author:
 
 runtime:
   language: node                  # python, node, javascript, typescript, ruby, go, rust, java, bash, sh
-  run_command: node bundle.mjs 2>/dev/null || node src/agent.js
-  setup_command: test -f bundle.mjs || npm install
+  run_command: node src/agent.mjs
+  setup_command: npm install
   dependencies: package.json
   default_provider: anthropic
   resources:
@@ -158,7 +158,7 @@ Use `network_unrestricted: true` only if absolutely necessary — it requires us
 
 | Field | Rule |
 |-------|------|
-| `name` | 3-40 chars, `^[a-z][a-z0-9-]*$` |
+| `name` | 3-40 chars, `^[a-z][a-z0-9-]*[a-z0-9]$` |
 | `provider` | `^[a-z][a-z0-9-]*$` — no underscores |
 | `env_var` | `^[A-Z][A-Z0-9_]*$` — cannot be a protected name |
 | `base_url_env` | `^[A-Z][A-Z0-9_]*$` — cannot be a protected name |
@@ -322,7 +322,7 @@ for line in sys.stdin:
         send({"type": "response", "content": f"You said: {msg['content']}", "message_id": mid, "done": True})
 ```
 
-**Manifest for Python:**
+**Manifest for Python (alternative):**
 
 ```yaml
 runtime:
@@ -446,7 +446,7 @@ rl.on("line", async (line) => {
 {
   "type": "module",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39"
+    "@anthropic-ai/sdk": "^0.78"
   }
 }
 ```
@@ -475,7 +475,7 @@ Add a build script to `package.json`:
 }
 ```
 
-Commit `bundle.mjs` to your repo. The manifest's `setup_command: test -f bundle.mjs || npm install` will skip the install when the bundle exists.
+Commit `bundle.mjs` to your repo. Update your manifest to use `run_command: node bundle.mjs` and `setup_command: test -f bundle.mjs || npm install` to skip the install when the bundle exists.
 
 | Approach | Setup Time |
 |----------|-----------|
@@ -601,6 +601,32 @@ See [Delegation docs](delegation.md) for the streaming API and full reference.
 
 Any CLI tool becomes an agent with a thin bridge:
 
+```javascript
+import { createInterface } from "readline";
+import { execSync } from "child_process";
+
+function send(msg) {
+  process.stdout.write(JSON.stringify(msg) + "\n");
+}
+
+send({ type: "ready" });
+
+const rl = createInterface({ input: process.stdin, terminal: false });
+
+rl.on("line", (line) => {
+  const msg = JSON.parse(line.trim());
+  if (msg.type === "shutdown") { rl.close(); return; }
+  if (msg.type === "message") {
+    const result = execSync(`some-cli-tool --message "${msg.content}"`, {
+      encoding: "utf-8", timeout: 280000,
+    }).trim();
+    send({ type: "response", content: result, message_id: msg.message_id, done: true });
+  }
+});
+```
+
+**Python alternative:**
+
 ```python
 import json, subprocess, sys
 
@@ -665,11 +691,11 @@ See [Publishing docs](publishing.md) for the full developer checklist.
 
 ### Manifest
 - [ ] `agent.yaml` has `name`, `display_name`, `version`, `description`, `author`
-- [ ] `name` — lowercase + hyphens only, 3-40 chars, matches `^[a-z][a-z0-9-]*$`
+- [ ] `name` — lowercase + hyphens only, 3-40 chars, matches `^[a-z][a-z0-9-]*[a-z0-9]$`
 - [ ] `description` — clear and informative (written for humans AND AI callers)
 
 ### Runtime
-- [ ] `run_command` set — uses `node bundle.mjs 2>/dev/null || node src/agent.js` for Node.js, `python -u src/agent.py` for Python
+- [ ] `run_command` set (required) — uses `node src/agent.mjs` for Node.js, `python -u src/agent.py` for Python
 - [ ] `setup_command` installs all dependencies
 - [ ] `bundle.mjs` committed to repo for fastest setup (Node.js)
 

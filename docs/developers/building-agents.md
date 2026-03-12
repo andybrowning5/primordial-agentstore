@@ -11,49 +11,14 @@ Every agent needs two files at minimum:
 ```
 my-agent/
 ├── agent.yaml          # Manifest — identity, runtime, permissions
+├── package.json        # Dependencies
 └── src/
-    └── agent.py        # Your agent code (or any entrypoint)
-```
-
-## Python Example
-
-No SDK needed — just speak the protocol directly:
-
-```python
-import json
-import sys
-
-def send(msg):
-    sys.stdout.write(json.dumps(msg) + "\n")
-    sys.stdout.flush()
-
-send({"type": "ready"})
-
-for line in sys.stdin:
-    line = line.strip()
-    if not line:
-        continue
-    msg = json.loads(line)
-
-    if msg["type"] == "shutdown":
-        break
-
-    if msg["type"] == "message":
-        mid = msg["message_id"]
-
-        # Show progress
-        send({"type": "activity", "tool": "thinking", "description": "Processing...", "message_id": mid})
-
-        # Stream partial responses
-        send({"type": "response", "content": "Working on it...", "message_id": mid, "done": False})
-
-        # Final response
-        send({"type": "response", "content": f"You said: {msg['content']}", "message_id": mid, "done": True})
+    └── agent.mjs       # Your agent code (or any entrypoint)
 ```
 
 ## Node.js Example
 
-Node.js agents have significantly faster setup times than Python — `npm install` is typically 2-3x faster than `pip install`, and with esbuild bundling you can eliminate the install step entirely (0.2s vs 2-5s for pip).
+No SDK needed — just speak the protocol directly. Node.js agents have significantly faster setup times than Python — `npm install` is typically 2-3x faster than `pip install`, and with esbuild bundling you can eliminate the install step entirely (0.2s vs 2-5s for pip).
 
 ```javascript
 import { createInterface } from "readline";
@@ -89,8 +54,8 @@ Manifest for a Node.js agent:
 ```yaml
 runtime:
   language: node
-  run_command: node bundle.mjs 2>/dev/null || node src/agent.js
-  setup_command: test -f bundle.mjs || npm install
+  run_command: node src/agent.mjs
+  setup_command: npm install
   dependencies: package.json
 ```
 
@@ -128,16 +93,78 @@ Commit `bundle.mjs` to your repo. The manifest's `setup_command: test -f bundle.
 
 All languages are fully supported — Python, Node.js, Go, Rust, or anything that runs on Linux. But if setup speed matters (especially for agents spawned as sub-agents by an orchestrator), Node.js with esbuild is the fastest path.
 
+## Or in Python:
+
+No SDK needed — just speak the protocol directly:
+
+```python
+import json
+import sys
+
+def send(msg):
+    sys.stdout.write(json.dumps(msg) + "\n")
+    sys.stdout.flush()
+
+send({"type": "ready"})
+
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    msg = json.loads(line)
+
+    if msg["type"] == "shutdown":
+        break
+
+    if msg["type"] == "message":
+        mid = msg["message_id"]
+
+        # Show progress
+        send({"type": "activity", "tool": "thinking", "description": "Processing...", "message_id": mid})
+
+        # Stream partial responses
+        send({"type": "response", "content": "Working on it...", "message_id": mid, "done": False})
+
+        # Final response
+        send({"type": "response", "content": f"You said: {msg['content']}", "message_id": mid, "done": True})
+```
+
+Python manifest:
+
+```yaml
+runtime:
+  language: python
+  run_command: python -u src/agent.py
+  setup_command: pip install -r requirements.txt
+  dependencies: requirements.txt
+```
+
 ## Persistence
 
 Certain subdirectories of `/home/user/` are saved between sessions — `workspace/`, `data/`, `output/`, and `state/`. Write files, SQLite databases, config files to these directories and they'll be there next time the user resumes.
 
 Users can maintain **multiple sessions** per agent. Each session gets its own isolated filesystem snapshot.
 
+```javascript
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
+
+// Check if we already registered with an external service
+const idFile = "/home/user/data/user_id.txt";
+let userId;
+if (existsSync(idFile)) {
+  userId = readFileSync(idFile, "utf-8").trim();
+} else {
+  userId = registerWithService();
+  mkdirSync("/home/user/data", { recursive: true });
+  writeFileSync(idFile, userId);
+}
+```
+
+Or in Python:
+
 ```python
 from pathlib import Path
 
-# Check if we already registered with an external service
 id_file = Path("/home/user/data/user_id.txt")
 if id_file.exists():
     user_id = id_file.read_text().strip()
@@ -165,6 +192,36 @@ Everything else (dotfiles, `.config/`, `.local/`, `.ssh/`) is excluded for secur
 ## Wrapping CLI Tools
 
 Any CLI tool becomes an agent with a thin bridge:
+
+```javascript
+import { createInterface } from "readline";
+import { execFileSync } from "child_process";
+
+function send(msg) {
+  process.stdout.write(JSON.stringify(msg) + "\n");
+}
+
+send({ type: "ready" });
+
+const rl = createInterface({ input: process.stdin, terminal: false });
+
+rl.on("line", (line) => {
+  line = line.trim();
+  if (!line) return;
+  const msg = JSON.parse(line);
+
+  if (msg.type === "shutdown") { rl.close(); return; }
+
+  if (msg.type === "message") {
+    const result = execFileSync("some-cli-tool", ["--message", msg.content], {
+      encoding: "utf-8", timeout: 280000,
+    });
+    send({ type: "response", content: result.trim(), message_id: msg.message_id, done: true });
+  }
+});
+```
+
+Or in Python:
 
 ```python
 import json, subprocess, sys
