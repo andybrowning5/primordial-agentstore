@@ -34,7 +34,7 @@ https://github.com/user-attachments/assets/d5315a85-5ee8-410f-977b-3927207ade38
 ## Running Primordial Agents From Claude Code
 In this demo, Claude Code delegates a task to a Primordial agent that checks codebases for documentation drift against the source code. The agent is sourced from the Primordial AgentStore and runs against the git repo rooted in the directory it's called from. See the Workspace Isolation docs for more on how Primordial agents access your codebase.
 
-https://github.com/user-attachments/assets/60934ffe-1a1c-4afc-b156-8f56e1e7a0ce
+https://github.com/user-attachments/assets/16a0c9f5-38d8-4542-97fb-5b0d795ec48a
 
 ---
 
