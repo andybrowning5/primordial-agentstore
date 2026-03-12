@@ -5,7 +5,7 @@ An open-source marketplace for AI agents. Just as life evolved from single cells
 **→ [Get started](docs/users/getting-started.md)**
 
 #### Run any AI agent safely in seconds
-Pick an agent, approve its permissions, it's live — running in a cloud sandbox, not on your machine. Your API keys never touch the agent code. No Docker, no config, no trust required.
+Pick an agent, approve its permissions, it's live — running in a cloud sandbox, not on your machine. Your API keys never touch the agent code.
 
 #### Build an agent in any language, zero SDK
 NDJSON over stdin/stdout. That's the whole protocol. Python, Node, Go, Rust — if it reads stdin and writes stdout, it's a Primordial agent. Push to GitHub, tag it, and anyone in the world can run it. 50 lines of code, one YAML manifest.
