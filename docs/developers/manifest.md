@@ -92,9 +92,8 @@ Each entry declares an API key the agent needs. Keys are injected as environment
 | `provider` | string | yes | — | Provider name. Lowercase letters, numbers, hyphens. |
 | `env_var` | string | no | `<PROVIDER>_API_KEY` | Env var name for the session token |
 | `required` | bool | no | `true` | Whether this key must be present |
-| `domain` | string | yes* | — | API domain for the proxy to connect to. *Not required when `passthrough` is true. |
+| `domain` | string | yes | — | API domain for the proxy to connect to. |
 | `auth_style` | string | no | `"bearer"` | How the proxy sends the key upstream. One of: `bearer`, `x-api-key`, `x-subscription-token`. |
-| `passthrough` | bool | no | `false` | When true, the real API key is passed directly as an env var, bypassing the security proxy. Use for keys without an HTTP API domain. |
 | `base_url_env` | string | no | `<PROVIDER>_BASE_URL` | Env var for the proxy's localhost URL |
 
 Every provider declares its `domain` and `auth_style` explicitly. See [Setting Up APIs](api-setup.md) for examples.

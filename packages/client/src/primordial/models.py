@@ -235,7 +235,6 @@ class KeyRequirement(BaseModel):
     domain: str = ""                     # API domain, e.g. "api.anthropic.com"
     auth_style: str = "bearer"           # "bearer" or "x-api-key"
     base_url_env: Optional[str] = None   # env var for base URL override
-    passthrough: bool = False            # pass directly to agent env, skip proxy
 
     @field_validator("provider")
     @classmethod
@@ -260,7 +259,7 @@ class KeyRequirement(BaseModel):
     @classmethod
     def validate_domain(cls, v: str) -> str:
         if not v:
-            return v  # empty domain allowed for passthrough keys
+            raise ValueError("domain is required — specify the upstream API host (e.g. 'api.example.com')")
         if not _DOMAIN_RE.match(v):
             raise ValueError(
                 f"Invalid domain: {v!r} — must be a fully qualified domain name "
@@ -278,11 +277,6 @@ class KeyRequirement(BaseModel):
             raise ValueError(f"Invalid base_url_env: {v!r} — try: {suggestion!r} (must be UPPER_SNAKE_CASE)")
         if v is not None and v in _PROTECTED_ENV_VARS:
             raise ValueError(f"base_url_env {v!r} is a protected system variable — choose a different name")
-        return v
-
-    @field_validator("passthrough")
-    @classmethod
-    def validate_passthrough(cls, v: bool) -> bool:
         return v
 
     @field_validator("auth_style")

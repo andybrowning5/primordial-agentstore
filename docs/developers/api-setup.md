@@ -69,7 +69,7 @@ The `auth_style` field tells the proxy which HTTP header to use for authenticati
 | `x-api-key` | `x-api-key: <key>` | Anthropic |
 | `x-subscription-token` | `X-Subscription-Token: <key>` | Brave Search |
 
-These are the only supported values. If your API uses a different auth header, use `passthrough: true` in your key entry to bypass the proxy entirely (see [Manifest Reference](manifest.md)).
+These are the only supported values. If your API uses a different auth header, please open an issue to request support.
 
 ## Example: Brave Search Agent
 

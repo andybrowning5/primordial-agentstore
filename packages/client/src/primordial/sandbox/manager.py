@@ -217,8 +217,6 @@ class SandboxManager:
         port = 9001
 
         for key_req in manifest.keys:
-            if key_req.passthrough:
-                continue  # passthrough keys bypass proxy entirely
             env_name = key_req.resolved_env_var()
             real_key = env_vars.get(env_name)
             if not real_key:

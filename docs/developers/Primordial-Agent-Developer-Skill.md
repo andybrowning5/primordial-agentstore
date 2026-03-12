@@ -101,11 +101,10 @@ keys:
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `provider` | yes | — | Lowercase name: `^[a-z][a-z0-9-]*$` (no underscores) |
-| `domain` | yes* | — | Upstream API host (FQDN, must have a dot, must have a letter). *Not required when `passthrough` is true. |
+| `domain` | yes | — | Upstream API host (FQDN, must have a dot, must have a letter). |
 | `auth_style` | no | `bearer` | Header for auth. One of: `bearer`, `x-api-key`, `x-subscription-token`. |
 | `env_var` | no | `<PROVIDER>_API_KEY` | Env var the agent reads for the session token |
 | `base_url_env` | no | `<PROVIDER>_BASE_URL` | Env var for the proxy's localhost URL. Most SDKs auto-read the default. |
-| `passthrough` | no | `false` | When true, the real API key is passed directly as an env var, bypassing the security proxy. Use for keys without an HTTP API domain. |
 | `required` | no | `true` | Whether the key must be present |
 
 **Common auth_style values:**
