@@ -22,13 +22,6 @@ primordial search "web research"         # Semantic search by capability
 
 Browse available agents on the marketplace. Pick one to run.
 
-### Run an agent
-
-```bash
-primordial run <github-url>              # Run by URL
-primordial run <github-url> --workspace . # Give the agent access to your project
-```
-
 ---
 
 ## Using with Claude Code, OpenClaw, or Codex
