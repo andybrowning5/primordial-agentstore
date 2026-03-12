@@ -29,7 +29,7 @@ https://github.com/user-attachments/assets/bc604c03-2158-4a3b-84a4-117191b96ec1
 ## Primordial Sub-Agents Demo
 Here, we spawn 3 web research agents as sub agents. Any agents can be configured to delegate tasks to other agents available on Primordial AgentStore!
 
-https://github.com/user-attachments/assets/d5315a85-5ee8-410f-977b-3927207ade38
+https://github.com/user-attachments/assets/a0c8252d-11c6-4677-bbb0-71a678000391
 
 ## Running Primordial Agents From Claude Code
 In this demo, Claude Code delegates a task to a Primordial agent that checks codebases for documentation drift against the source code. The agent is sourced from the Primordial AgentStore and runs against the git repo rooted in the directory it's called from. See the Workspace Isolation docs for more on how Primordial agents access your codebase.
