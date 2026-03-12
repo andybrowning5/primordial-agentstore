@@ -10,7 +10,7 @@ Pick an agent, approve its permissions, it's live — running in a cloud sandbox
 #### Build an agent in any language, zero SDK
 NDJSON over stdin/stdout. That's the whole protocol. Python, Node, Go, Rust — if it reads stdin and writes stdout, it's a Primordial agent. Push to GitHub, tag it, and anyone in the world can run it. 50 lines of code, one YAML manifest.
 
-#### Plug thousands of specialist agents into Claude Code
+#### Plug a growing ecosystem of specialist agents into Claude Code
 One integration, instant access to a growing ecosystem of purpose-built agents. Claude Code discovers and runs them on its own — web research, data analysis, code generation, whatever you need. Every agent runs sandboxed in the cloud. Install Primordial, and Claude Code can use any of them.
 
 > [!NOTE]
