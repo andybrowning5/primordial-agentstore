@@ -139,8 +139,11 @@ async def run_agent(url: str, message: str, workspace: str = "") -> dict:
     tier, findings = assess_manifest_trust(manifest, KNOWN_PROVIDERS)
 
     if tier == TrustTier.AUTO:
-        session_id = await _start_agent(manifest, agent_dir, message, workspace)
-        return {"status": "running", "session_id": session_id}
+        session_id, first_response = await _start_agent(manifest, agent_dir, message, workspace)
+        result = {"status": "running", "session_id": session_id}
+        if first_response:
+            result["response"] = first_response
+        return result
 
     # REQUIRES_APPROVAL — park and return findings
     pending_id = secrets.token_hex(8)
@@ -172,10 +175,13 @@ async def approve_agent(pending_id: str, approved: bool) -> dict:
         return {"status": "rejected"}
     try:
         _, agent_dir = _resolve_manifest(entry.url)
-        session_id = await _start_agent(entry.manifest, agent_dir, entry.message, entry.workspace)
+        session_id, first_response = await _start_agent(entry.manifest, agent_dir, entry.message, entry.workspace)
     except Exception as e:
         return {"error": f"Failed to start agent: {e}"}
-    return {"status": "running", "session_id": session_id}
+    result = {"status": "running", "session_id": session_id}
+    if first_response:
+        result["response"] = first_response
+    return result
 
 
 @mcp.tool
@@ -189,12 +195,12 @@ async def send_message(session_id: str, message: str) -> str:
         return f"Error: session {session_id!r} not found"
     msg_id = secrets.token_hex(8)
     session.send_message(message, msg_id)
-    # Drain messages until we get the response matching our message_id
+    # Drain activity/log events until we get the final result or error
     while True:
         reply = session.receive(timeout=600.0)
         if reply is None:
             return "Error: agent timed out"
-        if reply.get("message_id") == msg_id or reply.get("type") in ("result", "error"):
+        if reply.get("type") in ("result", "error", "response"):
             return reply.get("content") or reply.get("message") or str(reply)
 
 
@@ -225,8 +231,11 @@ async def stop_agent(session_id: str) -> dict:
     return result
 
 
-async def _start_agent(manifest, agent_dir: Path, message: str, workspace: str) -> str:
-    """Internal: start the sandbox, send first message, return session_id."""
+async def _start_agent(manifest, agent_dir: Path, message: str, workspace: str) -> tuple[str, Optional[str]]:
+    """Internal: start the sandbox, send first message, wait for first response.
+
+    Returns (session_id, first_response). first_response is None if no message was given.
+    """
     from primordial.config import get_config
     from primordial.security.key_vault import KeyVault
 
@@ -253,8 +262,17 @@ async def _start_agent(manifest, agent_dir: Path, message: str, workspace: str) 
     session._session_id = session_id
     _sessions[session_id] = session
 
+    first_response: Optional[str] = None
     if message:
         msg_id = secrets.token_hex(8)
         session.send_message(message, msg_id)
+        # Drain activity/log events until we get the final result or error
+        while True:
+            reply = session.receive(timeout=600.0)
+            if reply is None:
+                break
+            if reply.get("type") in ("result", "error", "response"):
+                first_response = reply.get("content") or reply.get("message") or str(reply)
+                break
 
-    return session_id
+    return session_id, first_response
