@@ -9,9 +9,10 @@ from rich.console import Console
 console = Console()
 
 _HOST_CONFIGS: dict[str, Path] = {
-    "claude":   Path.home() / ".claude.json",
-    "cursor":   Path.home() / ".cursor" / "mcp.json",
-    "windsurf": Path.home() / ".codeium" / "windsurf" / "mcp_config.json",
+    "claude":         Path.home() / ".claude.json",
+    "claude-desktop": Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json",
+    "cursor":         Path.home() / ".cursor" / "mcp.json",
+    "windsurf":       Path.home() / ".codeium" / "windsurf" / "mcp_config.json",
 }
 
 def _mcp_entry() -> dict:
@@ -46,7 +47,7 @@ def serve(http: bool):
 
 
 @mcp.command(name="install")
-@click.option("--host", type=click.Choice(["claude", "cursor", "windsurf"]),
+@click.option("--host", type=click.Choice(["claude", "claude-desktop", "cursor", "windsurf"]),
               default=None, help="Target a specific host. Auto-detects if omitted.")
 def install(host: str | None):
     """Register Primordial as an MCP server in your AI coding host's config.
@@ -56,14 +57,15 @@ def install(host: str | None):
 
     \b
     Hosts and config files:
-      claude    → ~/.claude.json
-      cursor    → ~/.cursor/mcp.json
-      windsurf  → ~/.codeium/windsurf/mcp_config.json
+      claude         → ~/.claude.json
+      claude-desktop → ~/Library/Application Support/Claude/claude_desktop_config.json
+      cursor         → ~/.cursor/mcp.json
+      windsurf       → ~/.codeium/windsurf/mcp_config.json
 
     \b
     Examples:
       primordial mcp install
-      primordial mcp install --host claude
+      primordial mcp install --host claude-desktop
     """
     if host:
         targets = [(host, _HOST_CONFIGS[host])]
@@ -83,7 +85,7 @@ def install(host: str | None):
 
 
 def _detect_hosts() -> list[tuple[str, Path]]:
-    """Auto-detect installed hosts. Claude Code is always included."""
+    """Auto-detect installed hosts. Claude Code CLI is always included."""
     targets = []
     for name, path in _HOST_CONFIGS.items():
         if name == "claude" or path.exists():
