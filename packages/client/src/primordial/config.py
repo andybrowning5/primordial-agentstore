@@ -88,6 +88,13 @@ class AgentStoreConfig:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
+    @property
+    def patches_dir(self) -> Path:
+        """Directory where workspace patches are saved after agent shutdown."""
+        path = self.data_dir / "patches"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
 
 _config: AgentStoreConfig | None = None
 
