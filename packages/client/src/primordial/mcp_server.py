@@ -60,7 +60,18 @@ Standard workflow:
   1. search_agents(query)           — find the right agent for the task
   2. run_agent(url, message)        — spawn it with an initial task description
   3. send_message(session_id, msg)  — send follow-ups as needed
-  4. stop_agent(session_id)         — always call when done to free sandbox resources
+  4. stop_agent(session_id)         — stop the agent and free sandbox resources
+
+IMPORTANT — stopping agents:
+  Never call stop_agent without first asking the user if they are done with
+  the session. The user may want to send more messages or resume later.
+  Only stop when the user explicitly says they are finished.
+
+Resuming sessions:
+  Primordial agents persist state between runs. If the user wants to continue
+  a previous session, pass the session_name to run_agent or use the --session
+  flag via `primordial run`. Use get_session_status(session_id) to check if a
+  session is still alive before resuming.
 
 If run_agent returns status='requires_approval':
   - Show the user each entry in 'findings' (provider + domain).
