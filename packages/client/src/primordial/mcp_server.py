@@ -46,6 +46,7 @@ class _PendingApproval:
     message: str
     workspace: str
     url: str
+    session_name: Optional[str] = None
     created_at: float = field(default_factory=time.monotonic)
 
 
@@ -68,10 +69,11 @@ IMPORTANT — stopping agents:
   Only stop when the user explicitly says they are finished.
 
 Resuming sessions:
-  Primordial agents persist state between runs. If the user wants to continue
-  a previous session, pass the session_name to run_agent or use the --session
-  flag via `primordial run`. Use get_session_status(session_id) to check if a
-  session is still alive before resuming.
+  Primordial agents persist state (memory, conversation history, workspace
+  files) between runs. To resume a previous session:
+  1. Call list_sessions(url) to see available sessions for that agent
+  2. Pass the session_name to run_agent to restore all prior state
+  The agent will remember previous research, facts, and context.
 
 If run_agent returns status='requires_approval':
   - Show the user each entry in 'findings' (provider + domain).
@@ -131,14 +133,35 @@ async def search_agents(query: str) -> list[dict]:
 
 
 @mcp.tool
-async def run_agent(url: str, message: str, workspace: str = "") -> dict:
+async def list_sessions(url: str) -> list[dict]:
+    """
+    List previous sessions for a Primordial agent.
+
+    Returns sessions sorted by most recent first, each with a session_name
+    that can be passed to run_agent to resume state (conversation history,
+    memory, workspace files).
+    """
+    try:
+        manifest, _ = _resolve_manifest(url)
+    except Exception as e:
+        return [{"error": f"Failed to load manifest: {e}"}]
+    from primordial.config import get_config
+    config = get_config()
+    sessions = config.list_sessions(manifest.name)
+    return [{"session_name": s, "agent": manifest.name} for s in sessions]
+
+
+@mcp.tool
+async def run_agent(url: str, message: str, workspace: str = "", session_name: str = "") -> dict:
     """
     Spawn a Primordial agent and send it an initial task message.
 
-    Returns immediately with status='running' and session_id if the agent
-    uses only known providers. Returns status='requires_approval' if any
-    provider is unrecognized — call approve_agent() to proceed after
-    presenting findings to the user.
+    Pass session_name (from list_sessions) to resume a previous session and
+    restore its memory, conversation history, and workspace state.
+
+    Returns status='running' and session_id for known-provider agents.
+    Returns status='requires_approval' for unknown providers — call
+    approve_agent() after presenting findings to the user.
     """
     _expire_pending()
 
@@ -158,7 +181,9 @@ async def run_agent(url: str, message: str, workspace: str = "") -> dict:
     tier, findings = assess_manifest_trust(manifest, KNOWN_PROVIDERS)
 
     if tier == TrustTier.AUTO:
-        session_id, first_response = await _start_agent(manifest, agent_dir, message, workspace)
+        session_id, first_response = await _start_agent(
+            manifest, agent_dir, message, workspace, session_name or None
+        )
         result = {"status": "running", "session_id": session_id}
         if first_response:
             result["response"] = first_response
@@ -171,6 +196,7 @@ async def run_agent(url: str, message: str, workspace: str = "") -> dict:
         message=message,
         workspace=workspace,
         url=url,
+        session_name=session_name or None,
     )
     return {
         "status": "requires_approval",
@@ -194,7 +220,7 @@ async def approve_agent(pending_id: str, approved: bool) -> dict:
         return {"status": "rejected"}
     try:
         _, agent_dir = _resolve_manifest(entry.url)
-        session_id, first_response = await _start_agent(entry.manifest, agent_dir, entry.message, entry.workspace)
+        session_id, first_response = await _start_agent(entry.manifest, agent_dir, entry.message, entry.workspace, entry.session_name)
     except Exception as e:
         return {"error": f"Failed to start agent: {e}"}
     result = {"status": "running", "session_id": session_id}
@@ -250,7 +276,7 @@ async def stop_agent(session_id: str) -> dict:
     return result
 
 
-async def _start_agent(manifest, agent_dir: Path, message: str, workspace: str) -> tuple[str, Optional[str]]:
+async def _start_agent(manifest, agent_dir: Path, message: str, workspace: str, session_name: Optional[str] = None) -> tuple[str, Optional[str]]:
     """Internal: start the sandbox, send first message, wait for first response.
 
     Returns (session_id, first_response). first_response is None if no message was given.
@@ -264,7 +290,7 @@ async def _start_agent(manifest, agent_dir: Path, message: str, workspace: str) 
     allowed_providers = [k.provider for k in manifest.keys] or [manifest.runtime.default_provider]
     allowed_providers.append("e2b")
     env_vars = vault.get_env_vars(providers=allowed_providers)
-    session_name = f"mcp-{secrets.token_hex(6)}"
+    session_name = session_name or f"mcp-{secrets.token_hex(6)}"
     state_dir = config.session_state_dir(manifest.name, session_name)
 
     workspace_path = Path(workspace) if workspace else None
