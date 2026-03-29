@@ -102,8 +102,9 @@ class SandboxManager:
 
         # Auto-allow API domains declared in key requirements.
         for key_req in manifest.keys:
-            if key_req.domain and key_req.domain not in allowed:
-                allowed.append(key_req.domain)
+            resolved = key_req.resolved_domain
+            if resolved and resolved not in allowed:
+                allowed.append(resolved)
 
         if allowed:
             return {"network": {"deny_out": ["0.0.0.0/0"], "allow_out": allowed}}
@@ -222,8 +223,8 @@ class SandboxManager:
             if not real_key:
                 continue
 
-            domain = key_req.domain
-            auth_style = key_req.auth_style
+            domain = key_req.resolved_domain
+            auth_style = key_req.resolved_auth_style
             base_url_env = key_req.base_url_env or f"{key_req.provider.upper().replace('-', '_')}_BASE_URL"
 
             if base_url_env in _PROTECTED_ENV_VARS:
@@ -692,6 +693,7 @@ class AgentSession:
         self._workspace_uploaded = workspace_uploaded
         self._workspace_readonly = workspace_readonly
         self._alive = True
+        self._session_id: Optional[str] = None
 
         # Drive the event loop in a background thread — this is what
         # delivers stdout/stderr data from the E2B command handle.
@@ -766,6 +768,14 @@ class AgentSession:
                     patch = self._manager._extract_workspace_patch(self._sandbox)
                 except Exception as e:
                     logger.warning("Failed to extract workspace patch: %s", e)
+
+            if patch and self._session_id:
+                try:
+                    from primordial.config import get_config
+                    _patch_path = get_config().patches_dir / f"{self._session_id}.patch"
+                    _patch_path.write_bytes(patch)
+                except Exception as _e:
+                    logger.warning("Failed to save workspace patch: %s", _e)
         except Exception:
             pass
         finally:

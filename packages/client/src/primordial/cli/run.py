@@ -243,6 +243,18 @@ def run(
     for line in format_permissions_for_display(manifest, stored_providers=stored_providers):
         console.print(f"  {line}")
     console.print()
+
+    from primordial.known_providers import KNOWN_PROVIDERS as _KNOWN_PROVIDERS
+    _unknown = [k for k in manifest.keys if k.provider not in _KNOWN_PROVIDERS]
+    if _unknown:
+        console.print("[yellow]⚠  Non-whitelisted providers[/yellow]")
+        for _kp in _unknown:
+            console.print(
+                f"  [dim]- {_kp.provider}: {_kp.resolved_domain}[/dim] "
+                f"[yellow](not in known provider list)[/yellow]"
+            )
+        console.print()
+
     if auto_approve:
         pass  # Skip approval prompt entirely
     elif agent_mode:

@@ -232,8 +232,8 @@ class KeyRequirement(BaseModel):
     provider: str
     env_var: Optional[str] = None  # auto-derived as <PROVIDER>_API_KEY if omitted
     required: bool = True
-    domain: str = ""                     # API domain, e.g. "api.anthropic.com"
-    auth_style: str = "bearer"           # "bearer" or "x-api-key"
+    domain: Optional[str] = None         # API domain — omit for known providers
+    auth_style: Optional[str] = None     # omit for known providers; "bearer", "x-api-key", "x-subscription-token"
     base_url_env: Optional[str] = None   # env var for base URL override
 
     @field_validator("provider")
@@ -257,9 +257,9 @@ class KeyRequirement(BaseModel):
 
     @field_validator("domain")
     @classmethod
-    def validate_domain(cls, v: str) -> str:
-        if not v:
-            raise ValueError("domain is required — specify the upstream API host (e.g. 'api.example.com')")
+    def validate_domain(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
         if not _DOMAIN_RE.match(v):
             raise ValueError(
                 f"Invalid domain: {v!r} — must be a fully qualified domain name "
@@ -281,7 +281,9 @@ class KeyRequirement(BaseModel):
 
     @field_validator("auth_style")
     @classmethod
-    def validate_auth_style(cls, v: str) -> str:
+    def validate_auth_style(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
         v = v.lower()
         if v not in _VALID_AUTH_STYLES:
             allowed = ", ".join(sorted(_VALID_AUTH_STYLES))
@@ -290,8 +292,44 @@ class KeyRequirement(BaseModel):
             )
         return v
 
+    @model_validator(mode='after')
+    def validate_against_known_providers(self) -> 'KeyRequirement':
+        from primordial.known_providers import KNOWN_PROVIDERS
+        is_known = self.provider in KNOWN_PROVIDERS
+        if is_known:
+            if self.domain is not None:
+                raise ValueError(
+                    f"'{self.provider}' is a known provider — remove 'domain' from your manifest "
+                    f"(canonical domain: {KNOWN_PROVIDERS[self.provider]['domain']})"
+                )
+            if self.auth_style is not None:
+                raise ValueError(
+                    f"'{self.provider}' is a known provider — remove 'auth_style' from your manifest"
+                )
+        else:
+            if not self.domain:
+                raise ValueError(
+                    f"'{self.provider}' is not a known provider — 'domain' is required "
+                    f"(e.g. domain: api.{self.provider}.com)"
+                )
+        return self
+
     def resolved_env_var(self) -> str:
         return self.env_var or f"{self.provider.upper().replace('-', '_')}_API_KEY"
+
+    @property
+    def resolved_domain(self) -> str:
+        from primordial.known_providers import KNOWN_PROVIDERS
+        if self.provider in KNOWN_PROVIDERS:
+            return KNOWN_PROVIDERS[self.provider]["domain"]
+        return self.domain or ""
+
+    @property
+    def resolved_auth_style(self) -> str:
+        from primordial.known_providers import KNOWN_PROVIDERS
+        if self.provider in KNOWN_PROVIDERS:
+            return KNOWN_PROVIDERS[self.provider]["auth_style"]
+        return self.auth_style or "bearer"
 
 
 class AgentManifest(BaseModel):
