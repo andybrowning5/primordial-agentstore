@@ -1,75 +1,94 @@
-# Background Service
+# MCP Server
 
-When Claude Code or OpenClaw uses Primordial, they talk to a small background service running on your machine. It manages agent sandboxes so you don't have to.
+Primordial integrates with AI coding hosts (Claude Code, Cursor, Windsurf, OpenClaw, Codex) via a Model Context Protocol (MCP) server. The host spawns the MCP server as a subprocess and communicates via stdio — no background daemon, no ports to manage.
 
 ## What it does
 
-- Listens on `localhost:19400` — only your machine can reach it
+- Exposes 7 tools to the host LLM: `search_agents`, `list_sessions`, `run_agent`, `approve_agent`, `send_message`, `get_session_status`, `stop_agent`
 - Starts and stops agent sandboxes on demand
-- Handles API key injection so agents never see your raw keys
-- Authenticates requests with a token file so other processes can't use it
+- Handles API key injection so agents never see your real keys
+- Validates agent URLs for safety before fetching manifests (HTTPS-only, no private IPs)
+- Presents an approval prompt for agents using unrecognized API providers
 
-## How it gets installed
-
-When you run `primordial install`, it sets up the service to start automatically on login using macOS launchd. You may see a prompt to install **Xcode Command Line Tools** — agree to install them if asked.
-
-After install, the service runs in the background. You don't need to start it manually.
-
-## Files on your machine
-
-| File | Purpose |
-|------|---------|
-| `~/Library/LaunchAgents/com.primordial.daemon.plist` | Tells macOS to start the service on login and restart it if it crashes |
-| `~/.local/bin/primordial` | Wrapper script that unlocks your key vault before running commands |
-| `~/.primordial-password` | Your vault encryption password (auto-generated, never leave your machine) |
-| `~/.primordial-daemon-token` | Auth token for the current session (regenerated each time it starts) |
-| `/tmp/primordial-daemon.log` | Service log output |
-
-All sensitive files (`-password`, `-daemon-token`) are readable only by your user account.
-
-## Checking if it's running
+## Installing
 
 ```bash
-curl -s http://localhost:19400/health
+primordial mcp install
 ```
 
-If you get back `{"ok": true, ...}`, it's running. If the connection is refused, it's not.
+This writes the MCP server entry to any detected host config files. Safe to run multiple times (idempotent).
 
-## Restarting the service
+To target a specific host:
 
 ```bash
-primordial restart
+primordial mcp install --host claude          # ~/.claude.json
+primordial mcp install --host claude-desktop  # ~/Library/Application Support/Claude/...
+primordial mcp install --host cursor          # ~/.cursor/mcp.json
+primordial mcp install --host windsurf        # ~/.codeium/windsurf/mcp_config.json
+primordial mcp install --host openclaw        # ~/.openclaw/openclaw.json
+primordial mcp install --host codex           # ~/.codex/config.toml (CLI + Desktop)
 ```
 
-Or manually via launchctl:
+Restart your IDE after installing.
+
+## Running manually
+
+In stdio mode (default, used by IDE integrations):
 
 ```bash
-launchctl stop com.primordial.daemon
-launchctl start com.primordial.daemon
+primordial mcp serve
 ```
 
-Re-running `primordial install` also works — it's safe to run multiple times.
-
-## Viewing logs
+In HTTP mode (for direct connections or debugging):
 
 ```bash
-cat /tmp/primordial-daemon.log
+primordial mcp serve --http   # binds to localhost:19401
 ```
 
-Or follow live:
+## Available MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `search_agents(query)` | Search the marketplace by keyword or capability |
+| `list_sessions(url)` | List previous sessions for an agent (for resuming state) |
+| `run_agent(url, message)` | Spawn an agent and send it an initial task |
+| `approve_agent(pending_id, approved)` | Approve or reject an agent needing user confirmation |
+| `send_message(session_id, message)` | Send a follow-up message to a running agent |
+| `get_session_status(session_id)` | Check if a session is still alive |
+| `stop_agent(session_id)` | Stop the agent and get a patch of any file changes |
+
+## Security: Provider Approval
+
+When an agent declares an API provider that isn't in Primordial's known-provider registry, the MCP server pauses and returns a `requires_approval` response. The host LLM presents the findings to you:
+
+- Which provider and domain the agent wants to reach
+- A spoofing warning if the domain resembles a known provider's API (e.g. `api.anthropic.com.evil.com`)
+
+You can approve or reject. Approvals expire after 5 minutes. Hard rejections (non-HTTPS URLs, private IP ranges) are never offered for approval — they're blocked outright.
+
+## Session Resume
+
+Primordial agents persist their workspace state (memory, files, conversation history) between sessions. To resume a previous session:
+
+1. Ask the host to call `list_sessions(url)` to see available sessions for that agent
+2. Pass the `session_name` to `run_agent` to restore prior state
+
+The agent picks up where it left off.
+
+## Workspace Patches
+
+When `stop_agent` is called, Primordial captures a unified diff of any files the agent modified. After the session ends:
 
 ```bash
-tail -f /tmp/primordial-daemon.log
+primordial apply <session_id>   # preview the diff and apply changes
+primordial apply --last         # apply the most recent session's changes
+primordial apply <session_id> --dry-run  # preview only, no changes written
 ```
 
-## Stopping the service permanently
+## Upgrading
 
 ```bash
-launchctl unload ~/Library/LaunchAgents/com.primordial.daemon.plist
+pip install --upgrade primordial-agentstore
 ```
 
-This stops it and prevents it from starting on login. Run `primordial install` again to re-enable it.
-
-## Linux
-
-On Linux, launchd isn't available. You'll need to run `primordial serve` manually or set up a systemd service. The service works the same way — just the auto-start mechanism differs.
+After upgrading, restart your IDE so the new version of the MCP server is picked up. No daemon restart needed.

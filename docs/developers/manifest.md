@@ -31,10 +31,7 @@ runtime:
     max_cpu: 2
 
 keys:
-  - provider: anthropic
-    env_var: ANTHROPIC_API_KEY
-    domain: api.anthropic.com
-    auth_style: x-api-key
+  - provider: anthropic    # known provider — no domain or auth_style needed
     required: true
 
 permissions:
@@ -92,11 +89,13 @@ Each entry declares an API key the agent needs. Keys are injected as environment
 | `provider` | string | yes | — | Provider name. Lowercase letters, numbers, hyphens. |
 | `env_var` | string | no | `<PROVIDER>_API_KEY` | Env var name for the session token |
 | `required` | bool | no | `true` | Whether this key must be present |
-| `domain` | string | yes | — | API domain for the proxy to connect to. |
-| `auth_style` | string | no | `"bearer"` | How the proxy sends the key upstream. One of: `bearer`, `x-api-key`, `x-subscription-token`. |
+| `domain` | string | **unknown providers only** | — | API domain for the proxy to connect to. Must not be set for known providers. |
+| `auth_style` | string | **unknown providers only** | — | How the proxy sends the key upstream. One of: `bearer`, `x-api-key`, `x-subscription-token`. Must not be set for known providers. |
 | `base_url_env` | string | no | `<PROVIDER>_BASE_URL` | Env var for the proxy's localhost URL |
 
-Every provider declares its `domain` and `auth_style` explicitly. See [Setting Up APIs](api-setup.md) for examples.
+**Known providers** (45 providers including `anthropic`, `openai`, `google-ai`, `mistral`, `groq`, `brave`, `tavily`, `github`, `stripe`, and more) have their `domain` and `auth_style` locked in by Primordial — do not declare these fields. Unknown providers must declare `domain` explicitly.
+
+See [Setting Up APIs](api-setup.md) for the full known provider list and examples.
 
 ### `permissions`
 
@@ -132,9 +131,9 @@ See [Delegation](delegation.md) for the full delegation guide.
 |-------|------|
 | `provider` | `^[a-z][a-z0-9-]*$` — no underscores |
 | `env_var` | `^[A-Z][A-Z0-9_]*$` — cannot be a protected name (`PATH`, `HOME`, etc.) |
-| `domain` | FQDN with at least one dot and one letter. No IP literals. |
+| `domain` | FQDN with at least one dot and one letter. No IP literals. Required for unknown providers; must not be set for known providers. |
 | `base_url_env` | `^[A-Z][A-Z0-9_]*$` — cannot be a protected name |
-| `auth_style` | One of: `bearer`, `x-api-key`, `x-subscription-token` |
+| `auth_style` | One of: `bearer`, `x-api-key`, `x-subscription-token`. Must not be set for known providers. |
 
 ### Protected Environment Variables
 

@@ -11,6 +11,14 @@
 pip install primordial-agentstore
 ```
 
+## Set Up API Keys
+
+```bash
+primordial setup
+```
+
+This walks you through adding your API keys (E2B, Anthropic, etc.) to the encrypted local vault. Keys are never stored in plaintext.
+
 ## Using the CLI
 
 ### Search for agents
@@ -20,48 +28,67 @@ primordial search                        # Browse all agents
 primordial search "web research"         # Semantic search by capability
 ```
 
-Browse available agents on the marketplace. Pick one to run.
+### Run an agent
+
+```bash
+primordial run https://github.com/owner/agent-name
+primordial run https://github.com/owner/agent-name --workspace .
+```
+
+Use `--workspace <path>` to give the agent read/write access to a local git repo (see [Workspace Isolation](workspace-isolation.md)).
 
 ---
 
-## Using with Claude Code, OpenClaw, or Codex
+## Using with Claude Code, Cursor, or Windsurf
 
-These host agents talk to Primordial through a background service (daemon) running on your machine. The install command sets everything up — the skill file, the daemon, and auto-start on login.
-
-```bash
-primordial install --claude      # Claude Code
-primordial install --openclaw    # OpenClaw
-primordial install --codex       # Codex
-primordial install --all         # All of the above
-```
-
-After install, restart your host agent. The daemon starts automatically and listens on `localhost:19400`.
-
-To verify it's running:
+Primordial integrates with MCP-compatible AI coding hosts via a built-in MCP server. One command registers it everywhere:
 
 ```bash
-curl -s http://localhost:19400/health
+primordial mcp install
 ```
 
-If you're on **Linux** (no launchd), you'll need to start the daemon manually:
+This writes the MCP server entry to the config files for any detected hosts:
+
+| Host | Config File |
+|------|-------------|
+| Claude Code | `~/.claude.json` |
+| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Cursor | `~/.cursor/mcp.json` |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` |
+| OpenClaw | `~/.openclaw/openclaw.json` |
+| Codex CLI / Desktop | `~/.codex/config.toml` |
+
+To target a specific host:
 
 ```bash
-primordial serve
+primordial mcp install --host claude
+primordial mcp install --host claude-desktop
+primordial mcp install --host cursor
+primordial mcp install --host windsurf
+primordial mcp install --host openclaw
+primordial mcp install --host codex
 ```
 
-See [Background Service](background-service.md) for logs, restart commands, and troubleshooting.
+After install, **restart your IDE**. Primordial will appear as an MCP server with tools for searching and running agents.
 
 ### Usage
 
-Just say things like "use primordial to research X" or "find an agent for data analysis" — your host agent searches the marketplace, picks an agent, spawns it, and relays the results.
+Just ask naturally: *"use primordial to research X"* or *"find an agent for data analysis"* — your host searches the marketplace, picks an agent, spawns it, and relays the results. The agent runs sandboxed in the cloud.
 
 If an agent needs API keys you haven't added yet, you'll be told exactly what to run:
 
 ```bash
-primordial setup https://github.com/user/web-research-agent
+primordial keys add anthropic
 ```
 
-> **Note:** Codex's sandbox may block localhost connections. You may need `--dangerously-bypass-approvals-and-sandbox` or sandbox network configuration.
+### Applying Agent Workspace Changes
+
+When an agent modifies files, the changes are captured as a git patch. After a session ends:
+
+```bash
+primordial apply <session_id>   # preview + apply changes
+primordial apply --last         # apply the most recent session's changes
+```
 
 ---
 
@@ -69,12 +96,14 @@ primordial setup https://github.com/user/web-research-agent
 
 | Problem | Solution |
 |---------|----------|
-| Service not running | Run `primordial serve` or re-run `primordial install` |
-| Missing API keys | Run `primordial setup` or `primordial setup <agent-url>` |
-| Agent won't start | Check `/tmp/primordial-daemon.log` |
+| MCP server not appearing in host | Re-run `primordial mcp install`, restart your IDE |
+| Missing API keys | Run `primordial setup` or `primordial keys add <provider>` |
+| Agent won't start | Check that your E2B key is set: `primordial keys list` |
+| Unknown provider warning | Run agent and approve the unknown API provider when prompted |
 
 ## Next Steps
 
+- [MCP Server](background-service.md) — how the MCP integration works
 - [Workspace isolation](workspace-isolation.md) — how agents read and modify your code safely
 - [Build your own agent](../developers/building-agents.md)
 - [Understand the protocol](../developers/protocol.md)

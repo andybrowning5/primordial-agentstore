@@ -1,6 +1,6 @@
-# Primordial Agent Developer Skill
+# Primordial Agent Developer Reference
 
-You are an expert at building agents for the Primordial AgentStore platform. This skill is for AI coding assistants (Claude Code, Codex, etc.) helping developers create, modify, debug, and publish Primordial agents. When asked to create or update an agent, follow these specifications exactly.
+You are an expert at building agents for the Primordial AgentStore platform. This reference is for AI coding assistants (Claude Code, Cursor, etc.) helping developers create, modify, debug, and publish Primordial agents. When asked to create or update an agent, follow these specifications exactly.
 
 For full documentation, see the [developer docs](../README.md). This file is a self-contained reference covering everything needed to build a working agent.
 
@@ -60,9 +60,7 @@ runtime:
     max_time: 30m                 # Examples: "30m", "2h", "6h"
 
 keys:
-  - provider: anthropic
-    domain: api.anthropic.com
-    auth_style: x-api-key
+  - provider: anthropic    # known provider — no domain or auth_style needed
     required: true
 
 permissions:
@@ -78,42 +76,45 @@ permissions:
 
 ### Keys — API Configuration
 
-Every API key the agent needs must be declared with `domain` and `auth_style`:
+Primordial has a built-in registry of 45 known providers. For any known provider, only declare `provider` — do NOT add `domain` or `auth_style` (that's an error). For unknown providers, `domain` is required.
 
 ```yaml
 keys:
+  # Known providers — no domain/auth_style needed
   - provider: anthropic
-    domain: api.anthropic.com
-    auth_style: x-api-key
     required: true
   - provider: openai
-    domain: api.openai.com
-    auth_style: bearer
     required: true
   - provider: brave
     env_var: BRAVE_API_KEY
-    domain: api.search.brave.com
-    auth_style: x-subscription-token
     base_url_env: BRAVE_BASE_URL
     required: true
+
+  # Unknown provider — must declare domain
+  - provider: my-custom-api
+    domain: api.my-custom-api.com
+    auth_style: bearer   # optional for unknown, defaults to bearer
+    required: true
 ```
+
+**Known providers include:** `anthropic`, `openai`, `google-ai`, `mistral`, `groq`, `deepseek`, `perplexity`, `fireworks`, `cohere`, `together`, `replicate`, `hugging-face`, `xai`, `cerebras`, `brave`, `serper`, `tavily`, `exa`, `firecrawl`, `jina`, `pinecone`, `voyage`, `supabase`, `neon`, `airtable`, `github`, `linear`, `notion`, `stripe`, `sendgrid`, `twilio`, `slack`, `discord`, `openweather`, `newsapi`, `alpha-vantage`, `polygon-io`, `e2b`, and more. See [API Setup](api-setup.md) for the full list.
 
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `provider` | yes | — | Lowercase name: `^[a-z][a-z0-9-]*$` (no underscores) |
-| `domain` | yes | — | Upstream API host (FQDN, must have a dot, must have a letter). |
-| `auth_style` | no | `bearer` | Header for auth. One of: `bearer`, `x-api-key`, `x-subscription-token`. |
+| `domain` | unknown providers only | — | Upstream API host. Must NOT be set for known providers. |
+| `auth_style` | unknown providers only | `bearer` | Header for auth. One of: `bearer`, `x-api-key`, `x-subscription-token`. Must NOT be set for known providers. |
 | `env_var` | no | `<PROVIDER>_API_KEY` | Env var the agent reads for the session token |
 | `base_url_env` | no | `<PROVIDER>_BASE_URL` | Env var for the proxy's localhost URL. Most SDKs auto-read the default. |
 | `required` | no | `true` | Whether the key must be present |
 
-**Common auth_style values:**
+**Common auth_style values (for unknown providers only):**
 
 | Value | Header Sent | Used By |
 |-------|-------------|---------|
-| `bearer` | `Authorization: Bearer <key>` | OpenAI, Google, Groq, Mistral, DeepSeek, most APIs |
-| `x-api-key` | `x-api-key: <key>` | Anthropic |
-| `x-subscription-token` | `X-Subscription-Token: <key>` | Brave Search |
+| `bearer` | `Authorization: Bearer <key>` | Most APIs (default) |
+| `x-api-key` | `x-api-key: <key>` | Anthropic-style APIs |
+| `x-subscription-token` | `X-Subscription-Token: <key>` | Brave-style APIs |
 
 ### How the Proxy Works
 
@@ -700,7 +701,8 @@ See [Publishing docs](publishing.md) for the full developer checklist.
 - [ ] `bundle.mjs` committed to repo for fastest setup (Node.js)
 
 ### API Keys
-- [ ] Every API key has `provider`, `domain`, and `auth_style`
+- [ ] Known providers (`anthropic`, `openai`, `brave`, etc.) declare only `provider` — no `domain` or `auth_style`
+- [ ] Unknown providers declare `domain` (and optionally `auth_style`)
 - [ ] Agent code reads `<PROVIDER>_BASE_URL` env var for all HTTP calls (required for proxy routing)
 
 ### Permissions

@@ -1,7 +1,5 @@
 # Setting Up APIs
 
-Every API key in your manifest declares its connection details: `domain`, `auth_style`, and optionally `base_url_env`.
-
 ## How It Works
 
 When your agent declares a key requirement, Primordial sets up a **reverse proxy** inside the sandbox. Your agent gets:
@@ -11,52 +9,87 @@ When your agent declares a key requirement, Primordial sets up a **reverse proxy
 
 The proxy intercepts requests, swaps the session token for the real key, and forwards to the upstream API. Your agent never sees the real key.
 
-## Declaring a Provider
+## Known Providers (Recommended)
 
-Add `domain` and `auth_style` to your key entry:
+Primordial ships with a registry of 45 common API providers. For any provider in this list, you only need to declare `provider` — no `domain` or `auth_style` needed. Primordial locks in the canonical domain and auth style automatically.
 
 ```yaml
 keys:
-  - provider: anthropic
-    domain: api.anthropic.com
-    auth_style: x-api-key
+  - provider: anthropic    # domain and auth_style inferred from registry
     required: true
   - provider: brave
-    env_var: BRAVE_API_KEY
-    domain: api.search.brave.com
-    base_url_env: BRAVE_BASE_URL
-    auth_style: x-subscription-token
+    required: true
+  - provider: openai
     required: true
 ```
 
-| Field | What It Does |
-|-------|-------------|
-| `domain` | The upstream API host the proxy connects to via HTTPS |
-| `auth_style` | Header name the proxy uses to send the real key upstream (default: `bearer`) |
-| `base_url_env` | Env var your code reads for the base URL (points to localhost proxy, default: `<PROVIDER>_BASE_URL`) |
+**Declaring `domain` or `auth_style` on a known provider is an error.** This prevents manifests from redirecting traffic to lookalike domains.
+
+### Known Provider List
+
+| Provider | Domain | Auth Style |
+|----------|--------|------------|
+| `anthropic` | `api.anthropic.com` | `x-api-key` |
+| `openai` | `api.openai.com` | `bearer` |
+| `google-ai` | `generativelanguage.googleapis.com` | `bearer` |
+| `mistral` | `api.mistral.ai` | `bearer` |
+| `cohere` | `api.cohere.com` | `bearer` |
+| `together` | `api.together.xyz` | `bearer` |
+| `groq` | `api.groq.com` | `bearer` |
+| `deepseek` | `api.deepseek.com` | `bearer` |
+| `perplexity` | `api.perplexity.ai` | `bearer` |
+| `fireworks` | `api.fireworks.ai` | `bearer` |
+| `replicate` | `api.replicate.com` | `bearer` |
+| `hugging-face` | `api-inference.huggingface.co` | `bearer` |
+| `xai` | `api.x.ai` | `bearer` |
+| `cerebras` | `api.cerebras.ai` | `bearer` |
+| `brave` | `api.search.brave.com` | `x-subscription-token` |
+| `serper` | `google.serper.dev` | `x-api-key` |
+| `tavily` | `api.tavily.com` | `bearer` |
+| `exa` | `api.exa.ai` | `bearer` |
+| `firecrawl` | `api.firecrawl.dev` | `bearer` |
+| `jina` | `r.jina.ai` | `bearer` |
+| `pinecone` | `api.pinecone.io` | `x-api-key` |
+| `supabase` | `api.supabase.io` | `bearer` |
+| `github` | `api.github.com` | `bearer` |
+| `linear` | `api.linear.app` | `bearer` |
+| `notion` | `api.notion.com` | `bearer` |
+| `stripe` | `api.stripe.com` | `bearer` |
+| `sendgrid` | `api.sendgrid.com` | `bearer` |
+| `slack` | `slack.com` | `bearer` |
+| `openweather` | `api.openweathermap.org` | `x-api-key` |
+| `polygon-io` | `api.polygon.io` | `bearer` |
+| `e2b` | `api.e2b.dev` | `bearer` |
+
+For the complete list, see [`known_providers.py`](../../packages/client/src/primordial/known_providers.py).
+
+## Unknown Providers
+
+If your provider isn't in the registry, declare `domain` explicitly:
+
+```yaml
+keys:
+  - provider: my-custom-llm
+    domain: api.my-custom-llm.com
+    auth_style: bearer        # optional, defaults to bearer
+    required: true
+```
+
+When users run an agent with an unknown provider, they'll see a warning and be asked to approve the connection. This is intentional — it prevents prompt injection attacks from silently routing traffic to arbitrary domains.
 
 ## Base URL Env Var
 
-The proxy needs your agent to send requests to `localhost` instead of the real API. It does this by setting an environment variable with the localhost URL. By default, this env var is `<PROVIDER>_BASE_URL` — so for `provider: anthropic`, it sets `ANTHROPIC_BASE_URL=http://127.0.0.1:9001`.
+The proxy redirects your agent's API calls through localhost. It sets an environment variable with the localhost URL. By default this is `<PROVIDER>_BASE_URL` — so for `provider: anthropic`, it sets `ANTHROPIC_BASE_URL=http://127.0.0.1:9001`.
 
-**Most SDKs already check this variable by convention.** The Anthropic SDK reads `ANTHROPIC_BASE_URL`, the OpenAI SDK reads `OPENAI_BASE_URL`, etc. So you don't need to declare `base_url_env` at all — it just works:
+**Most SDKs already check this variable by convention.** The Anthropic SDK reads `ANTHROPIC_BASE_URL`, the OpenAI SDK reads `OPENAI_BASE_URL`, etc. So you don't need to declare `base_url_env` at all — it just works.
 
-```yaml
-keys:
-  - provider: anthropic
-    domain: api.anthropic.com
-    auth_style: x-api-key
-    # base_url_env defaults to ANTHROPIC_BASE_URL — the SDK reads this automatically
-```
-
-**Only set `base_url_env` when the default doesn't match what your code expects.** For example, if you're using a lesser-known API and your code reads a specific env var:
+**Only set `base_url_env` when the default doesn't match what your code expects:**
 
 ```yaml
 keys:
-  - provider: stripe
-    domain: api.stripe.com
-    auth_style: bearer
-    base_url_env: STRIPE_API_BASE   # your code reads this instead of STRIPE_BASE_URL
+  - provider: my-custom-llm
+    domain: api.my-custom-llm.com
+    base_url_env: CUSTOM_LLM_API_BASE   # your code reads this instead of MY-CUSTOM-LLM_BASE_URL
 ```
 
 ## Auth Styles
@@ -68,8 +101,6 @@ The `auth_style` field tells the proxy which HTTP header to use for authenticati
 | `bearer` (default) | `Authorization: Bearer <key>` | OpenAI, Google, most APIs |
 | `x-api-key` | `x-api-key: <key>` | Anthropic |
 | `x-subscription-token` | `X-Subscription-Token: <key>` | Brave Search |
-
-These are the only supported values. If your API uses a different auth header, please open an issue to request support.
 
 ## Example: Brave Search Agent
 
@@ -91,15 +122,11 @@ runtime:
   setup_command: npm install
 
 keys:
-  - provider: anthropic
-    domain: api.anthropic.com
-    auth_style: x-api-key
+  - provider: anthropic    # known provider — no domain/auth_style needed
     required: true
-  - provider: brave
+  - provider: brave        # known provider — x-subscription-token inferred
     env_var: BRAVE_API_KEY
-    domain: api.search.brave.com
     base_url_env: BRAVE_BASE_URL
-    auth_style: x-subscription-token
     required: true
 
 permissions:
@@ -132,11 +159,11 @@ const data = await resp.json();
 
 ## What Happens at Runtime
 
-1. Primordial reads your manifest and sees the key requirements with their domains
+1. Primordial reads your manifest and resolves `domain` and `auth_style` (from registry for known providers, or manifest for unknown)
 2. Starts a proxy on `http://127.0.0.1:9001` (port assigned automatically)
 3. Sets `ANTHROPIC_API_KEY=sess-abc123...` (session token) and `ANTHROPIC_BASE_URL=http://127.0.0.1:9001`
 4. Your agent sends requests to the localhost URL with the session token
-5. The proxy validates the session token, strips it, injects the real key in the declared `auth_style` header, and forwards to the declared `domain`
+5. The proxy validates the session token, strips it, injects the real key in the correct auth header, and forwards to the declared domain
 
 ## Important Notes
 
