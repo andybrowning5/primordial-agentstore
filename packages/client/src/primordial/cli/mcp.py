@@ -14,10 +14,11 @@ _HOST_CONFIGS: dict[str, Path] = {
     "windsurf": Path.home() / ".codeium" / "windsurf" / "mcp_config.json",
 }
 
-_MCP_ENTRY: dict = {
-    "command": "primordial",
-    "args": ["mcp"],
-}
+def _mcp_entry() -> dict:
+    """Build the MCP server entry using the full path to the primordial executable."""
+    import shutil
+    cmd = shutil.which("primordial") or "primordial"
+    return {"command": cmd, "args": ["mcp", "serve"]}
 
 
 @click.group()
@@ -107,7 +108,7 @@ def _install_for_host(host_name: str, config_path: Path) -> None:
         console.print(f"[dim]{host_name}: already installed[/dim]")
         return
 
-    mcp_servers["primordial"] = _MCP_ENTRY
+    mcp_servers["primordial"] = _mcp_entry()
 
     # Write atomically (temp file + rename)
     config_path.parent.mkdir(parents=True, exist_ok=True)
