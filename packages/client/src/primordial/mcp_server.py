@@ -232,10 +232,10 @@ async def _start_agent(manifest, agent_dir: Path, message: str, workspace: str) 
 
     config = get_config()
     vault = KeyVault(config.keys_file)
-    env_vars = {
-        k.resolved_env_var(): vault.get_key(k.provider) or ""
-        for k in manifest.keys
-    }
+    # Include agent provider keys + E2B (always needed for sandbox creation)
+    allowed_providers = [k.provider for k in manifest.keys] or [manifest.runtime.default_provider]
+    allowed_providers.append("e2b")
+    env_vars = vault.get_env_vars(providers=allowed_providers)
     session_name = f"mcp-{secrets.token_hex(6)}"
     state_dir = config.session_state_dir(manifest.name, session_name)
 
