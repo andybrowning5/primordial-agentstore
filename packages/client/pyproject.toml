@@ -32,6 +32,7 @@ dependencies = [
     "e2b>=1.0",
     "fastembed>=0.3",
     "numpy>=1.26",
+    "fastmcp>=3.1",
 ]
 
 [project.urls]
