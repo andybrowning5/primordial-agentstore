@@ -106,9 +106,17 @@ def _resolve_manifest(url: str) -> tuple:
 @mcp.tool
 async def search_agents(query: str) -> list[dict]:
     """Search for available Primordial agents by capability or keyword."""
-    from primordial.discovery import search as _search
-    results = _search(query)
-    return [{"name": r.name, "url": r.url, "description": r.description} for r in results]
+    from primordial.discovery import fetch_agents, enrich_from_cache
+    agents = enrich_from_cache(fetch_agents())
+    q = query.lower()
+    matches = [
+        a for a in agents
+        if q in a["name"].lower() or q in a.get("description", "").lower()
+        or any(q in t for t in a.get("topics", []))
+        or any(q in p for p in a.get("providers", []))
+        or q in a.get("category", "").lower()
+    ] or agents  # fall back to all if no keyword match
+    return [{"name": a["name"], "url": a["url"], "description": a.get("description", "")} for a in matches]
 
 
 @mcp.tool
