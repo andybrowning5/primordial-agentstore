@@ -13,6 +13,8 @@ _HOST_CONFIGS: dict[str, Path] = {
     "claude-desktop": Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json",
     "cursor":         Path.home() / ".cursor" / "mcp.json",
     "windsurf":       Path.home() / ".codeium" / "windsurf" / "mcp_config.json",
+    "openclaw":       Path.home() / ".openclaw" / "openclaw.json",
+    "codex":          Path.home() / ".codex" / "config.toml",
 }
 
 def _mcp_entry() -> dict:
@@ -47,7 +49,7 @@ def serve(http: bool):
 
 
 @mcp.command(name="install")
-@click.option("--host", type=click.Choice(["claude", "claude-desktop", "cursor", "windsurf"]),
+@click.option("--host", type=click.Choice(["claude", "claude-desktop", "cursor", "windsurf", "openclaw", "codex"]),
               default=None, help="Target a specific host. Auto-detects if omitted.")
 def install(host: str | None):
     """Register Primordial as an MCP server in your AI coding host's config.
@@ -61,11 +63,14 @@ def install(host: str | None):
       claude-desktop → ~/Library/Application Support/Claude/claude_desktop_config.json
       cursor         → ~/.cursor/mcp.json
       windsurf       → ~/.codeium/windsurf/mcp_config.json
+      openclaw       → ~/.openclaw/openclaw.json
+      codex          → ~/.codex/config.toml
 
     \b
     Examples:
       primordial mcp install
-      primordial mcp install --host claude-desktop
+      primordial mcp install --host codex
+      primordial mcp install --host openclaw
     """
     if host:
         targets = [(host, _HOST_CONFIGS[host])]
@@ -79,7 +84,10 @@ def install(host: str | None):
         return
 
     for name, config_path in targets:
-        _install_for_host(name, config_path)
+        if name == "codex":
+            _install_for_codex(config_path)
+        else:
+            _install_for_host(name, config_path)
 
     console.print("\n[dim]Restart your IDE to connect to the Primordial MCP server.[/dim]")
 
@@ -91,6 +99,30 @@ def _detect_hosts() -> list[tuple[str, Path]]:
         if name == "claude" or path.exists():
             targets.append((name, path))
     return targets
+
+
+def _install_for_codex(config_path: Path) -> None:
+    """Install into Codex's TOML config (~/.codex/config.toml)."""
+    import shutil as _shutil
+
+    if config_path.exists():
+        text = config_path.read_text(errors="replace")
+        if "[mcp_servers.primordial]" in text:
+            console.print("[dim]codex: already installed[/dim]")
+            return
+
+    cmd = _shutil.which("primordial") or "primordial"
+    toml_block = f'\n[mcp_servers.primordial]\ncommand = "{cmd}"\nargs = ["mcp", "serve"]\n'
+
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(config_path, "a") as f:
+            f.write(toml_block)
+    except OSError as e:
+        console.print(f"[red]Failed to write {config_path}:[/red] {e}")
+        return
+
+    console.print(f"[green]✓[/green] codex → {config_path}")
 
 
 def _install_for_host(host_name: str, config_path: Path) -> None:

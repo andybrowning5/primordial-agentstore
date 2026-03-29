@@ -58,10 +58,23 @@ Use Primordial to delegate long-running or specialized tasks to isolated,
 sandboxed agents running in E2B Firecracker microVMs.
 
 Standard workflow:
-  1. search_agents(query)           — find the right agent for the task
-  2. run_agent(url, message)        — spawn it with an initial task description
-  3. send_message(session_id, msg)  — send follow-ups as needed
-  4. stop_agent(session_id)         — stop the agent and free sandbox resources
+  1. search_agents(query)                        — find the right agent for the task
+  2. run_agent(url, message, workspace=<path>)   — spawn the agent (returns immediately)
+  3. get_result(session_id)                      — check if the agent finished (non-blocking)
+  4. send_message(session_id, msg)               — send follow-ups once get_result shows "ready"
+  5. stop_agent(session_id)                      — stop the agent and free sandbox resources
+
+IMPORTANT — always pass workspace:
+  When the task involves a local codebase, always pass the absolute path to the
+  project root as the workspace parameter. Without it, the agent has no files to
+  work with. Use the current working directory of the project being discussed.
+  Example: run_agent(url, message, workspace="/Users/me/myproject")
+
+Background operation:
+  run_agent returns immediately with status='running'. The agent works in the
+  background. Use get_result(session_id) to poll — it returns instantly with
+  {"status": "pending"} or {"status": "ready", "response": "..."}. You can do
+  other work between polls. Only call send_message after get_result is "ready".
 
 IMPORTANT — stopping agents:
   Never call stop_agent without first asking the user if they are done with
@@ -181,13 +194,10 @@ async def run_agent(url: str, message: str, workspace: str = "", session_name: s
     tier, findings = assess_manifest_trust(manifest, KNOWN_PROVIDERS)
 
     if tier == TrustTier.AUTO:
-        session_id, first_response = await _start_agent(
+        session_id = await _start_agent(
             manifest, agent_dir, message, workspace, session_name or None
         )
-        result = {"status": "running", "session_id": session_id}
-        if first_response:
-            result["response"] = first_response
-        return result
+        return {"status": "running", "session_id": session_id}
 
     # REQUIRES_APPROVAL — park and return findings
     pending_id = secrets.token_hex(8)
@@ -220,13 +230,10 @@ async def approve_agent(pending_id: str, approved: bool) -> dict:
         return {"status": "rejected"}
     try:
         _, agent_dir = _resolve_manifest(entry.url)
-        session_id, first_response = await _start_agent(entry.manifest, agent_dir, entry.message, entry.workspace, entry.session_name)
+        session_id = await _start_agent(entry.manifest, agent_dir, entry.message, entry.workspace, entry.session_name)
     except Exception as e:
         return {"error": f"Failed to start agent: {e}"}
-    result = {"status": "running", "session_id": session_id}
-    if first_response:
-        result["response"] = first_response
-    return result
+    return {"status": "running", "session_id": session_id}
 
 
 @mcp.tool
@@ -247,6 +254,33 @@ async def send_message(session_id: str, message: str) -> str:
             return "Error: agent timed out"
         if reply.get("type") in ("result", "error", "response"):
             return reply.get("content") or reply.get("message") or str(reply)
+
+
+@mcp.tool
+async def get_result(session_id: str) -> dict:
+    """
+    Non-blocking check whether an agent has finished its current task.
+
+    Returns immediately — never blocks. Call this after run_agent to poll
+    for the result while doing other work in between.
+
+    Return values:
+      {"status": "ready",   "response": "..."}  — task complete
+      {"status": "pending"}                      — still running, check back later
+      {"status": "error",   "message": "..."}   — agent errored or not found
+    """
+    session = _sessions.get(session_id)
+    if not session:
+        return {"status": "error", "message": f"session {session_id!r} not found"}
+    # Drain all messages currently in the queue without blocking
+    while True:
+        reply = session.receive(timeout=0)
+        if reply is None:
+            return {"status": "pending"}
+        if reply.get("type") in ("result", "error", "response"):
+            content = reply.get("content") or reply.get("message") or str(reply)
+            return {"status": "ready", "response": content}
+        # activity event — discard and keep draining
 
 
 @mcp.tool
@@ -276,11 +310,8 @@ async def stop_agent(session_id: str) -> dict:
     return result
 
 
-async def _start_agent(manifest, agent_dir: Path, message: str, workspace: str, session_name: Optional[str] = None) -> tuple[str, Optional[str]]:
-    """Internal: start the sandbox, send first message, wait for first response.
-
-    Returns (session_id, first_response). first_response is None if no message was given.
-    """
+async def _start_agent(manifest, agent_dir: Path, message: str, workspace: str, session_name: Optional[str] = None) -> str:
+    """Internal: start the sandbox, send first message, return session_id immediately."""
     from primordial.config import get_config
     from primordial.security.key_vault import KeyVault
 
@@ -301,23 +332,14 @@ async def _start_agent(manifest, agent_dir: Path, message: str, workspace: str, 
         env_vars=env_vars,
         state_dir=state_dir,
     )
-    session.wait_ready(timeout=120)
+    session.wait_ready(timeout=300)
 
     session_id = secrets.token_hex(8)
     session._session_id = session_id
     _sessions[session_id] = session
 
-    first_response: Optional[str] = None
     if message:
         msg_id = secrets.token_hex(8)
         session.send_message(message, msg_id)
-        # Drain activity/log events until we get the final result or error
-        while True:
-            reply = session.receive(timeout=600.0)
-            if reply is None:
-                break
-            if reply.get("type") in ("result", "error", "response"):
-                first_response = reply.get("content") or reply.get("message") or str(reply)
-                break
 
-    return session_id, first_response
+    return session_id
