@@ -11,10 +11,12 @@ from primordial.cli.restart import restart
 from primordial.cli.serve import serve
 from primordial.cli.sessions import sessions
 from primordial.cli.setup import setup
+from primordial.cli.mcp import mcp
+from primordial.cli.apply import apply
 
 
 @click.group()
-@click.version_option(version="1.0.1", prog_name="primordial")
+@click.version_option(version="2.0.0", prog_name="primordial")
 def cli():
     """Primordial AgentStore - The digital soup from which agents emerge."""
     pass
@@ -29,6 +31,8 @@ cli.add_command(keys)
 cli.add_command(cache)
 cli.add_command(search)
 cli.add_command(restart)
+cli.add_command(mcp)
+cli.add_command(apply)
 
 
 if __name__ == "__main__":
