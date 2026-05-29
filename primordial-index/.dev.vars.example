@@ -1,0 +1,5 @@
+# Copy to `.dev.vars` for local `wrangler dev`. Never commit `.dev.vars`.
+# The crawler uses this token for higher GitHub rate limits. A read-only,
+# no-scope (public-data) PAT is sufficient. Raters supply their own token to
+# POST /ratings — this token is NOT used to verify ratings.
+GITHUB_TOKEN=ghp_your_personal_access_token_here

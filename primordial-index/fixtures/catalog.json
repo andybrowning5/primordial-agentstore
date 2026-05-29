@@ -1,0 +1,78 @@
+{
+  "schema_version": "1",
+  "generated_at": "2026-05-29T00:00:00Z",
+  "agents": [
+    {
+      "id": "primordial-labs/web-research",
+      "url": "https://github.com/primordial-labs/web-research",
+      "ref": "v1.2.0",
+      "commit": "abc123def456abc123def456abc123def456abcd",
+      "name": "web-research",
+      "display_name": "Web Research",
+      "version": "1.2.0",
+      "description": "Searches the web and synthesizes cited research reports from multiple sources.",
+      "category": "research",
+      "tags": ["web", "search", "research"],
+      "language": "python",
+      "author": {
+        "name": "Primordial Labs",
+        "github": "primordial-labs",
+        "website": "https://primordial.dev"
+      },
+      "providers": ["anthropic", "tavily"],
+      "permissions": {
+        "network": ["api.tavily.com"],
+        "network_unrestricted": false,
+        "filesystem": "readwrite",
+        "delegation": true
+      },
+      "trust": "auto",
+      "signals": {
+        "stars": 42,
+        "runs_30d": 128,
+        "rating_avg": 4.5,
+        "rating_count": 12,
+        "success_rate": 0.94
+      },
+      "readme_excerpt": "Web Research is a Primordial agent that fans out web searches across multiple providers, fetches and reads sources, then synthesizes a cited report. Bring a Tavily key for search and an Anthropic key for synthesis.",
+      "updated_at": "2026-05-20T12:00:00Z",
+      "last_crawled": "2026-05-29T00:00:00Z"
+    },
+    {
+      "id": "octocat/code-reviewer",
+      "url": "https://github.com/octocat/code-reviewer",
+      "ref": "main",
+      "commit": "def456abc123def456abc123def456abc123defa",
+      "name": "code-reviewer",
+      "display_name": "Code Reviewer",
+      "version": "0.4.1",
+      "description": "Reviews a diff for correctness bugs and suggests focused cleanups.",
+      "category": "coding",
+      "tags": ["code-review", "diff"],
+      "language": "node",
+      "author": {
+        "name": "Octocat",
+        "github": "octocat",
+        "website": null
+      },
+      "providers": ["anthropic", "acme-llm"],
+      "permissions": {
+        "network": ["llm.acme.example.com"],
+        "network_unrestricted": false,
+        "filesystem": "readonly",
+        "delegation": false
+      },
+      "trust": "requires_approval",
+      "signals": {
+        "stars": 7,
+        "runs_30d": 0,
+        "rating_avg": null,
+        "rating_count": 0,
+        "success_rate": null
+      },
+      "readme_excerpt": "Code Reviewer inspects the current git diff and flags likely bugs before they ship. Uses an unknown LLM provider, so the host asks for approval before running.",
+      "updated_at": "2026-05-18T08:30:00Z",
+      "last_crawled": "2026-05-29T00:00:00Z"
+    }
+  ]
+}
