@@ -1,0 +1,50 @@
+# Primordial Index — Cloudflare Worker config.
+#
+# Two entrypoints share one worker: the HTTP API (fetch handler) and the
+# crawler (scheduled handler). See src/index.ts.
+#
+# SECRETS (never put tokens here — use `wrangler secret put`):
+#   GITHUB_TOKEN   — GitHub PAT used by the crawler for higher rate limits and
+#                    by POST /ratings is NOT used (raters supply their own token).
+#
+# Set it with:   wrangler secret put GITHUB_TOKEN
+
+name = "primordial-index"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# Crawl every 6 hours. The catalog Cache-Control max-age is 1h (per contract),
+# so the crawl cadence can be looser than the served freshness.
+[triggers]
+crons = ["0 */6 * * *"]
+
+[vars]
+# Non-secret config. Override per-environment below.
+GITHUB_TOPIC = "primordial-agent"
+# Comma-separated extra topics also crawled. Empty in production so the public
+# catalog only lists prod agents; set to "primordial-agent-test" in a dev/staging
+# environment to include test agents (mirrors client discovery.py there).
+GITHUB_EXTRA_TOPICS = ""
+# Window for telemetry signal aggregation.
+SIGNALS_WINDOW_DAYS = "30"
+# Per-IP write rate limit (requests per minute) for /events and /ratings.
+WRITE_RATE_PER_MIN = "60"
+
+# ── D1: write store for events + ratings ───────────────────────────────────
+[[d1_databases]]
+binding = "DB"
+database_name = "primordial-index"
+# Replace with the real id after `wrangler d1 create primordial-index`.
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+# ── R2: object store for catalog.json + per-agent detail JSON ──────────────
+[[r2_buckets]]
+binding = "CATALOG"
+bucket_name = "primordial-catalog"
+
+# ── KV: lightweight rate-limit counters ────────────────────────────────────
+[[kv_namespaces]]
+binding = "RATELIMIT"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
