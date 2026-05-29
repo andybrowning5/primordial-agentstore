@@ -5,6 +5,7 @@ import click
 from primordial.cli.cache import cache
 from primordial.cli.install import install
 from primordial.cli.search import search
+from primordial.cli.recommend import recommend
 from primordial.cli.keys import keys
 from primordial.cli.run import run
 from primordial.cli.restart import restart
@@ -13,6 +14,9 @@ from primordial.cli.sessions import sessions
 from primordial.cli.setup import setup
 from primordial.cli.mcp import mcp
 from primordial.cli.apply import apply
+from primordial.cli.dev import dev
+from primordial.cli.publish import publish
+from primordial.cli.rate import rate
 
 
 @click.group()
@@ -30,9 +34,13 @@ cli.add_command(install)
 cli.add_command(keys)
 cli.add_command(cache)
 cli.add_command(search)
+cli.add_command(recommend)
 cli.add_command(restart)
 cli.add_command(mcp)
 cli.add_command(apply)
+cli.add_command(dev)
+cli.add_command(publish)
+cli.add_command(rate)
 
 
 if __name__ == "__main__":
