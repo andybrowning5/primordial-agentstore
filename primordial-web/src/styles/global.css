@@ -134,6 +134,46 @@ a:hover { text-decoration: underline; }
 .feature h3 { margin: 0 0 0.5rem; font-size: 1.02rem; }
 .feature p { margin: 0; color: var(--text-dim); font-size: 0.92rem; }
 
+/* Intro animation — big helix glides into the header, then content falls in. */
+#intro { display: none; }
+html.intro-active #intro {
+  display: grid;
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  place-items: center;
+  background: #000;
+  transition: background-color 0.95s ease;
+}
+#intro.intro-fade { background-color: transparent; pointer-events: none; }
+.intro-helix {
+  font-size: clamp(20px, 5.5vw, 42px);
+  line-height: clamp(20px, 5.5vw, 42px);
+  transform-origin: center center;
+  transition: transform 0.95s cubic-bezier(0.66, 0, 0.34, 1);
+  animation: introHelixIn 0.7s ease both;
+  text-shadow: 0 0 22px rgba(52, 211, 153, 0.4);
+}
+@keyframes introHelixIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* Freeze scroll during the intro. */
+html.intro-lock, html.intro-lock body { overflow: hidden; }
+
+/* Content cascade. Items are only hidden while the intro is active, so the
+   page is fully visible by default (revisits, reduced-motion, no-JS). */
+html.intro-active .reveal-item { opacity: 0; transform: translateY(18px); }
+html.intro-go .reveal-item {
+  animation: fallIn 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+@keyframes fallIn {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html.intro-go .reveal-item { animation: none; }
+}
+
 /* Get started */
 #get-started { scroll-margin-top: 76px; }
 .getstarted-intro { max-width: 720px; margin: -0.4rem 0 0.5rem; }

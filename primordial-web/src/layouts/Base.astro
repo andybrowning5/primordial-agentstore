@@ -18,6 +18,32 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
     <title>{title}</title>
+    <script is:inline>
+      // Decide BEFORE first paint whether to play the intro (homepage, first
+      // visit this session, motion allowed). Setting the class on <html> early
+      // avoids a flash of the page before the overlay covers it.
+      (function () {
+        try {
+          var p = location.pathname;
+          var isHome = p === '/' || p === '' || p.endsWith('/index.html');
+          var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+          var played = sessionStorage.getItem('introPlayed');
+          if (isHome && !reduce && !played) {
+            document.documentElement.classList.add('intro-active');
+            // Safety net: if the sequencing script never runs, never leave
+            // the page hidden.
+            setTimeout(function () {
+              var r = document.documentElement;
+              if (r.classList.contains('intro-active')) {
+                r.classList.remove('intro-active', 'intro-lock');
+                var i = document.getElementById('intro');
+                if (i) i.style.display = 'none';
+              }
+            }, 6000);
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <header class="site-header">

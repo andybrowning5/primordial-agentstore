@@ -13,37 +13,41 @@ const tags = distinct(agents.flatMap((a) => a.tags ?? []));
 const trustTiers = distinct(agents.map((a) => a.trust));
 ---
 <Base>
+  <div id="intro" aria-hidden="true">
+    <pre class="helix intro-helix" id="intro-helix"></pre>
+  </div>
+
   <section class="hero">
-    <h1>Run any AI agent safely, in seconds.</h1>
-    <p class="tagline">
+    <h1 class="reveal-item" style="--i:0">Run any AI agent safely, in seconds.</h1>
+    <p class="tagline reveal-item" style="--i:1">
       Primordial is an open-source marketplace for sandboxed AI agents. Pick an agent,
       review its permissions, and it runs in a cloud sandbox — never on your machine, never
       touching your API keys. Claude Code can discover and call any agent in the ecosystem
       mid-task.
     </p>
-    <div class="hero-actions">
+    <div class="hero-actions reveal-item" style="--i:2">
       <a class="btn" href="#get-started">Get started</a>
       <a class="btn btn-ghost" href="#browse">Browse agents</a>
       <a class="btn btn-ghost" href="https://github.com/andybrowning5/primordial-agentstore" target="_blank" rel="noopener">View on GitHub</a>
     </div>
 
     <div class="feature-grid">
-      <div class="feature">
+      <div class="feature reveal-item" style="--i:3">
         <h3>Sandboxed by default</h3>
         <p>Every agent runs in an isolated cloud microVM. Your keys are injected by a proxy — the agent code never sees them.</p>
       </div>
-      <div class="feature">
+      <div class="feature reveal-item" style="--i:4">
         <h3>Any language, zero SDK</h3>
         <p>NDJSON over stdin/stdout is the whole protocol. Push to GitHub, tag it, and anyone can run it.</p>
       </div>
-      <div class="feature">
+      <div class="feature reveal-item" style="--i:5">
         <h3>Permissions you approve</h3>
         <p>Network domains, filesystem access, and delegation are declared up front. You see exactly what an agent can do.</p>
       </div>
     </div>
   </section>
 
-  <section id="get-started">
+  <section id="get-started" class="reveal-item" style="--i:6">
     <div class="section-head">
       <h2>Get started</h2>
       <span class="muted">~2 minutes</span>
@@ -106,7 +110,7 @@ const trustTiers = distinct(agents.map((a) => a.trust));
     </div>
   </section>
 
-  <section id="browse">
+  <section id="browse" class="reveal-item" style="--i:7">
     <div class="section-head">
       <h2>Browse agents</h2>
       <span class="muted" id="result-count">{agents.length} agents</span>
@@ -248,4 +252,49 @@ const trustTiers = distinct(agents.map((a) => a.trust));
   });
 
   apply();
+</script>
+
+<script>
+  // Intro: big centered helix glides into the header brand, then the page
+  // elements cascade in. Plays once per session on the homepage; reduced-motion
+  // and revisits skip it (gated in the head script in Base.astro).
+  const root = document.documentElement;
+  const intro = document.getElementById('intro');
+
+  function reveal() {
+    root.classList.remove('intro-active', 'intro-lock');
+    root.classList.add('intro-go');
+    try { sessionStorage.setItem('introPlayed', '1'); } catch (e) {}
+  }
+  function finishIntro() {
+    if (intro && intro.parentNode) intro.remove();
+    reveal();
+  }
+
+  if (root.classList.contains('intro-active') && intro) {
+    root.classList.add('intro-lock');
+    const big = document.getElementById('intro-helix');
+    const target = document.getElementById('helix'); // the header brand helix
+
+    const HOLD = 1150;   // beat on the centered helix
+    const GLIDE = 950;   // glide-to-corner duration (matches CSS transition)
+
+    setTimeout(() => {
+      if (big && target) {
+        const t = target.getBoundingClientRect();
+        const b = big.getBoundingClientRect();
+        if (b.width > 0 && t.width > 0) {
+          const dx = (t.left + t.width / 2) - (b.left + b.width / 2);
+          const dy = (t.top + t.height / 2) - (b.top + b.height / 2);
+          const scale = t.width / b.width;
+          big.style.transform = `translate(${dx}px, ${dy}px) scale(${scale})`;
+        }
+      }
+      intro.classList.add('intro-fade'); // fade the black backdrop away
+      setTimeout(finishIntro, GLIDE);
+    }, HOLD);
+
+    // Safety: never leave content hidden if something stalls.
+    setTimeout(() => { if (root.classList.contains('intro-active')) finishIntro(); }, 4500);
+  }
 </script>

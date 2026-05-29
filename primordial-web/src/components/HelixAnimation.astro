@@ -59,14 +59,20 @@
     return html;
   }
 
-  const el = document.getElementById('helix');
-  if (el) {
+  // Animate every .helix on the page (header brand + the intro overlay).
+  const els = Array.from(document.querySelectorAll('.helix'));
+  if (els.length) {
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      el.innerHTML = frame(0);
+      const f = frame(0);
+      els.forEach((el) => { el.innerHTML = f; });
     } else {
       let last = 0;
       const step = (ts) => {
-        if (ts - last > 66) { el.innerHTML = frame((ts / 1000) * 2.6); last = ts; }
+        if (ts - last > 66) {
+          const f = frame((ts / 1000) * 2.6);
+          els.forEach((el) => { el.innerHTML = f; });
+          last = ts;
+        }
         requestAnimationFrame(step);
       };
       requestAnimationFrame(step);
