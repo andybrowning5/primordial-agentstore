@@ -35,16 +35,15 @@ WRITE_RATE_PER_MIN = "60"
 [[d1_databases]]
 binding = "DB"
 database_name = "primordial-index"
-# Replace with the real id after `wrangler d1 create primordial-index`.
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "ac5ba2ba-e8b5-4368-96bb-4281270a588e"
 migrations_dir = "migrations"
 
-# ── R2: object store for catalog.json + per-agent detail JSON ──────────────
-[[r2_buckets]]
+# ── KV: catalog.json + per-agent detail JSON (small JSON blobs; no R2 needed) ─
+[[kv_namespaces]]
 binding = "CATALOG"
-bucket_name = "primordial-catalog"
+id = "50b9776d479b40d89bce53b23e810ecc"
 
 # ── KV: lightweight rate-limit counters ────────────────────────────────────
 [[kv_namespaces]]
 binding = "RATELIMIT"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "4e21ab8f3f904d158163ba5cc27048a8"

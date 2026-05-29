@@ -61,9 +61,7 @@ export async function crawl(env: Env): Promise<CrawlResult> {
 
       // Per-agent detail file for storefront detail pages.
       const detail: AgentDetail = { ...agent, manifest, readme_md: readme };
-      await env.CATALOG.put(detailKey(repo.full_name), JSON.stringify(detail), {
-        httpMetadata: { contentType: 'application/json' },
-      });
+      await env.CATALOG.put(detailKey(repo.full_name), JSON.stringify(detail));
       result.indexed++;
     } catch (e) {
       result.skipped++;
@@ -77,14 +75,12 @@ export async function crawl(env: Env): Promise<CrawlResult> {
     (a, b) => b.signals.stars - a.signals.stars || a.id.localeCompare(b.id),
   );
 
-  await env.CATALOG.put('catalog.json', JSON.stringify(catalog), {
-    httpMetadata: { contentType: 'application/json' },
-  });
+  await env.CATALOG.put('catalog.json', JSON.stringify(catalog));
 
   return result;
 }
 
-/** R2 object key for a per-agent detail file. */
+/** KV key for a per-agent detail entry. */
 export function detailKey(agentId: string): string {
   return `agents/${agentId}.json`;
 }
@@ -126,9 +122,7 @@ export async function crawlOne(env: Env, agentId: string): Promise<RefreshResult
   const agent = buildCatalogAgent({ repo, ref, commit, manifest, readme, signals, crawledAt });
 
   const detail: AgentDetail = { ...agent, manifest, readme_md: readme };
-  await env.CATALOG.put(detailKey(repo.full_name), JSON.stringify(detail), {
-    httpMetadata: { contentType: 'application/json' },
-  });
+  await env.CATALOG.put(detailKey(repo.full_name), JSON.stringify(detail));
 
   await upsertCatalogAgent(env, agent, crawledAt);
   return { indexed: true, id: agent.id };
@@ -139,7 +133,7 @@ async function upsertCatalogAgent(env: Env, agent: CatalogAgent, crawledAt: stri
   const existing = await env.CATALOG.get('catalog.json');
   let catalog: Catalog;
   if (existing) {
-    catalog = JSON.parse(await existing.text()) as Catalog;
+    catalog = JSON.parse(existing) as Catalog;
     if (!Array.isArray(catalog.agents)) catalog.agents = [];
   } else {
     catalog = { schema_version: SCHEMA_VERSION, generated_at: crawledAt, agents: [] };
@@ -154,7 +148,5 @@ async function upsertCatalogAgent(env: Env, agent: CatalogAgent, crawledAt: stri
     (a, b) => b.signals.stars - a.signals.stars || a.id.localeCompare(b.id),
   );
 
-  await env.CATALOG.put('catalog.json', JSON.stringify(catalog), {
-    httpMetadata: { contentType: 'application/json' },
-  });
+  await env.CATALOG.put('catalog.json', JSON.stringify(catalog));
 }

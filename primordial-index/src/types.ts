@@ -2,7 +2,9 @@
 
 export interface Env {
   DB: D1Database;
-  CATALOG: R2Bucket;
+  // catalog.json + per-agent detail JSON. KV (not R2): the payloads are small
+  // JSON blobs, so KV is sufficient and avoids an R2 dependency entirely.
+  CATALOG: KVNamespace;
   RATELIMIT: KVNamespace;
   // Secret — set via `wrangler secret put GITHUB_TOKEN`.
   GITHUB_TOKEN?: string;

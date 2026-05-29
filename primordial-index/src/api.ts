@@ -91,18 +91,18 @@ async function postRefresh(req: Request, env: Env): Promise<Response> {
 
 // ── GET /catalog ──────────────────────────────────────────────────────────
 async function getCatalog(env: Env): Promise<Response> {
-  const obj = await env.CATALOG.get('catalog.json');
-  if (!obj) return err(503, 'catalog not yet generated');
-  return new Response(obj.body, {
+  const body = await env.CATALOG.get('catalog.json');
+  if (body === null) return err(503, 'catalog not yet generated');
+  return new Response(body, {
     headers: { ...JSON_HEADERS, 'Cache-Control': 'max-age=3600' },
   });
 }
 
 // ── GET /agents/:owner/:repo ────────────────────────────────────────────────
 async function getDetail(env: Env, id: string): Promise<Response> {
-  const obj = await env.CATALOG.get(detailKey(id));
-  if (!obj) return err(404, 'agent not found');
-  return new Response(obj.body, {
+  const body = await env.CATALOG.get(detailKey(id));
+  if (body === null) return err(404, 'agent not found');
+  return new Response(body, {
     headers: { ...JSON_HEADERS, 'Cache-Control': 'max-age=3600' },
   });
 }
