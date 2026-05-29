@@ -1,0 +1,75 @@
+---
+// Animated ASCII double helix — a direct port of the CLI's continuous helix
+// frame (packages/client/src/primordial/cli/helix.py, the morph=0 path).
+// Two sine-wave strands (green + cyan), brightness driven by depth (cos phase).
+// Decorative: aria-hidden, not selectable, and frozen for reduced-motion users.
+---
+<pre class="helix" id="helix" aria-hidden="true"></pre>
+
+<script>
+  const ROWS = 6, HALF = 5, CENTER = 6;
+  const WIDTH = CENTER * 2 + 2;
+
+  // helix.py:_strand_char — slope (dx) picks the glyph, depth (z) the shade.
+  function strandChar(dx, z) {
+    if (Math.abs(dx) < 0.12) return z > 0 ? '|' : ':';
+    if (dx > 0) return z > -0.2 ? '\\' : '.';
+    return z > -0.2 ? '/' : '.';
+  }
+  // green = base "g", cyan = base "c"; suffix b=bright, d=dim (by depth).
+  function depthClass(base, z) {
+    if (z > 0.2) return base + 'b';
+    if (z > -0.2) return base;
+    return base + 'd';
+  }
+
+  function frame(phase) {
+    let html = '';
+    for (let r = 0; r < ROWS; r++) {
+      const t = r * 0.55 + phase;
+      const z1 = Math.cos(t);
+      const x1 = Math.round(CENTER + Math.sin(t) * HALF);
+      const x2 = Math.round(CENTER + Math.sin(t + Math.PI) * HALF);
+      const dx1 = z1 * 0.55, dx2 = -z1 * 0.55;
+      const ch = new Array(WIDTH).fill(' ');
+      const cl = new Array(WIDTH).fill(null);
+
+      if (Math.abs(x1 - x2) <= 1) {
+        // Strands cross: a single front-facing glyph.
+        const cx = Math.min(x1, x2);
+        if (cx >= 0 && cx < WIDTH) {
+          ch[cx] = strandChar(z1 > 0 ? dx1 : dx2, 0.5);
+          cl[cx] = 'gb';
+        }
+      } else {
+        let lx, rx, lz, rz, ldx, rdx;
+        if (x1 < x2) { lx = x1; rx = x2; lz = z1;  rz = -z1; ldx = dx1; rdx = dx2; }
+        else         { lx = x2; rx = x1; lz = -z1; rz = z1;  ldx = dx2; rdx = dx1; }
+        if (lx >= 0 && lx < WIDTH) { ch[lx] = strandChar(ldx, lz); cl[lx] = depthClass('g', lz); }
+        if (rx >= 0 && rx < WIDTH) { ch[rx] = strandChar(rdx, rz); cl[rx] = depthClass('c', rz); }
+      }
+
+      for (let i = 0; i < WIDTH; i++) {
+        let c = ch[i];
+        c = c === ' ' ? ' ' : c === '<' ? '&lt;' : c === '&' ? '&amp;' : c;
+        html += cl[i] ? `<span class="${cl[i]}">${c}</span>` : c;
+      }
+      html += '\n';
+    }
+    return html;
+  }
+
+  const el = document.getElementById('helix');
+  if (el) {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      el.innerHTML = frame(0);
+    } else {
+      let last = 0;
+      const step = (ts) => {
+        if (ts - last > 66) { el.innerHTML = frame((ts / 1000) * 2.6); last = ts; }
+        requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }
+  }
+</script>

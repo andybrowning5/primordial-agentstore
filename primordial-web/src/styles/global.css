@@ -54,12 +54,35 @@ a:hover { text-decoration: underline; }
   height: 60px;
 }
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   font-weight: 700;
   font-size: 1.05rem;
   color: var(--text);
   letter-spacing: -0.01em;
 }
-.brand span { color: var(--accent); }
+.brand:hover { text-decoration: none; }
+.brand .wordmark span { color: var(--accent); }
+
+/* Animated ASCII double helix (the CLI motif). Strand spans are injected at
+   runtime, so these colors must be global (not component-scoped). */
+.helix {
+  font-family: var(--mono);
+  font-size: 8px;
+  line-height: 8px;
+  margin: 0;
+  white-space: pre;
+  user-select: none;
+  text-decoration: none;
+  text-shadow: 0 0 5px rgba(52, 211, 153, 0.18);
+}
+.helix .g  { color: #2ea043; }
+.helix .gb { color: #56d364; }
+.helix .gd { color: #1a6e32; }
+.helix .c  { color: #2aa9d6; }
+.helix .cb { color: #56d4ef; }
+.helix .cd { color: #196079; }
 .nav-links { display: flex; gap: 1.25rem; align-items: center; }
 .nav-links a { color: var(--text-dim); font-size: 0.92rem; }
 .nav-links a:hover { color: var(--text); text-decoration: none; }
