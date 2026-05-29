@@ -13,7 +13,7 @@ from platformdirs import user_data_dir, user_cache_dir
 
 APP_NAME = "primordial"
 
-DEFAULT_INDEX_URL = "https://index.primordial.dev"
+DEFAULT_INDEX_URL = "https://primordial-index.andybrowning5.workers.dev"
 # Catalog cache time-to-live, in seconds (6 hours per the index contract).
 CATALOG_TTL_SECONDS = 6 * 3600
 

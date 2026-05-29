@@ -39,7 +39,15 @@ async function fetchJson<T>(path: string): Promise<T> {
 
 export async function getCatalog(): Promise<Catalog> {
   if (usingLiveIndex) {
-    return fetchJson<Catalog>('/catalog');
+    try {
+      return await fetchJson<Catalog>('/catalog');
+    } catch (e) {
+      // The index returns 503 until its first crawl, and may be briefly
+      // unreachable. Build an empty storefront rather than failing the build;
+      // a later rebuild picks up the populated catalog.
+      console.warn(`[data] live catalog unavailable, building empty: ${(e as Error).message}`);
+      return { schema_version: '1', generated_at: '', agents: [] };
+    }
   }
   return catalogFixture as Catalog;
 }

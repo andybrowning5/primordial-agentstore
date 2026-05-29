@@ -1,0 +1,14 @@
+# Deploy the static storefront as a Workers static-assets site.
+#
+# We serve the prebuilt `dist/` as static assets on Workers (rather than
+# Cloudflare Pages) so it can deploy with a Workers-scoped API token.
+# Build first:  PRIMORDIAL_INDEX_URL=<index url> npm run build
+# Then:         wrangler deploy
+#
+# The index URL is baked into the static HTML at build time, so nothing is
+# needed at runtime here.
+name = "primordial-web"
+compatibility_date = "2024-09-23"
+
+[assets]
+directory = "./dist"
