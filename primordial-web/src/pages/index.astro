@@ -1,6 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
 import AgentCard from '../components/AgentCard.astro';
+import CopyCommand from '../components/CopyCommand.astro';
 import { getAgents, usingLiveIndex } from '../lib/data';
 import { distinct } from '../lib/format';
 
@@ -21,7 +22,8 @@ const trustTiers = distinct(agents.map((a) => a.trust));
       mid-task.
     </p>
     <div class="hero-actions">
-      <a class="btn" href="#browse">Browse agents</a>
+      <a class="btn" href="#get-started">Get started</a>
+      <a class="btn btn-ghost" href="#browse">Browse agents</a>
       <a class="btn btn-ghost" href="https://github.com/primordial-labs" target="_blank" rel="noopener">View on GitHub</a>
     </div>
 
@@ -37,6 +39,69 @@ const trustTiers = distinct(agents.map((a) => a.trust));
       <div class="feature">
         <h3>Permissions you approve</h3>
         <p>Network domains, filesystem access, and delegation are declared up front. You see exactly what an agent can do.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="get-started">
+    <div class="section-head">
+      <h2>Get started</h2>
+      <span class="muted">~2 minutes</span>
+    </div>
+    <p class="muted getstarted-intro">
+      Primordial is a CLI plus a built-in MCP server. Install it, add your keys, then connect
+      it to Claude Code or Codex so they can discover and run agents mid-task — sandboxed in
+      the cloud, never touching your API keys.
+    </p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h3>Install the CLI</h3>
+          <p class="muted">
+            Requires Python 3.11+ and a free
+            <a href="https://e2b.dev/dashboard" target="_blank" rel="noopener">E2B API key</a>
+            (agents run in E2B cloud sandboxes).
+          </p>
+          <CopyCommand label="Install" command="pip install primordial-agentstore" />
+          <CopyCommand label="Add your API keys (E2B, Anthropic, …) to the encrypted local vault" command="primordial setup" />
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h3>Connect it to Claude Code or Codex</h3>
+          <p class="muted">One command registers Primordial's MCP server with every host it detects:</p>
+          <CopyCommand label="Auto-detect installed hosts" command="primordial mcp install" />
+          <p class="muted step-or">…or target a specific host:</p>
+          <CopyCommand label="Claude Code" command="primordial mcp install --host claude" />
+          <CopyCommand label="Codex CLI / Desktop" command="primordial mcp install --host codex" />
+          <p class="faint step-note">
+            Then restart your host. Primordial appears as an MCP server with tools to search
+            and run agents. Cursor, Windsurf, Claude Desktop and OpenClaw are supported too
+            (<code>--host cursor</code>, <code>windsurf</code>, <code>claude-desktop</code>, <code>openclaw</code>).
+          </p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h3>Use it</h3>
+          <p class="muted">
+            Just ask naturally — your host searches the marketplace, picks an agent, runs it
+            sandboxed in the cloud, and relays the result:
+          </p>
+          <div class="prompt-eg">“use primordial to research the latest on &lt;topic&gt;”</div>
+          <div class="prompt-eg">“find a primordial agent that checks my repo's docs for drift”</div>
+          <p class="faint step-note">
+            If an agent needs a key you haven't added, you'll be told exactly what to run
+            (e.g. <code>primordial keys add anthropic</code>). When an agent edits files, review
+            and apply the changes with <code>primordial apply --last</code>.
+          </p>
+        </div>
       </div>
     </div>
   </section>
