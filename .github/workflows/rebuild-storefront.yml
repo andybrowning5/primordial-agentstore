@@ -1,0 +1,56 @@
+name: Rebuild storefront
+
+# The storefront (primordial-web) is a static (SSG) site that bakes the index
+# catalog in at build time, so it must be rebuilt + redeployed to reflect
+# catalog changes. This runs it automatically.
+#
+# Triggers:
+#   - schedule: ~15 min after each index crawl (crawl cron is `0 */6 * * *`)
+#   - workflow_dispatch: run it by hand from the Actions tab
+#   - repository_dispatch (type: catalog-updated): event-driven — the index
+#     worker (or `primordial publish`) can POST to the GitHub API to fire this
+#     immediately. Optional; the schedule covers the common case on its own.
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   CLOUDFLARE_API_TOKEN   — token with Workers Scripts:Edit on the account
+#   CLOUDFLARE_ACCOUNT_ID  — the Cloudflare account id
+on:
+  schedule:
+    - cron: '15 */6 * * *'
+  workflow_dispatch: {}
+  repository_dispatch:
+    types: [catalog-updated]
+
+# Never run two deploys at once; the latest catalog wins.
+concurrency:
+  group: storefront-deploy
+  cancel-in-progress: true
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: primordial-web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: primordial-web/package-lock.json
+
+      - run: npm ci
+
+      - name: Build against the live index
+        env:
+          # The deployed index worker. Not a secret — its catalog is public.
+          PRIMORDIAL_INDEX_URL: https://primordial-index.andybrowning5.workers.dev
+        run: npm run build
+
+      - name: Deploy to Workers (static assets)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@3 deploy
