@@ -143,3 +143,39 @@ The proxy (`proxy_script.py`) is stdlib-only Python with zero dependencies:
 - **Response header allowlist**: Only forwards `content-type`, `content-length`, `date`, `x-request-id`, rate limit headers, etc.
 - **Generic errors**: Never includes exception details that could leak key material
 - **Connection close**: Closes after each request to prevent pipelining attacks
+
+---
+
+## Telemetry (opt-in, anonymous)
+
+Primordial can send anonymous run telemetry to the index to power popularity
+signals (`runs_30d`, success rate). It is **off by default** and **opt-in**:
+
+- You are asked **once**, on your first interactive `primordial run`. Declining
+  is remembered — you are never asked again.
+- When enabled, two events are sent around each run: `run_start` and
+  `run_complete` (with success + duration).
+- Each event carries only: the agent id (`owner/repo`), the event type, a
+  timestamp, success/duration on completion, and a random **`client_id`**.
+- The `client_id` is a random UUID generated once and stored locally. It is
+  used only for dedup/abuse-limiting — never identity. **No PII is ever sent.**
+
+Manage it at any time:
+
+```bash
+# Telemetry is stored in your Primordial config (config.json) under "telemetry".
+# Disable / re-enable by editing that file or via the prompt on next run.
+```
+
+Ratings (`primordial rate <agent> <1-5>`) are separate: they require a GitHub
+token (`gh auth login` or `GH_TOKEN`) so the index can record one rating per
+user per agent. Your token is sent to the index only to verify your GitHub
+login; it is not stored by the client.
+
+### Local dev mode is NOT sandboxed
+
+`primordial dev` runs an agent **locally** for development — there is no E2B
+sandbox. It lints the manifest and warns about declared network/filesystem
+permissions, but it does **not** enforce them: the agent runs with your user's
+privileges and can reach any host. Use `primordial run` (E2B) for anything you
+do not fully trust.

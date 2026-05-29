@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections
 import io
 import json
 import logging
@@ -695,10 +696,37 @@ class AgentSession:
         self._alive = True
         self._session_id: Optional[str] = None
 
+        # Bounded ring buffer of activity events for host streaming.
+        # Each entry is (seq, event); seq is a monotonic cursor so pollers
+        # only fetch events newer than their last poll. Capped so a chatty
+        # agent can't grow host memory without bound.
+        self._activity_buf: "collections.deque[tuple[int, dict]]" = collections.deque(
+            maxlen=200
+        )
+        self._activity_seq = 0
+        self._activity_lock = threading.Lock()
+
         # Drive the event loop in a background thread — this is what
         # delivers stdout/stderr data from the E2B command handle.
         self._reader_thread = threading.Thread(target=self._drive_events, daemon=True)
         self._reader_thread.start()
+
+    def record_activity(self, event: dict[str, Any]) -> None:
+        """Append an activity event to the bounded ring buffer."""
+        with self._activity_lock:
+            self._activity_seq += 1
+            self._activity_buf.append((self._activity_seq, event))
+
+    def activity_since(self, cursor: int) -> tuple[list[dict[str, Any]], int]:
+        """Return (events newer than cursor, new cursor).
+
+        The returned cursor should be passed back on the next call so each
+        poll only yields activity it hasn't seen.
+        """
+        with self._activity_lock:
+            new = [(seq, ev) for seq, ev in self._activity_buf if seq > cursor]
+            next_cursor = new[-1][0] if new else max(cursor, self._activity_seq)
+        return [ev for _, ev in new], next_cursor
 
     def _drive_events(self) -> None:
         try:

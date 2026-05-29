@@ -31,13 +31,15 @@ _TOKEN_FILE = Path.home() / ".primordial-daemon-token"
 
 
 class _SessionEntry:
-    __slots__ = ("session", "manifest", "agent_dir", "workspace")
+    __slots__ = ("session", "manifest", "agent_dir", "workspace", "activity_cursor")
 
     def __init__(self, session, manifest, agent_dir, workspace=None):
         self.session = session
         self.manifest = manifest
         self.agent_dir = agent_dir
         self.workspace = workspace
+        # Cursor for incremental activity polling via /result.
+        self.activity_cursor = 0
 
 
 # Module-level state shared across request handlers
@@ -116,6 +118,8 @@ class DaemonHandler(BaseHTTPRequestHandler):
             self._handle_run(body)
         elif self.path == "/message":
             self._handle_message(body)
+        elif self.path == "/result":
+            self._handle_result(body)
         elif self.path == "/shutdown":
             self._handle_shutdown(body)
         else:
@@ -299,6 +303,46 @@ class DaemonHandler(BaseHTTPRequestHandler):
         # Send final empty chunk to signal end
         self.wfile.write(b"0\r\n\r\n")
         self.wfile.flush()
+
+    def _handle_result(self, body: dict):
+        """Non-blocking poll: status + activity emitted since the last poll.
+
+        Mirrors the MCP get_result tool for hosts that prefer polling over the
+        streaming /message endpoint. Activity events are buffered in the
+        session's ring buffer; a per-session cursor ensures each poll only
+        returns new events.
+        """
+        session_id = body.get("session_id")
+        if not session_id:
+            _respond_error(self, "Missing 'session_id'")
+            return
+
+        with _sessions_lock:
+            entry = _sessions.get(session_id)
+        if not entry:
+            _respond_error(self, f"Unknown session: {session_id}", 404)
+            return
+
+        session = entry.session
+        result: dict | None = None
+        while True:
+            msg = session.receive(timeout=0)
+            if msg is None:
+                break
+            msg_type = msg.get("type", "")
+            if msg_type in ("result", "error", "response"):
+                content = msg.get("content") or msg.get("error") or ""
+                result = {"status": "ready", "response": content}
+                break
+            session.record_activity(msg)
+
+        events, new_cursor = session.activity_since(entry.activity_cursor)
+        entry.activity_cursor = new_cursor
+
+        if result is None:
+            result = {"status": "pending" if session.is_alive else "exited"}
+        result["activity"] = events
+        _respond_json(self, result)
 
     def _handle_shutdown(self, body: dict):
         session_id = body.get("session_id")

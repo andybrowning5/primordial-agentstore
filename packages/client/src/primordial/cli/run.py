@@ -65,6 +65,17 @@ def _input_with_placeholder(prompt: str, placeholder: str) -> str:
     return first + rest
 
 
+def _agent_id_for_telemetry(agent_path: str, manifest) -> str:
+    """Resolve a telemetry agent_id: owner/repo for GitHub agents, else name."""
+    if is_github_url(agent_path):
+        try:
+            ref = parse_github_url(agent_path)
+            return f"{ref.owner}/{ref.repo}"
+        except Exception:
+            pass
+    return manifest.name
+
+
 def _detect_git_root() -> Path | None:
     """Return the root of the current git repo, or None."""
     try:
@@ -398,12 +409,36 @@ def run(
 
     manager = SandboxManager()
 
-    if agent_mode:
-        _run_agent(manager, agent_dir, manifest, host_workspace, env_vars, state_dir,
-                   worktree_mgr=worktree_mgr)
-    else:
-        _run_chat(manager, agent_dir, manifest, host_workspace, env_vars, state_dir,
-                  worktree_mgr=worktree_mgr)
+    # Telemetry (opt-in, anonymous). Ask once on first interactive run, then
+    # emit run_start / run_complete around the session. Never blocks the run.
+    import time as _time
+    from primordial.index_client import maybe_prompt_telemetry_opt_in, send_event
+    agent_id = _agent_id_for_telemetry(agent_path, manifest)
+    if not agent_mode:
+        maybe_prompt_telemetry_opt_in()
+    send_event(agent_id, "run_start")
+    _t0 = _time.monotonic()
+    _ok = True
+
+    try:
+        if agent_mode:
+            _run_agent(manager, agent_dir, manifest, host_workspace, env_vars, state_dir,
+                       worktree_mgr=worktree_mgr)
+        else:
+            _run_chat(manager, agent_dir, manifest, host_workspace, env_vars, state_dir,
+                      worktree_mgr=worktree_mgr)
+    except SystemExit as e:
+        _ok = e.code in (0, None)
+        raise
+    except BaseException:
+        _ok = False
+        raise
+    finally:
+        send_event(
+            agent_id, "run_complete",
+            success=_ok,
+            duration_ms=int((_time.monotonic() - _t0) * 1000),
+        )
 
 
 _MINI_ROWS = 3
