@@ -1,0 +1,134 @@
+{
+  "schema_version": "1",
+  "generated_at": "2026-05-29T00:00:00Z",
+  "agents": [
+    {
+      "id": "primordial-labs/web-research",
+      "url": "https://github.com/primordial-labs/web-research",
+      "ref": "v1.2.0",
+      "commit": "abc1234def5678901234567890abcdef12345678",
+      "name": "web-research",
+      "display_name": "Web Research",
+      "version": "1.2.0",
+      "description": "Searches the web, reads pages, and synthesizes cited answers to research questions. Good for fact-finding, competitive analysis, and literature scans.",
+      "category": "research",
+      "tags": ["web", "search", "citations"],
+      "language": "python",
+      "author": { "name": "Primordial Labs", "github": "primordial-labs", "website": "https://primordial.dev" },
+      "providers": ["anthropic", "tavily"],
+      "permissions": {
+        "network": ["api.tavily.com", "api.anthropic.com"],
+        "network_unrestricted": false,
+        "filesystem": "readonly",
+        "delegation": false
+      },
+      "trust": "auto",
+      "signals": {
+        "stars": 428,
+        "runs_30d": 1530,
+        "rating_avg": 4.6,
+        "rating_count": 92,
+        "success_rate": 0.94
+      },
+      "readme_excerpt": "Web Research is a focused agent that turns a question into a cited answer. It plans queries, searches the web via Tavily, reads the most relevant pages, and synthesizes a concise answer with inline source links.",
+      "updated_at": "2026-05-20T14:02:00Z",
+      "last_crawled": "2026-05-29T00:00:00Z"
+    },
+    {
+      "id": "octo-tools/doc-drift",
+      "url": "https://github.com/octo-tools/doc-drift",
+      "ref": "v0.4.1",
+      "commit": "fedcba9876543210fedcba9876543210fedcba98",
+      "name": "doc-drift",
+      "display_name": "Doc Drift Detector",
+      "version": "0.4.1",
+      "description": "Scans a codebase against its documentation and reports drift: stale examples, removed flags, undocumented features. Runs against your git workspace.",
+      "category": "code",
+      "tags": ["documentation", "code-review", "ci"],
+      "language": "node",
+      "author": { "name": "Octo Tools", "github": "octo-tools", "website": null },
+      "providers": ["anthropic"],
+      "permissions": {
+        "network": ["api.anthropic.com"],
+        "network_unrestricted": false,
+        "filesystem": "readwrite",
+        "delegation": false
+      },
+      "trust": "auto",
+      "signals": {
+        "stars": 86,
+        "runs_30d": 210,
+        "rating_avg": 4.2,
+        "rating_count": 18,
+        "success_rate": 0.88
+      },
+      "readme_excerpt": "Doc Drift Detector compares what your docs claim against what your code actually does. Point it at a repo and it flags out-of-date command examples, renamed flags, and features that exist in code but never made it into the docs.",
+      "updated_at": "2026-05-18T09:30:00Z",
+      "last_crawled": "2026-05-29T00:00:00Z"
+    },
+    {
+      "id": "datasmith/csv-analyst",
+      "url": "https://github.com/datasmith/csv-analyst",
+      "ref": "v2.0.0",
+      "commit": "1122334455667788990011223344556677889900",
+      "name": "csv-analyst",
+      "display_name": "CSV Analyst",
+      "version": "2.0.0",
+      "description": "Loads CSV/TSV files from your workspace, profiles them, and answers analytical questions with charts and summary tables. Delegates plotting to a sub-agent.",
+      "category": "data",
+      "tags": ["data", "csv", "analysis", "charts"],
+      "language": "python",
+      "author": { "name": "Datasmith", "github": "datasmith", "website": "https://datasmith.io" },
+      "providers": ["anthropic", "openai"],
+      "permissions": {
+        "network": ["api.anthropic.com", "api.openai.com"],
+        "network_unrestricted": false,
+        "filesystem": "readwrite",
+        "delegation": true
+      },
+      "trust": "auto",
+      "signals": {
+        "stars": 173,
+        "runs_30d": 640,
+        "rating_avg": null,
+        "rating_count": 0,
+        "success_rate": null
+      },
+      "readme_excerpt": "CSV Analyst is your data sidekick. Drop CSVs into the workspace and ask questions in plain English — it profiles columns, computes aggregates, and renders charts. Heavy plotting is delegated to a dedicated visualization sub-agent.",
+      "updated_at": "2026-05-25T16:45:00Z",
+      "last_crawled": "2026-05-29T00:00:00Z"
+    },
+    {
+      "id": "shadowy/web-scraper-x",
+      "url": "https://github.com/shadowy/web-scraper-x",
+      "ref": "main",
+      "commit": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "name": "web-scraper-x",
+      "display_name": "Web Scraper X",
+      "version": "0.1.0",
+      "description": "General-purpose web scraper that can fetch arbitrary URLs and extract structured data. Requests unrestricted network access.",
+      "category": "automation",
+      "tags": ["scraping", "web", "extraction"],
+      "language": "go",
+      "author": { "name": "shadowy", "github": "shadowy", "website": null },
+      "providers": ["anthropic"],
+      "permissions": {
+        "network": [],
+        "network_unrestricted": true,
+        "filesystem": "readwrite",
+        "delegation": true
+      },
+      "trust": "requires_approval",
+      "signals": {
+        "stars": 12,
+        "runs_30d": 4,
+        "rating_avg": 3.1,
+        "rating_count": 3,
+        "success_rate": 0.5
+      },
+      "readme_excerpt": "Web Scraper X fetches any URL and pulls structured data out of the page. It needs open network access to reach arbitrary sites, so it runs only after you approve it.",
+      "updated_at": "2026-05-12T11:00:00Z",
+      "last_crawled": "2026-05-29T00:00:00Z"
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+---
+import type { Permissions } from '../lib/types';
+import { filesystemLabel } from '../lib/format';
+
+interface Props { permissions?: Permissions | null; delegation?: boolean | null; }
+const { permissions } = Astro.props;
+const p = permissions ?? {};
+
+const unrestricted = p.network_unrestricted === true;
+const domains = p.network ?? [];
+const fs = p.filesystem ?? null;
+const delegation = p.delegation === true;
+
+const networkDetail = unrestricted
+  ? 'Can reach any host on the internet.'
+  : domains.length > 0
+    ? 'Restricted to the allow-listed domains below.'
+    : 'No outbound network access.';
+---
+<div class="panel" id="permissions">
+  <h3>Permissions</h3>
+
+  {unrestricted && (
+    <div class="alert">
+      <span aria-hidden="true">⚠</span>
+      <span><strong>Unrestricted network access.</strong> This agent can connect to any host on the internet. Review carefully before approving — only run it with data and keys you can rotate.</span>
+    </div>
+  )}
+
+  <div class="perm-row">
+    <span class="perm-icon" aria-hidden="true">{unrestricted ? '⚠' : '🌐'}</span>
+    <div class="perm-body">
+      <div class="perm-title">Network — {unrestricted ? 'Unrestricted' : domains.length > 0 ? `${domains.length} allowed domain${domains.length === 1 ? '' : 's'}` : 'None'}</div>
+      <div class="perm-detail">{networkDetail}</div>
+      {!unrestricted && domains.length > 0 && (
+        <div class="domain-list">
+          {domains.map((d) => <span class="domain">{d}</span>)}
+        </div>
+      )}
+    </div>
+  </div>
+
+  <div class="perm-row">
+    <span class="perm-icon" aria-hidden="true">📁</span>
+    <div class="perm-body">
+      <div class="perm-title">Filesystem — {filesystemLabel(fs)}</div>
+      <div class="perm-detail">
+        {fs === 'readwrite' && 'Can read and modify files in the git worktree you grant.'}
+        {fs === 'readonly' && 'Can read files in the git worktree you grant, but not modify them.'}
+        {fs === 'none' && 'No access to your files.'}
+        {!fs && 'Filesystem mode not declared.'}
+      </div>
+    </div>
+  </div>
+
+  <div class="perm-row">
+    <span class="perm-icon" aria-hidden="true">{delegation ? '🔗' : '∅'}</span>
+    <div class="perm-body">
+      <div class="perm-title">Delegation — {delegation ? 'Enabled' : 'Disabled'}</div>
+      <div class="perm-detail">
+        {delegation
+          ? 'Can spawn and coordinate other Primordial agents as sub-agents.'
+          : 'Cannot spawn other agents.'}
+      </div>
+    </div>
+  </div>
+</div>

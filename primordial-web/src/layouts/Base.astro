@@ -1,0 +1,43 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const { title = 'Primordial AgentStore', description = 'An open-source marketplace for sandboxed AI agents.' } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <title>{title}</title>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container">
+        <a class="brand" href={`${base}/`}>Primordial<span>.</span></a>
+        <nav class="nav-links">
+          <a href={`${base}/#browse`}>Browse</a>
+          <a href="https://github.com/primordial-labs" target="_blank" rel="noopener">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="container">
+      <slot />
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <span>Primordial AgentStore — run untrusted agents safely, in the cloud.</span>
+        <span class="faint">Beta. Review agent permissions before approving. Use at your own risk.</span>
+      </div>
+    </footer>
+  </body>
+</html>

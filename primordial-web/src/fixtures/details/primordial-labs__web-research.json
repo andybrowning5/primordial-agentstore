@@ -1,0 +1,24 @@
+{
+  "manifest": {
+    "name": "web-research",
+    "display_name": "Web Research",
+    "version": "1.2.0",
+    "description": "Searches the web, reads pages, and synthesizes cited answers to research questions.",
+    "category": "research",
+    "tags": ["web", "search", "citations"],
+    "language": "python",
+    "entrypoint": "python main.py",
+    "author": { "name": "Primordial Labs", "github": "primordial-labs", "website": "https://primordial.dev" },
+    "keys": [
+      { "provider": "anthropic", "required": true },
+      { "provider": "tavily", "required": true }
+    ],
+    "permissions": {
+      "network": ["api.tavily.com", "api.anthropic.com"],
+      "network_unrestricted": false,
+      "filesystem": "readonly",
+      "delegation": false
+    }
+  },
+  "readme_md": "# Web Research\n\nWeb Research turns a question into a **cited answer**. It plans queries, searches the web via Tavily, reads the most relevant pages, and synthesizes a concise answer with inline source links.\n\n## What it does\n\n- Decomposes your question into focused search queries\n- Retrieves and ranks sources\n- Reads the top pages and extracts relevant passages\n- Writes a short answer with numbered citations\n\n## Example\n\n```\nprimordial run github:primordial-labs/web-research \\\n  -m \"What are the tradeoffs between Firecracker and gVisor for sandboxing?\"\n```\n\n## Keys required\n\n- `ANTHROPIC_API_KEY` — reasoning + synthesis\n- `TAVILY_API_KEY` — web search\n\nKeys are injected by the Primordial security proxy. The agent never sees them directly.\n"
+}

@@ -1,0 +1,43 @@
+---
+interface Props { label: string; command: string; }
+const { label, command } = Astro.props;
+---
+<div class="runcmd">
+  <div class="runcmd-label">{label}</div>
+  <div class="copybox">
+    <code>{command}</code>
+    <button class="copybtn" type="button" data-copy={command} aria-label={`Copy ${label}`}>Copy</button>
+  </div>
+</div>
+
+<script>
+  // Progressive enhancement: wire up every copy button on the page once.
+  if (!(window as any).__copyWired) {
+    (window as any).__copyWired = true;
+    document.addEventListener('click', async (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.copybtn');
+      if (!btn) return;
+      const text = btn.getAttribute('data-copy') ?? '';
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        // Fallback for non-secure contexts.
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+      }
+      const original = btn.textContent;
+      btn.textContent = 'Copied';
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.textContent = original;
+        btn.classList.remove('copied');
+      }, 1500);
+    });
+  }
+</script>
