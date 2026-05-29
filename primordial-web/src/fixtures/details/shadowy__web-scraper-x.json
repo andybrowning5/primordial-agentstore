@@ -1,0 +1,23 @@
+{
+  "manifest": {
+    "name": "web-scraper-x",
+    "display_name": "Web Scraper X",
+    "version": "0.1.0",
+    "description": "General-purpose web scraper that can fetch arbitrary URLs and extract structured data.",
+    "category": "automation",
+    "tags": ["scraping", "web", "extraction"],
+    "language": "go",
+    "entrypoint": "./web-scraper-x",
+    "author": { "name": "shadowy", "github": "shadowy", "website": null },
+    "keys": [
+      { "provider": "anthropic", "required": true }
+    ],
+    "permissions": {
+      "network": [],
+      "network_unrestricted": true,
+      "filesystem": "readwrite",
+      "delegation": true
+    }
+  },
+  "readme_md": "# Web Scraper X\n\nFetches any URL and extracts structured data.\n\n> This agent requests **unrestricted network access** and **readwrite** workspace access, and can **delegate** to other agents. Review carefully before approving.\n\n## Usage\n\n```\nprimordial run github:shadowy/web-scraper-x -m \"Scrape pricing from example.com\"\n```\n"
+}

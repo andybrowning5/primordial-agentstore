@@ -1,0 +1,10 @@
+---
+import { trustLabel } from '../lib/format';
+interface Props { trust?: string | null; }
+const { trust } = Astro.props;
+const cls = trust === 'auto' ? 'badge-trust-auto' : trust === 'requires_approval' ? 'badge-trust-approval' : '';
+const icon = trust === 'auto' ? '✓' : trust === 'requires_approval' ? '⚠' : '?';
+---
+<span class={`badge ${cls}`} title={`Trust tier: ${trustLabel(trust)}`}>
+  <span aria-hidden="true">{icon}</span>{trustLabel(trust)}
+</span>

@@ -1,0 +1,23 @@
+{
+  "manifest": {
+    "name": "doc-drift",
+    "display_name": "Doc Drift Detector",
+    "version": "0.4.1",
+    "description": "Scans a codebase against its documentation and reports drift.",
+    "category": "code",
+    "tags": ["documentation", "code-review", "ci"],
+    "language": "node",
+    "entrypoint": "node index.js",
+    "author": { "name": "Octo Tools", "github": "octo-tools", "website": null },
+    "keys": [
+      { "provider": "anthropic", "required": true }
+    ],
+    "permissions": {
+      "network": ["api.anthropic.com"],
+      "network_unrestricted": false,
+      "filesystem": "readwrite",
+      "delegation": false
+    }
+  },
+  "readme_md": "# Doc Drift Detector\n\nCompares what your docs claim against what your code actually does.\n\n## Usage\n\n```\nprimordial run github:octo-tools/doc-drift --workspace ./my-project\n```\n\nIt flags:\n\n- Out-of-date command examples\n- Renamed or removed CLI flags\n- Features in code with no documentation\n- Docs referencing files that no longer exist\n\n## Workspace access\n\nThis agent needs **readwrite** access to your git workspace so it can leave annotations. It only touches a git worktree copy — see the Workspace Isolation docs.\n"
+}

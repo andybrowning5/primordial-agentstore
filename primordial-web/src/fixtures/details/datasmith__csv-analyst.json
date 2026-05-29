@@ -1,0 +1,24 @@
+{
+  "manifest": {
+    "name": "csv-analyst",
+    "display_name": "CSV Analyst",
+    "version": "2.0.0",
+    "description": "Loads CSV/TSV files, profiles them, and answers analytical questions with charts.",
+    "category": "data",
+    "tags": ["data", "csv", "analysis", "charts"],
+    "language": "python",
+    "entrypoint": "python -m csv_analyst",
+    "author": { "name": "Datasmith", "github": "datasmith", "website": "https://datasmith.io" },
+    "keys": [
+      { "provider": "anthropic", "required": true },
+      { "provider": "openai", "required": false }
+    ],
+    "permissions": {
+      "network": ["api.anthropic.com", "api.openai.com"],
+      "network_unrestricted": false,
+      "filesystem": "readwrite",
+      "delegation": true
+    }
+  },
+  "readme_md": "# CSV Analyst\n\nYour data sidekick. Drop CSVs into the workspace and ask questions in plain English.\n\n## Features\n\n- Column profiling (types, nulls, cardinality)\n- Aggregations and group-bys\n- Chart rendering (delegated to a visualization sub-agent)\n\n## Delegation\n\nHeavy plotting is delegated to a dedicated visualization sub-agent via Primordial delegation. This keeps the analyst lean and lets the plot renderer evolve independently.\n\n```\nprimordial run github:datasmith/csv-analyst --workspace ./data\n```\n"
+}

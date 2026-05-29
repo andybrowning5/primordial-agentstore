@@ -1,0 +1,186 @@
+---
+import Base from '../layouts/Base.astro';
+import AgentCard from '../components/AgentCard.astro';
+import { getAgents, usingLiveIndex } from '../lib/data';
+import { distinct } from '../lib/format';
+
+const agents = await getAgents();
+
+const categories = distinct(agents.map((a) => a.category));
+const languages = distinct(agents.map((a) => a.language));
+const tags = distinct(agents.flatMap((a) => a.tags ?? []));
+const trustTiers = distinct(agents.map((a) => a.trust));
+---
+<Base>
+  <section class="hero">
+    <h1>Run any AI agent safely, in seconds.</h1>
+    <p class="tagline">
+      Primordial is an open-source marketplace for sandboxed AI agents. Pick an agent,
+      review its permissions, and it runs in a cloud sandbox — never on your machine, never
+      touching your API keys. Claude Code can discover and call any agent in the ecosystem
+      mid-task.
+    </p>
+    <div class="hero-actions">
+      <a class="btn" href="#browse">Browse agents</a>
+      <a class="btn btn-ghost" href="https://github.com/primordial-labs" target="_blank" rel="noopener">View on GitHub</a>
+    </div>
+
+    <div class="feature-grid">
+      <div class="feature">
+        <h3>Sandboxed by default</h3>
+        <p>Every agent runs in an isolated cloud microVM. Your keys are injected by a proxy — the agent code never sees them.</p>
+      </div>
+      <div class="feature">
+        <h3>Any language, zero SDK</h3>
+        <p>NDJSON over stdin/stdout is the whole protocol. Push to GitHub, tag it, and anyone can run it.</p>
+      </div>
+      <div class="feature">
+        <h3>Permissions you approve</h3>
+        <p>Network domains, filesystem access, and delegation are declared up front. You see exactly what an agent can do.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="browse">
+    <div class="section-head">
+      <h2>Browse agents</h2>
+      <span class="muted" id="result-count">{agents.length} agents</span>
+    </div>
+
+    <div class="controls">
+      <div class="search-row">
+        <input
+          id="search"
+          class="search-input"
+          type="search"
+          placeholder="Search by name, description, tag, provider…"
+          autocomplete="off"
+          aria-label="Search agents"
+        />
+        <label class="faint" for="sort" style="font-size:0.85rem">Sort</label>
+        <select id="sort" aria-label="Sort agents">
+          <option value="stars">Most starred</option>
+          <option value="runs">Most popular (runs/30d)</option>
+          <option value="rating">Highest rated</option>
+          <option value="name">Name (A–Z)</option>
+        </select>
+      </div>
+
+      <div class="facets">
+        {categories.length > 0 && (
+          <div class="facet-group">
+            <span class="facet-label">Category</span>
+            {categories.map((c) => (
+              <button class="chip-toggle" data-facet="category" data-value={c} aria-pressed="false">{c}</button>
+            ))}
+          </div>
+        )}
+        {trustTiers.length > 0 && (
+          <div class="facet-group">
+            <span class="facet-label">Trust</span>
+            {trustTiers.map((t) => (
+              <button class="chip-toggle" data-facet="trust" data-value={t} aria-pressed="false">{t === 'requires_approval' ? 'requires approval' : t}</button>
+            ))}
+          </div>
+        )}
+        {languages.length > 0 && (
+          <div class="facet-group">
+            <span class="facet-label">Language</span>
+            {languages.map((l) => (
+              <button class="chip-toggle" data-facet="language" data-value={l} aria-pressed="false">{l}</button>
+            ))}
+          </div>
+        )}
+        {tags.length > 0 && (
+          <div class="facet-group">
+            <span class="facet-label">Tag</span>
+            {tags.map((t) => (
+              <button class="chip-toggle" data-facet="tags" data-value={t} aria-pressed="false">{t}</button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+
+    <div class="grid" id="grid">
+      {agents.map((agent) => <AgentCard agent={agent} />)}
+    </div>
+
+    <div class="empty" id="empty" hidden>No agents match your filters.</div>
+
+    <p class="data-source-note">
+      {usingLiveIndex ? 'Data: live index service.' : 'Data: local mock fixture (index service not yet deployed).'}
+    </p>
+  </section>
+</Base>
+
+<script>
+  // Vanilla client-side search / facet filtering / sort. No framework.
+  const search = document.getElementById('search') as HTMLInputElement;
+  const sortSel = document.getElementById('sort') as HTMLSelectElement;
+  const grid = document.getElementById('grid') as HTMLElement;
+  const empty = document.getElementById('empty') as HTMLElement;
+  const countEl = document.getElementById('result-count') as HTMLElement;
+  const cards = Array.from(document.querySelectorAll<HTMLElement>('[data-card]'));
+  const facetBtns = Array.from(document.querySelectorAll<HTMLButtonElement>('.chip-toggle'));
+
+  // active[facetName] = Set of selected values (OR within a facet, AND across facets)
+  const active: Record<string, Set<string>> = { category: new Set(), trust: new Set(), language: new Set(), tags: new Set() };
+
+  function num(el: HTMLElement, attr: string): number {
+    return parseFloat(el.dataset[attr] ?? '0') || 0;
+  }
+
+  function matches(card: HTMLElement, q: string): boolean {
+    if (q && !(card.dataset.search ?? '').includes(q)) return false;
+    for (const [facet, values] of Object.entries(active)) {
+      if (values.size === 0) continue;
+      if (facet === 'tags') {
+        const cardTags = (card.dataset.tags ?? '').split('|').filter(Boolean);
+        if (![...values].some((v) => cardTags.includes(v))) return false;
+      } else {
+        const cardVal = card.dataset[facet] ?? '';
+        if (!values.has(cardVal)) return false;
+      }
+    }
+    return true;
+  }
+
+  function apply() {
+    const q = search.value.trim().toLowerCase();
+    const sort = sortSel.value;
+    let visible = cards.filter((c) => matches(c, q));
+
+    visible.sort((a, b) => {
+      if (sort === 'name') {
+        const an = a.querySelector('.card-title')?.textContent ?? '';
+        const bn = b.querySelector('.card-title')?.textContent ?? '';
+        return an.localeCompare(bn);
+      }
+      const key = sort === 'runs' ? 'runs' : sort === 'rating' ? 'rating' : 'stars';
+      return num(b, key) - num(a, key);
+    });
+
+    // Hide all, then re-append visible in sorted order.
+    cards.forEach((c) => { c.style.display = 'none'; });
+    visible.forEach((c) => { c.style.display = ''; grid.appendChild(c); });
+
+    empty.hidden = visible.length > 0;
+    countEl.textContent = `${visible.length} agent${visible.length === 1 ? '' : 's'}`;
+  }
+
+  search.addEventListener('input', apply);
+  sortSel.addEventListener('change', apply);
+  facetBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const facet = btn.dataset.facet!;
+      const value = btn.dataset.value!;
+      const set = active[facet];
+      if (set.has(value)) { set.delete(value); btn.setAttribute('aria-pressed', 'false'); }
+      else { set.add(value); btn.setAttribute('aria-pressed', 'true'); }
+      apply();
+    });
+  });
+
+  apply();
+</script>
