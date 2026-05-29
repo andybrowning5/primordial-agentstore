@@ -18,6 +18,7 @@
   --maxw: 1120px;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --brand: "Space Mono", var(--mono);
 }
 
 * { box-sizing: border-box; }
@@ -57,13 +58,26 @@ a:hover { text-decoration: underline; }
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  font-weight: 700;
-  font-size: 1.05rem;
   color: var(--text);
-  letter-spacing: -0.01em;
 }
 .brand:hover { text-decoration: none; }
-.brand .wordmark span { color: var(--accent); }
+.wordmark {
+  font-family: var(--brand);
+  font-weight: 700;
+  font-size: 0.98rem;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+/* "Primordial" picks up the green→cyan of the helix strands; "AgentStore" sits back. */
+.wm-1 {
+  background: linear-gradient(95deg, #56d364 0%, #56d4ef 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+.wm-2 { color: var(--text-dim); font-weight: 400; }
+@media (max-width: 520px) { .wm-2 { display: none; } }
 
 /* Animated ASCII double helix (the CLI motif). Strand spans are injected at
    runtime, so these colors must be global (not component-scoped). */
@@ -155,6 +169,19 @@ html.intro-active #intro {
   text-shadow: 0 0 22px rgba(52, 211, 153, 0.4);
 }
 @keyframes introHelixIn { from { opacity: 0; } to { opacity: 1; } }
+.intro-stage { display: grid; place-items: center; gap: 1.1rem; }
+.intro-title {
+  font-family: var(--brand);
+  font-weight: 700;
+  font-size: clamp(1.1rem, 3.2vw, 1.9rem);
+  letter-spacing: -0.02em;
+  /* `backwards` (not forwards) so after the entrance the title returns to its
+     declared opacity, letting the fade-out transition below take over. */
+  animation: introTitleIn 0.7s ease 0.35s backwards;
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+@keyframes introTitleIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+#intro.intro-fade .intro-title { opacity: 0; transform: translateY(-8px); }
 
 /* Freeze scroll during the intro. */
 html.intro-lock, html.intro-lock body { overflow: hidden; }
