@@ -439,3 +439,70 @@ select {
 @media (max-width: 860px) {
   .detail-grid { grid-template-columns: 1fr; }
 }
+
+/* ── Living Systems gallery ─────────────────────────────────────────────── */
+.gallery-hero { padding: 3rem 0 1.5rem; }
+.gallery-hero h1 { font-size: clamp(1.8rem, 4.5vw, 2.8rem); line-height: 1.08; letter-spacing: -0.02em; margin: 0 0 0.8rem; }
+.gallery-hero .tagline { font-size: 1.08rem; color: var(--text-dim); max-width: 680px; margin: 0; }
+
+.stage {
+  position: relative;
+  background: radial-gradient(120% 120% at 50% 0%, #11151c 0%, var(--bg) 70%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem 1rem 1.75rem;
+  margin: 1.5rem 0;
+  overflow: hidden;
+}
+.stage-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 0.6rem; flex-wrap: wrap; }
+.stage-num { font-family: var(--mono); font-size: 0.82rem; color: var(--text-faint); letter-spacing: 0.08em; }
+.stage-system { font-family: var(--mono); font-size: 0.78rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+.stage-title { margin: 0; font-size: 1.45rem; letter-spacing: -0.01em; }
+.stage-caption { color: var(--text-dim); font-size: 0.95rem; margin: 0.15rem 0 0; min-height: 1.4em; }
+
+.bioanim-wrap { display: grid; place-items: center; min-height: 320px; margin: 1.2rem 0 0.4rem; }
+.bioanim {
+  font-family: var(--mono);
+  font-size: clamp(9px, 2.1vw, 15px);
+  line-height: 1.0;
+  margin: 0;
+  white-space: pre;
+  user-select: none;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+/* Palettes — a vertical gradient over the glyphs plus a matching glow. */
+.pal-membrane   { background-image: linear-gradient(180deg, #56d364, #56d4ef); text-shadow: 0 0 7px rgba(86, 211, 153, 0.25); }
+.pal-dna        { background-image: linear-gradient(180deg, #7ee787, #56d4ef); text-shadow: 0 0 7px rgba(86, 212, 239, 0.25); }
+.pal-blood      { background-image: linear-gradient(180deg, #f87171, #fbbf24); text-shadow: 0 0 7px rgba(248, 113, 113, 0.25); }
+.pal-neuron     { background-image: linear-gradient(180deg, #818cf8, #c084fc); text-shadow: 0 0 8px rgba(129, 140, 248, 0.28); }
+.pal-immune     { background-image: linear-gradient(180deg, #2dd4bf, #a3e635); text-shadow: 0 0 7px rgba(45, 212, 191, 0.25); }
+.pal-energy     { background-image: linear-gradient(180deg, #fde68a, #f59e0b); text-shadow: 0 0 8px rgba(245, 158, 11, 0.28); }
+.pal-photosynth { background-image: linear-gradient(180deg, #86efac, #fde047); text-shadow: 0 0 7px rgba(134, 239, 172, 0.25); }
+.pal-microbe    { background-image: linear-gradient(180deg, #f0abfc, #67e8f9); text-shadow: 0 0 8px rgba(240, 171, 252, 0.26); }
+
+.stage-nav { display: flex; align-items: center; justify-content: center; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.6rem; }
+.nav-btn {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  background: var(--bg-elev); border: 1px solid var(--border-strong);
+  color: var(--text); padding: 0.5rem 0.9rem; border-radius: var(--radius);
+  cursor: pointer; font-size: 0.9rem; font-weight: 600;
+}
+.nav-btn:hover { background: var(--bg-elev-2); }
+.jump-row { display: flex; align-items: center; gap: 0.4rem; color: var(--text-dim); font-size: 0.88rem; }
+.jump-input {
+  width: 4.5rem; background: var(--bg-elev); border: 1px solid var(--border-strong);
+  color: var(--text); padding: 0.4rem 0.5rem; border-radius: 8px; font-family: var(--mono); font-size: 0.9rem;
+}
+
+/* Filmstrip of numbered chips for direct jumps. */
+.filmstrip { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 1.25rem; }
+.film-chip {
+  width: 2.1rem; height: 1.7rem; display: grid; place-items: center;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  color: var(--text-faint); border-radius: 6px; font-family: var(--mono); font-size: 0.72rem; cursor: pointer;
+}
+.film-chip:hover { color: var(--text); border-color: var(--border-strong); }
+.film-chip[aria-current="true"] { background: var(--accent-strong); color: var(--accent-ink); border-color: var(--accent-strong); font-weight: 700; }

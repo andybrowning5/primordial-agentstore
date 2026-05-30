@@ -1,0 +1,117 @@
+---
+import Base from '../layouts/Base.astro';
+import { animations } from '../animations/index.js';
+
+// Sorted 1..100. Metadata is read at build time; the frame() functions run
+// client-side (imported again in the inline script below).
+const list = [...animations].sort((a, b) => a.id - b.id);
+const first = list[0];
+// Server-render the first frame so no-JS / first paint shows real art.
+let firstFrame = '';
+try { firstFrame = first.frame(0); } catch (e) { firstFrame = ''; }
+const known = new Set(['membrane', 'dna', 'blood', 'neuron', 'immune', 'energy', 'photosynth', 'microbe']);
+const firstPal = known.has(first.palette) ? first.palette : 'membrane';
+const pad3 = (n: number) => String(n).padStart(3, '0');
+---
+<Base title="Living Systems — Primordial AgentStore" description="100 ASCII animations of the machinery of life, in the style of the Primordial double helix.">
+  <section class="gallery-hero">
+    <h1>Living Systems</h1>
+    <p class="tagline">
+      100 ASCII animations of the machinery of life — cells dividing, signals firing,
+      molecules folding — rendered in the same glowing terminal style as the Primordial
+      double helix. Flip through them with the arrows, your keyboard, or the strip below.
+    </p>
+  </section>
+
+  <section class="stage" aria-label="Animation viewer">
+    <div class="stage-meta">
+      <span class="stage-num" id="stage-num">{pad3(first.id)} / 100</span>
+      <span class="stage-system" id="stage-system">{first.system}</span>
+    </div>
+    <h2 class="stage-title" id="stage-title">{first.title}</h2>
+    <p class="stage-caption" id="stage-caption">{first.caption}</p>
+
+    <div class="bioanim-wrap">
+      <pre class={`bioanim pal-${firstPal}`} id="bioanim" aria-hidden="true">{firstFrame}</pre>
+    </div>
+
+    <div class="stage-nav">
+      <button class="nav-btn" id="prev" aria-label="Previous animation">◀ Prev</button>
+      <div class="jump-row">
+        <label for="jump">Jump to #</label>
+        <input class="jump-input" id="jump" type="number" min="1" max="100" value="1" inputmode="numeric" />
+      </div>
+      <button class="nav-btn" id="rand" aria-label="Random animation">⤮ Random</button>
+      <button class="nav-btn" id="next" aria-label="Next animation">Next ▶</button>
+    </div>
+  </section>
+
+  <div class="filmstrip" id="filmstrip" role="tablist" aria-label="Jump to animation">
+    {list.map((a) => (
+      <button class="film-chip" data-id={a.id} role="tab" aria-current={a.id === first.id ? 'true' : 'false'} title={`${pad3(a.id)} — ${a.title}`}>{a.id}</button>
+    ))}
+  </div>
+</Base>
+
+<script>
+  import { animations } from '../animations/index.js';
+
+  const KNOWN = new Set(['membrane', 'dna', 'blood', 'neuron', 'immune', 'energy', 'photosynth', 'microbe']);
+  const list = [...animations].sort((a, b) => a.id - b.id);
+  const pad3 = (n: number) => String(n).padStart(3, '0');
+
+  const pre = document.getElementById('bioanim') as HTMLPreElement;
+  const numEl = document.getElementById('stage-num') as HTMLElement;
+  const sysEl = document.getElementById('stage-system') as HTMLElement;
+  const titleEl = document.getElementById('stage-title') as HTMLElement;
+  const capEl = document.getElementById('stage-caption') as HTMLElement;
+  const jump = document.getElementById('jump') as HTMLInputElement;
+  const chips = Array.from(document.querySelectorAll<HTMLButtonElement>('.film-chip'));
+
+  let idx = 0;
+
+  function show(i: number) {
+    idx = (i % list.length + list.length) % list.length;
+    const a = list[idx];
+    numEl.textContent = `${pad3(a.id)} / 100`;
+    sysEl.textContent = a.system;
+    titleEl.textContent = a.title;
+    capEl.textContent = a.caption;
+    const pal = KNOWN.has(a.palette) ? a.palette : 'membrane';
+    pre.className = `bioanim pal-${pal}`;
+    jump.value = String(a.id);
+    chips.forEach((c) => c.setAttribute('aria-current', Number(c.dataset.id) === a.id ? 'true' : 'false'));
+    const active = chips[idx];
+    if (active) active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    if (reduced) render(0); // static frame for reduced-motion
+  }
+
+  function render(t: number) {
+    const a = list[idx];
+    try {
+      const out = a.frame(t);
+      pre.textContent = typeof out === 'string' ? out : '(no frame)';
+    } catch (e) {
+      pre.textContent = '(render error)';
+    }
+  }
+
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  document.getElementById('prev')!.addEventListener('click', () => show(idx - 1));
+  document.getElementById('next')!.addEventListener('click', () => show(idx + 1));
+  document.getElementById('rand')!.addEventListener('click', () => show(Math.floor(Math.random() * list.length)));
+  jump.addEventListener('change', () => { const n = parseInt(jump.value, 10); if (n >= 1 && n <= list.length) show(n - 1); });
+  chips.forEach((c) => c.addEventListener('click', () => show(Number(c.dataset.id) - 1)));
+  window.addEventListener('keydown', (e) => {
+    if (e.target instanceof HTMLInputElement) return;
+    if (e.key === 'ArrowLeft') { show(idx - 1); e.preventDefault(); }
+    else if (e.key === 'ArrowRight') { show(idx + 1); e.preventDefault(); }
+  });
+
+  show(0);
+  if (!reduced) {
+    const loop = (ts: number) => { render(ts / 1000); requestAnimationFrame(loop); };
+    requestAnimationFrame(loop);
+  }
+</script>
